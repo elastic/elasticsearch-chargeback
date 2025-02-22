@@ -451,17 +451,17 @@ PUT /_security/role/enrichment_policy_role
   ]
 }
 ```
-- Create a user with this limited privileges
+- Create a user with this limited privileges (replace `{PLACEHOLDERS}`)
 ```sh
 POST /_security/user/cf-watcher-user
 {
-  "password": "SELECT_YOUR_OWN_PASSWORD",
+  "password": "{SELECT_YOUR_OWN_PASSWORD}",
   "roles": ["enrichment_policy_role"],
   "full_name": "CF Watcher User",
   "email": "cf-watcher-user@example.com"
 }
 ```
-- Create `execute_cluster_contribution_enrich_policy` watcher
+- Create `execute_cluster_contribution_enrich_policy` watcher (replace `{PLACEHOLDERS}`)
 ```sh
 PUT _watcher/watch/execute_cluster_contribution_enrich_policy
 {
@@ -471,12 +471,12 @@ PUT _watcher/watch/execute_cluster_contribution_enrich_policy
     "input" : {
         "http" : {
             "request" : {
-                "url" : "https://test.es.southafricanorth.azure.elastic-cloud.com/_enrich/policy/cluster_contribution_enrich_policy/_execute",
+                "url" : "{ELASTIC_ENDPOINT}/_enrich/policy/cluster_contribution_enrich_policy/_execute",
                 "method": "post",
                 "auth" : {
                     "basic" : {
                     "username" : "cf-watcher-user",
-                    "password" : "SELECT_YOUR_OWN_PASSWORD"
+                    "password" : "{SELECT_YOUR_OWN_PASSWORD}"
                     }
                 }
             }
@@ -484,7 +484,7 @@ PUT _watcher/watch/execute_cluster_contribution_enrich_policy
     }
 }
 ```
-- Create `execute_cluster_cost_enrich_policy` watcher
+- Create `execute_cluster_cost_enrich_policy` watcher (replace `{PLACEHOLDERS}`)
 ```sh
 PUT _watcher/watch/execute_cluster_cost_enrich_policy
 {
@@ -494,12 +494,12 @@ PUT _watcher/watch/execute_cluster_cost_enrich_policy
     "input" : {
         "http" : {
             "request" : {
-                "url" : "https://test.es.southafricanorth.azure.elastic-cloud.com/_enrich/policy/cluster_cost_enrich_policy/_execute",
+                "url" : "{ELASTIC_ENDPOINT}/_enrich/policy/cluster_cost_enrich_policy/_execute",
                 "method": "post",
                 "auth" : {
                     "basic" : {
                     "username" : "cf-watcher-user",
-                    "password" : "ynIFooUdf0kTdM6"
+                    "password" : "{SELECT_YOUR_OWN_PASSWORD}"
                     }
                 }
             }
