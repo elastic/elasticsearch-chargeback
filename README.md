@@ -6,7 +6,7 @@ Version 0.1.0
 
 ## Dependencies
 
-This process must be followed on your Monitoring cluster, where all the monitoring data is sent to.
+This process must be followed on your Monitoring cluster, to which all the monitoring data is sent.
 
 - The Monitoring cluster must be on Elastic Stack 8.17.1 or higher.
 - The Monitoring cluster must run on ECH (Elastic Cloud Hosted).
@@ -20,7 +20,7 @@ Please follow the instructions in order from the Kibana Development Console.
 
 1. Create `set_composite_key` pipeline to add a composite key for enrichment correlation
 
-This pipeline is used by the enrich policies to be able to look up billing data and match it to consumption data.
+This pipeline is used by the enrich policies to look up and match billing data to consumption data.
 
 ```sh
 PUT _ingest/pipeline/set_composite_key
@@ -47,7 +47,7 @@ PUT _ingest/pipeline/set_composite_key
 
 2. Create Billing Transform
 
-This transform will provides billing data (total ECU) per day, per deployment. This transform will be executed every hour, and will consider all documents from the index `metrics-ess_billing.billing*` that has been indexed for an hour.
+This transform will provide billing data (total ECU) per day, per deployment. This transform will be executed every hour, and will consider all documents from the index `metrics-ess_billing.billing*` that has been indexed for an hour.
 
 - Create `billing_cluster_cost` transform
 
@@ -105,7 +105,7 @@ POST _transform/billing_cluster_cost/_start
 
 3. Create Consumption Transform per deployment
 
-This transform will provide consumption data: total querying time, total indexing time, and total storage size. This will be aggregated per *deployment* per day.
+This transform will provide consumption data - total querying time, total indexing time, and total storage size -  aggregated per *deployment* per day.
 
 This transform will collect data from the `monitoring-indices` index (output of the `logs-elasticsearch.index_pivot-default-{VERSION}` that should be running). This transform will be executed every hour, and will consider all documents from the above mentioned index that has been indexed for an hour.
 
@@ -174,11 +174,11 @@ POST _transform/cluster_deployment_contribution/_start
 
 4. Create Consumption Transform per data stream
 
-This transform will provide consumption data: total querying time, total indexing time, and total storage size. This will be aggregated per *data stream* per day.
+This transform will provide consumption data - total querying time, total indexing time, and total storage size - aggregated per *data stream* per day.
 
 This transform will collect data from the `monitoring-indices` index (output of the `logs-elasticsearch.index_pivot-default-{VERSION}` that should be running). This transform will be executed every hour, and will consider all documents from the above mentioned index that has been indexed for *24 hours*. This is needed to make sure we have all the data for the day bucket we will be calculating the cost for.
 
-NOTE: Since the final version of this transform needs to run enrichment policies, but the enrichment policies are based on the output of this data, here the transform will form a placeholder function for now. 
+NOTE: Since the final version of this transform needs to run enrichment policies which are based on the output of this data, this transform will serve as a placeholder function for now. 
 
 - Create `cluster_datastreams_contribution` transform
 ```sh
@@ -250,7 +250,7 @@ POST _transform/cluster_datastreams_contribution/_start
 
 5. Create Enrichment policy: Cluster cost
 
-The first enrichment policy will provide the `total_ecu` of the deployment for the data.
+The first enrichment policy will bring in the `total_ecu` for the deployment from the data.
 
 ```sh
 PUT /_enrich/policy/cluster_cost_enrich_policy
@@ -269,7 +269,7 @@ POST /_enrich/policy/cluster_cost_enrich_policy/_execute
 
 6. Create Enrichment policy: Cluster contribution
 
-The second enrichment policy will provide the total query time, total indexing time and the total storage used of the deployment, or the deployment and datastream on the day.
+The second enrichment policy will bring in the total query time, total indexing time and the total storage used by the deployment, or the deployment and data stream on the day.
 ```sh
 PUT /_enrich/policy/cluster_contribution_enrich_policy
 {
@@ -434,7 +434,7 @@ POST _transform/cluster_datastreams_contribution/_start
 
 9. Automate refreshing the enrich policies
 
-At this step the correct data will be colleced already, but if the enrich policies are not refreshed on a daily basis, the lookup data required by the ingest policy created above, will not be available, and the data will not be populated properly. For the automation we will create a user that will be used by two watchers. The watchers will be executed once a day to update the enrich data.
+At this step the correct data will be collected already, but if the enrich policies are not refreshed on a daily basis, the lookup data required by the ingest policy created above, will not be available, and the data will not be populated properly. For the automation we will create a user that will be used by two watchers. The watchers will be executed once a day to update the enrich data.
 
 Make sure you treat the credentials in the proper way, as dictated by your company.
 
@@ -510,7 +510,7 @@ PUT _watcher/watch/execute_cluster_cost_enrich_policy
 
 9. Load the Dashboard
 
-If the data collected by the specified dependencies above is already there, ie. if these have been running and collecting data for more than a day, there will be data to be displayed on the dashboard. However, if you have just set up the dependencies, then you will have to way for 24 hours before you will see anything in the dashboard.
+If the data collected by the specified dependencies above is already there, i.e. if these have been running and collecting data for more than a day, there will be data to be displayed on the dashboard. However, if you have just set up the dependencies, then you will have to wate for 24 hours before you will see anything in the dashboard.
 
 - Navigate to _Deployment > Stack Management > Saved objects_. 
 - Click the *import* button located at the top right of the screen.
