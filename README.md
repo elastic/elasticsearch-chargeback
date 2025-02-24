@@ -510,7 +510,7 @@ PUT _watcher/watch/execute_cluster_cost_enrich_policy
 
 9. Load the Dashboard
 
-If the data collected by the specified dependencies above is already there, i.e. if these have been running and collecting data for more than a day, there will be data to be displayed on the dashboard. However, if you have just set up the dependencies, then you will have to wate for 24 hours before you will see anything in the dashboard.
+If the data collected by the specified dependencies above is already there, i.e. if these have been running and collecting data for more than a day, there will be data to be displayed on the dashboard. However, if you have just set up the dependencies, then you will have to wait for 24 hours before you will see anything in the dashboard.
 
 - Navigate to _Deployment > Stack Management > Saved objects_. 
 - Click the *import* button located at the top right of the screen.
