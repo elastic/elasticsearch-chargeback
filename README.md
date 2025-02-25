@@ -1,8 +1,12 @@
 # Chargeback module
 
-[Tech Preview] of the Chargeback module, based on the Elasticsearch Service Billing and the Elasticsearch integrations. This provides a breakdown of ECU per deployment, per data stream, per day. Please note: breakdown per Tier is not supported (yet).
+FinOps is an operational framework and cultural practice which maximizes the business value of cloud, enables timely data-driven decision making, and creates financial accountability through collaboration between engineering, finance, and business teams.
 
-Version 0.1.0
+The Chargeback module is there to help users answer the question: How is my organisation consuming the Elastic solution, and more specifically, to which tenants can I charge back what costs?
+
+[Tech Preview] of the Chargeback module, based on the Elasticsearch Service Billing and the Elasticsearch integrations. This provides a breakdown of ECU per deployment, per data stream, per day. 
+
+Version 0.2.0
 
 ## Dependencies
 
@@ -25,18 +29,17 @@ This pipeline is used by the enrich policies to look up and match billing data t
 ```sh
 PUT _ingest/pipeline/set_composite_key
 {
-  "description": "Set composite_key from @timestamp and deployment_id or @timestamp and cluster_name",
+  "description": "Standardise on deployment_id (vs cluster_name) and set composite_key from @timestamp and deployment_id",
   "processors": [
     {
       "script": {
         "lang": "painless",
         "source": """
+          if (ctx.cluster_name != null) {
+            ctx.deployment_id = ctx.cluster_name;
+          }
           if (ctx['@timestamp'] != null) {
-            if (ctx['deployment_id'] != null) {
-              ctx.composite_key = ctx['@timestamp'] + '_' + ctx['deployment_id'];
-            } else if (ctx['cluster_name'] != null) {
-              ctx.composite_key = ctx['@timestamp'] + '_' + ctx['cluster_name'];
-            }
+              ctx.composite_key = ctx['@timestamp'] + '_' + ctx.deployment_id;
           }
         """
       }
@@ -56,10 +59,14 @@ PUT _transform/billing_cluster_cost
 {
   "source": {
     "index": [
-      "metrics-ess_billing.billing*"
+      "metrics-ess_billing.billing-default"
     ],
     "query": {
-      "match_all": {}
+      "range": {
+        "ess.billing.total_ecu": {
+          "gt": 0
+        }
+      }
     }
   },
   "dest": {
@@ -84,6 +91,21 @@ PUT _transform/billing_cluster_cost
       "deployment_id": {
         "terms": {
           "field": "ess.billing.deployment_id"
+        }
+      },
+      "deployment_name": {
+        "terms": {
+          "field": "ess.billing.deployment_name"
+        }
+      },
+      "billing_type": {
+        "terms": {
+          "field": "ess.billing.type"
+        }
+      },
+      "billing_name": {
+        "terms": {
+          "field": "ess.billing.name"
         }
       }
     },
@@ -174,7 +196,7 @@ POST _transform/cluster_deployment_contribution/_start
 
 4. Create Consumption Transform per data stream
 
-This transform will provide consumption data - total querying time, total indexing time, and total storage size - aggregated per *data stream* per day.
+This transform will provide consumption data - total querying time, total indexing time, and total storage size - aggregated per *data stream* per day. It will also provide us data tier information.
 
 This transform will collect data from the `monitoring-indices` index (output of the `logs-elasticsearch.index_pivot-default-{VERSION}` that should be running). This transform will be executed every hour, and will consider all documents from the above mentioned index that has been indexed for *24 hours*. This is needed to make sure we have all the data for the day bucket we will be calculating the cost for.
 
@@ -220,6 +242,11 @@ PUT _transform/cluster_datastreams_contribution
         "terms": {
           "field": "elasticsearch.cluster.name"
         }
+      },
+      "tier": {
+        "terms": {
+          "field": "elasticsearch.index.tier"
+        }
       }
     },
     "aggregations": {
@@ -250,7 +277,7 @@ POST _transform/cluster_datastreams_contribution/_start
 
 5. Create Enrichment policy: Cluster cost
 
-The first enrichment policy will bring in the `total_ecu` for the deployment from the data.
+The first enrichment policy will bring in the `total_ecu` for the deployment from the data. It also give us the `deployment_name`.
 
 ```sh
 PUT /_enrich/policy/cluster_cost_enrich_policy
@@ -258,7 +285,7 @@ PUT /_enrich/policy/cluster_cost_enrich_policy
   "match": {
     "indices": "billing_cluster_cost",
     "match_field": "composite_key",
-    "enrich_fields": ["total_ecu"]
+    "enrich_fields": ["total_ecu","deployment_name"]
   }
 }
 ```
@@ -297,6 +324,7 @@ PUT _ingest/pipeline/cluster_cost_enrichment_pipeline
       "script": {
         "source": """
           ctx.composite_key = ctx['@timestamp'] + '_' + ctx.cluster_name;
+          ctx.deployment_id = ctx.cluster_name;
         """
       }
     },
@@ -318,7 +346,8 @@ PUT _ingest/pipeline/cluster_cost_enrichment_pipeline
     },
     {
       "script": {
-      "source": """
+      "source": """ 
+            ctx.deployment_name = ctx.data_stream_cost.deployment_name;
             if (ctx.data_stream_cost?.total_ecu != null && 
                 ctx.deployment_contribution?.sum_query_time != null && 
                 ctx.deployment_contribution?.sum_indexing_time != null && 
@@ -403,6 +432,11 @@ PUT _transform/cluster_datastreams_contribution
       "cluster_name": {
         "terms": {
           "field": "elasticsearch.cluster.name"
+        }
+      },
+      "tier": {
+        "terms": {
+          "field": "elasticsearch.index.tier"
         }
       }
     },
@@ -517,5 +551,8 @@ If the data collected by the specified dependencies above is already there, i.e.
 - Upload the file `chargeback_module_{version}.json`.
 - Make sure to select _Check for existing objects_ so that the correct object IDs can be generated.
 
-After this has been uploaded, you can navigate to the dashboard `[Tech Preview] Chargeback`. 
+After this has been uploaded, you can navigate to the dashboard `[Tech Preview] Chargeback - Overview (0.2.0)` that gives an overview of the module's data. Other dashboards which you can navigate to from this dashboard are:
+- `[Tech Preview] Chargeback - Billing Statistics (0.2.0)` that provides data parsed from the Elastic Service Billing integration.
+- `[Tech Preview] Chargeback - Usage Statistics (0.2.0)` that provides insight into deployments, data streams and data tiers.
+- `[Tech Preview] Chargeback - Meta Data (0.2.0)` that can be helpful when troubleshooting, as this provides the date ranges that has been parsed, etc.
 
