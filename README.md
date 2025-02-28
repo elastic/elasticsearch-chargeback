@@ -622,4 +622,4 @@ The dashboard also links out to:
 
 ## Sample dashboard
 
-![Chargeback](img/[Tech Preview] Chargeback (0.2.0).png)
+![Chargeback](https://github.com/elastic/elasticsearch-chargeback/blob/main/img/%5BTech%20Preview%5D%20Chargeback%20(0.2.0).png)
