@@ -200,6 +200,11 @@ PUT _transform/cluster_deployment_contribution
           "field": "elasticsearch.index.total.indexing.index_time_in_millis"
         }
       },
+      "sum_store_size": {
+        "sum": {
+          "field": "elasticsearch.index.total.store.size_in_bytes"
+        }
+      },
       "sum_data_set_store_size": {
         "sum": {
           "field": "elasticsearch.index.primaries.store.total_data_set_size_in_bytes"
@@ -280,6 +285,11 @@ PUT _transform/cluster_datastreams_contribution
           "field": "elasticsearch.index.total.indexing.index_time_in_millis"
         }
       },
+      "sum_store_size": {
+        "sum": {
+          "field": "elasticsearch.index.total.store.size_in_bytes"
+        }
+      },
       "sum_data_set_store_size": {
         "sum": {
           "field": "elasticsearch.index.primaries.store.total_data_set_size_in_bytes"
@@ -317,7 +327,7 @@ POST /_enrich/policy/cluster_cost_enrich_policy/_execute
 
 7. Create Enrichment policy: Cluster contribution
 
-The second enrichment policy will be used to join the `sum_query_time`,`sum_indexing_time`, `sum_data_set_store_size`, and `tier` from the Elasticsearch integration data with the usage data.
+The second enrichment policy will be used to join the `sum_query_time`,`sum_indexing_time`, `'sum_store_size`, `sum_data_set_store_size`, and `tier` from the Elasticsearch integration data with the usage data.
 
 ```sh
 PUT /_enrich/policy/cluster_contribution_enrich_policy
@@ -325,7 +335,7 @@ PUT /_enrich/policy/cluster_contribution_enrich_policy
   "match": {
     "indices": "cluster_deployment_contribution",
     "match_field": "composite_tier_key",
-    "enrich_fields": ["sum_query_time","sum_indexing_time", "sum_data_set_store_size", "tier"]
+    "enrich_fields": ["sum_query_time","sum_indexing_time", "sum_store_size", "sum_data_set_store_size", "tier"]
   }
 }
 ```
@@ -378,21 +388,24 @@ PUT _ingest/pipeline/cluster_cost_enrichment_pipeline
             if (ctx.sum_indexing_time > 0) {
                 if (ctx.deployment_contribution.sum_indexing_time != null && ctx.deployment_contribution.sum_indexing_time != 0) 
                     ctx.ecu_index_contribution = Math.round((ctx.sum_indexing_time / ctx.deployment_contribution.sum_indexing_time) * ctx.data_stream_cost.total_ecu * 1000) / 1000.0;
-            } else 
-                ctx.ecu_index_contribution = null;
+            }
 
             if (ctx.sum_query_time > 0) {
                 if (ctx.deployment_contribution.sum_query_time != null && ctx.deployment_contribution.sum_query_time != 0)
                     ctx.ecu_query_contribution = Math.round((ctx.sum_query_time / ctx.deployment_contribution.sum_query_time) * ctx.data_stream_cost.total_ecu * 1000) / 1000.0;
-            } else 
-                ctx.ecu_query_contribution = null;
+            }
 
+            // Gets the storage contribution from the primary data set size. For searchable snapshots this is the only value available.
             if (ctx.sum_data_set_store_size > 0) {
                 if (ctx.deployment_contribution.sum_data_set_store_size != null && ctx.deployment_contribution.sum_data_set_store_size != 0)
                     ctx.ecu_storage_contribution = Math.round((ctx.sum_data_set_store_size / ctx.deployment_contribution.sum_data_set_store_size) * ctx.data_stream_cost.total_ecu * 1000000) / 1000000.0;
-            } else 
-                ctx.ecu_storage_contribution = null;    
-        }
+            }
+
+            // Overwrites the storage contribution when we have sum_store_size availble. This will be the case for all non-searchable snapshot data streams.
+            if (ctx.sum_store_size > 0) {
+              if (ctx.deployment_contribution.sum_store_size != null && ctx.deployment_contribution.sum_store_size != 0)
+                  ctx.ecu_storage_contribution = Math.round((ctx.sum_store_size / ctx.deployment_contribution.sum_store_size) * ctx.data_stream_cost.total_ecu * 1000000) / 1000000.0;
+            }
         """
       }
     }
@@ -468,6 +481,11 @@ PUT _transform/cluster_datastreams_contribution
       "sum_indexing_time": {
         "sum": {
           "field": "elasticsearch.index.total.indexing.index_time_in_millis"
+        }
+      }
+      "sum_store_size": {
+        "sum": {
+          "field": "elasticsearch.index.total.store.size_in_bytes"
         }
       },
       "sum_data_set_store_size": {
