@@ -619,3 +619,7 @@ The dashboard also links out to:
 - `[Tech Preview] Chargeback - Meta Data (0.2.0)` which can be helpful when troubleshooting, as this provides the date ranges that has been parsed, etc.
 - `[Metrics ESS Billing] Billing dashboard`, the dashboard for the Billing integration.
 - `[Elasticsearch] Indices & data streams usage (Technical Preview/Beta)`, the dashboard for the Elasticsearch integration usage data.
+
+## Sample dashboard
+
+![Chargeback](img/[Tech Preview] Chargeback (0.2.0).png)
