@@ -329,6 +329,7 @@ POST /_enrich/policy/cluster_cost_enrich_policy/_execute
 
 7. Create Enrichment policy: Cluster contribution
 > This step will require you to wait untill the `cluster_deployment_contribution` has processed data, which will take about 1h
+> Execute `GET _transform/cluster_deployment_contribution/_stats` to see processed information
 
 The second enrichment policy will be used to join the `sum_query_time`,`sum_indexing_time`, `'sum_store_size`, `sum_data_set_store_size`, and `tier` from the Elasticsearch integration data with the usage data.
 
