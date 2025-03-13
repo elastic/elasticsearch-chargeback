@@ -326,6 +326,7 @@ POST /_enrich/policy/cluster_cost_enrich_policy/_execute
 ```
 
 7. Create Enrichment policy: Cluster contribution
+> This step will require you to wait untill the `cluster_deployment_contribution` has processed data, which will take about 1h
 
 The second enrichment policy will be used to join the `sum_query_time`,`sum_indexing_time`, `'sum_store_size`, `sum_data_set_store_size`, and `tier` from the Elasticsearch integration data with the usage data.
 
@@ -633,6 +634,7 @@ If the data collected by the specified dependencies above is already there, i.e.
 - Make sure to select _Check for existing objects_ so that the correct object IDs can be generated.
 
 After this has been uploaded, you can navigate to the dashboard `[Tech Preview] Chargeback (0.2.0)` that provides chargeback insight into deployments, data streams and data tiers.
+> For new deployments, or newly upgraded to 8.17.1+, a 24h waiting period is required to allow the transforms to generate the first insights.
 
 The dashboard also links out to:
 - `[Tech Preview] Chargeback - Meta Data (0.2.0)` which can be helpful when troubleshooting, as this provides the date ranges that has been parsed, etc.
