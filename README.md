@@ -23,6 +23,8 @@ This process must be set up on the **Monitoring cluster**, where all monitoring 
 - **Elasticsearch** integration (version 1.16.0+) must collect data from all deployments sending data to the Monitoring cluster.
 - The **Transform**  `logs-elasticsearch.index_pivot-default-{VERSION}` must be running on the Monitoring cluster.
 
+> The `logs-elasticsearch.index_pivot-default-{VERSION}` transform job will process all compatible historical data, which has two implications: 1. if you have pre-8.17.1 data, this will not get picked up by the job and 2. it might take time for "live" data to be available, as the transform job works its way through all documents.
+
 ## Setting up the assets
 
 Follow the instructions below in order, using the Kibana Dev Console.
@@ -326,8 +328,10 @@ POST /_enrich/policy/cluster_cost_enrich_policy/_execute
 ```
 
 7. Create Enrichment policy: Cluster contribution
+> This step will require you to wait untill the `cluster_deployment_contribution` has processed data, which will take about 1h
+> Execute `GET _transform/cluster_deployment_contribution/_stats` to see processed information
 
-The second enrichment policy will be used to join the `sum_query_time`,`sum_indexing_time`, `'sum_store_size`, `sum_data_set_store_size`, and `tier` from the Elasticsearch integration data with the usage data.
+The second enrichment policy will be used to join the `sum_query_time`,`sum_indexing_time`, `sum_store_size`, `sum_data_set_store_size`, and `tier` from the Elasticsearch integration data with the usage data.
 
 ```sh
 PUT /_enrich/policy/cluster_contribution_enrich_policy
@@ -406,6 +410,7 @@ PUT _ingest/pipeline/cluster_cost_enrichment_pipeline
               if (ctx.deployment_contribution.sum_store_size != null && ctx.deployment_contribution.sum_store_size != 0)
                   ctx.ecu_storage_contribution = Math.round((ctx.sum_store_size / ctx.deployment_contribution.sum_store_size) * ctx.data_stream_cost.total_ecu * 1000000) / 1000000.0;
             }
+        }
         """
       }
     }
@@ -482,7 +487,7 @@ PUT _transform/cluster_datastreams_contribution
         "sum": {
           "field": "elasticsearch.index.total.indexing.index_time_in_millis"
         }
-      }
+      },
       "sum_store_size": {
         "sum": {
           "field": "elasticsearch.index.total.store.size_in_bytes"
@@ -632,6 +637,7 @@ If the data collected by the specified dependencies above is already there, i.e.
 - Make sure to select _Check for existing objects_ so that the correct object IDs can be generated.
 
 After this has been uploaded, you can navigate to the dashboard `[Tech Preview] Chargeback (0.2.0)` that provides chargeback insight into deployments, data streams and data tiers.
+> For new deployments, or newly upgraded to 8.17.1+, a 24h waiting period is required to allow the transforms to generate the first insights.
 
 The dashboard also links out to:
 - `[Tech Preview] Chargeback - Meta Data (0.2.0)` which can be helpful when troubleshooting, as this provides the date ranges that has been parsed, etc.
