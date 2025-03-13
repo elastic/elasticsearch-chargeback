@@ -23,6 +23,8 @@ This process must be set up on the **Monitoring cluster**, where all monitoring 
 - **Elasticsearch** integration (version 1.0.0+) must collect data from all deployments sending data to the Monitoring cluster.
 - The **Transform**  `logs-elasticsearch.index_pivot-default-{VERSION}` must be running on the Monitoring cluster.
 
+> The `logs-elasticsearch.index_pivot-default-{VERSION}` transform job will process all compatible historical data, which has two implications: 1. if you have pre-8.17.1 data, this will not get picked up by the job and 2. it might take time for "live" data to be available, as the transform job works its way through all documents.
+
 ## Setting up the assets
 
 Follow the instructions below in order, using the Kibana Dev Console.
