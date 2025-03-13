@@ -406,6 +406,7 @@ PUT _ingest/pipeline/cluster_cost_enrichment_pipeline
               if (ctx.deployment_contribution.sum_store_size != null && ctx.deployment_contribution.sum_store_size != 0)
                   ctx.ecu_storage_contribution = Math.round((ctx.sum_store_size / ctx.deployment_contribution.sum_store_size) * ctx.data_stream_cost.total_ecu * 1000000) / 1000000.0;
             }
+        }
         """
       }
     }
