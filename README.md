@@ -19,8 +19,8 @@ This process must be set up on the **Monitoring cluster**, where all monitoring 
 ### Requirements:
 - The Monitoring cluster must be running Elastic Stack 8.17.1 or higher.
 - The Monitoring cluster must be hosted on Elastic Cloud (ECH).
-- **Elasticsearch Service Billing** integration (version 1.16.0+) must be installed on the Monitoring cluster.
-- **Elasticsearch** integration (version 1.0.0+) must collect data from all deployments sending data to the Monitoring cluster.
+- **Elasticsearch Service Billing** integration (version 1.0.0+) must be installed on the Monitoring cluster.
+- **Elasticsearch** integration (version 1.16.0+) must collect data from all deployments sending data to the Monitoring cluster.
 - The **Transform**  `logs-elasticsearch.index_pivot-default-{VERSION}` must be running on the Monitoring cluster.
 
 ## Setting up the assets
