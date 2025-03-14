@@ -53,7 +53,7 @@ PUT _transform/cluster_datastreams_contribution
         "sum": {
           "field": "elasticsearch.index.total.indexing.index_time_in_millis"
         }
-      }
+      },
       "sum_store_size": {
         "sum": {
           "field": "elasticsearch.index.total.store.size_in_bytes"
