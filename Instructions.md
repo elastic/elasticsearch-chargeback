@@ -39,7 +39,7 @@ Aggregates query time, indexing time, and storage size per deployment, per tier,
 
 Note: Since the enrichment policies and pipelines are interdependent on the data stream transform, we first create the transform without the final pipeline.
 
-File: [`cluster_datastreams_contribution-placeholder.json`](./assets/transforms/cluster_datastreams_contribution-placeholder.json)
+File: [`cluster_datastreams_contribution-placeholder_transform.json`](./assets/transforms/cluster_datastreams_contribution-placeholder_transform.json)
 
 ```sh
 POST _transform/cluster_datastreams_contribution/_start
@@ -81,7 +81,7 @@ DELETE _transform/cluster_datastreams_contribution
 
 Then, recreate and start the transform with the correct pipelines.
 
-File: [`cluster_datastreams_contribution.json`](./assets/transforms/cluster_datastreams_contribution.json)
+File: [`cluster_datastreams_contribution_transform.json`](./assets/transforms/cluster_datastreams_contribution_transform.json)
 
 ```sh
 POST _transform/cluster_datastreams_contribution/_start
