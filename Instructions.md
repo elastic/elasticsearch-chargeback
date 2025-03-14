@@ -37,7 +37,7 @@ POST _transform/cluster_deployment_contribution/_start
 ### Per Data Stream
 Aggregates query time, indexing time, and storage size per deployment, per tier, per day. Runs hourly with a 24-hour delay to ensure completeness.
 
-Note: Since the enrichment policies and pipelines are interdependent on the data stream transform, we first create the transform without the final pipeline.
+**Note:** Since the enrichment policies and pipelines are interdependent on the data stream transform, we first create the transform without the final pipeline.
 
 File: [`cluster_datastreams_contribution-placeholder_transform.json`](./assets/transforms/cluster_datastreams_contribution-placeholder_transform.json)
 
