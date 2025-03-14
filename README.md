@@ -50,7 +50,7 @@ To be able to take indexing, querying and storage into consideration in a weight
 
 This means that storage will contribute the most to the blended cost calculation, and that indexing will only contribute to this blended cost on the hot tier. You should consider these weights, and adjust these based on your own best judgement. 
 
-![Chargeback flow](assets/img/Chargeback flow.png)
+![Chargeback flow](assets/img/Chargeback%20flow.png)
 
 ## Dashboards
 
@@ -63,4 +63,4 @@ The dashboard also links out to:
 
 ## Sample dashboard
 
-![Chargeback](assets/img/[Tech Preview] Chargeback (0.2.0).png)
+![Chargeback](assets/img/[Tech%20Preview]%20Chargeback%20(0.2.0).png)
