@@ -1,0 +1,31 @@
+PUT cluster_datastreams_contribution/_mapping
+{
+  "runtime": {
+    "blended_cost": {
+      "type": "double",
+      "script": {
+        "source": """
+          // Edit these weights
+          def storage_weight = 40;
+          def indexing_weight = 20;
+          def search_weight = 20;
+          
+          // Do not change this
+          def storage_cost = doc['ecu_storage_contribution'].size() != 0 ? doc['ecu_storage_contribution'].value : 0;
+          def indexing_cost = doc['ecu_index_contribution'].size() != 0 ? doc['ecu_index_contribution'].value : 0;
+          def search_cost = doc['ecu_query_contribution'].size() != 0 ? doc['ecu_query_contribution'].value : 0;
+          def total_weight = storage_weight + search_weight;
+          def weighted_costs = (storage_cost * storage_weight) + (search_cost * search_weight);
+          
+          // For hot tier, also consider indexing
+          // For any other tier, indexing is not considered
+          if (doc['tier'].value == 'hot/content') {
+            total_weight += indexing_weight;
+            weighted_costs += indexing_cost * indexing_weight;
+          }
+          emit(weighted_costs / total_weight);
+        """
+      }
+    }
+  }
+}

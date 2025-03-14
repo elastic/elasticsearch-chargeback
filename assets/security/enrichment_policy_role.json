@@ -1,0 +1,10 @@
+PUT /_security/role/enrichment_policy_role
+{
+  "cluster": ["manage_enrich"],
+  "indices": [
+    {
+      "names": ["cluster_deployment_contribution", "billing_cluster_cost"],
+      "privileges": ["view_index_metadata", "read"]
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+PUT /_enrich/policy/cluster_contribution_enrich_policy
+{
+  "match": {
+    "indices": "cluster_deployment_contribution",
+    "match_field": "composite_tier_key",
+    "enrich_fields": ["sum_query_time","sum_indexing_time", "sum_store_size", "sum_data_set_store_size", "tier"]
+  }
+}

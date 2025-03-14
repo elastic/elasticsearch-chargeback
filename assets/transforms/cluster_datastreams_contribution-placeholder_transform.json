@@ -1,0 +1,69 @@
+PUT _transform/cluster_datastreams_contribution
+{
+  "source": {
+    "index": [
+      "monitoring-indices"
+    ],
+    "query": {
+      "match_all": {}
+    }
+  },
+  "dest": {
+    "index": "cluster_datastreams_contribution",
+    "pipeline": "set_composite_tier_key"
+  },
+  "frequency": "60m",
+  "sync": {
+    "time": {
+      "field": "event.ingested",
+      "delay": "24h"
+    }
+  },
+  "pivot": {
+    "group_by": {
+      "@timestamp": {
+        "date_histogram": {
+          "field": "@timestamp",
+          "calendar_interval": "1d"
+        }
+      },
+      "data_stream": {
+        "terms": {
+          "field": "elasticsearch.index.datastream"
+        }
+      },
+      "cluster_name": {
+        "terms": {
+          "field": "elasticsearch.cluster.name"
+        }
+      },
+      "tier": {
+        "terms": {
+          "field": "elasticsearch.index.tier"
+        }
+      }
+    },
+    "aggregations": {
+      "sum_query_time": {
+        "sum": {
+          "field": "elasticsearch.index.total.search.query_time_in_millis"
+        }
+      },
+      "sum_indexing_time": {
+        "sum": {
+          "field": "elasticsearch.index.total.indexing.index_time_in_millis"
+        }
+      },
+      "sum_store_size": {
+        "sum": {
+          "field": "elasticsearch.index.total.store.size_in_bytes"
+        }
+      },
+      "sum_data_set_store_size": {
+        "sum": {
+          "field": "elasticsearch.index.primaries.store.total_data_set_size_in_bytes"
+        }
+      }
+    }
+  }
+}

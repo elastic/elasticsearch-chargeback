@@ -1,0 +1,53 @@
+PUT _transform/billing_cluster_cost
+{
+  "source": {
+    "index": [
+      "metrics-ess_billing.billing-default"
+    ],
+    "query": {
+      "range": {
+        "ess.billing.total_ecu": {
+          "gt": 0
+        }
+      }
+    }
+  },
+  "dest": {
+    "index": "billing_cluster_cost",
+    "pipeline": "set_composite_key"
+  },
+  "frequency": "60m",
+  "sync": {
+    "time": {
+      "field": "event.ingested",
+      "delay": "1h"
+    }
+  },
+  "pivot": {
+    "group_by": {
+      "@timestamp": {
+        "date_histogram": {
+          "field": "@timestamp",
+          "calendar_interval": "1d"
+        }
+      },
+      "deployment_id": {
+        "terms": {
+          "field": "ess.billing.deployment_id"
+        }
+      },
+      "deployment_name": {
+        "terms": {
+          "field": "ess.billing.deployment_name"
+        }
+      }
+    },
+    "aggregations": {
+      "total_ecu": {
+        "sum": {
+          "field": "ess.billing.total_ecu"
+        }
+      }
+    }
+  }
+}
