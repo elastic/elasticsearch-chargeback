@@ -87,6 +87,8 @@ File: [`cluster_datastreams_contribution_transform.json`](./assets/transforms/cl
 POST _transform/cluster_datastreams_contribution/_start
 ```
 
+As explained, you need 24h of data being available. If you just setup the integrations, wait for 24h+ then perform the actions.
+
 ## 7. Add Runtime Fields for Blended Cost Calculation
 Create a runtime field on `cluster_datastreams_contribution` with default weights:
 - **Indexing**: 20 (only for hot tier)
