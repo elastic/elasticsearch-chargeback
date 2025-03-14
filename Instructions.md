@@ -79,7 +79,7 @@ DELETE cluster_datastreams_contribution
 DELETE _transform/cluster_datastreams_contribution
 ```
 
-Then, recreate and start the transform with the correct piplines.
+Then, recreate and start the transform with the correct pipelines.
 
 File: [`cluster_datastreams_contribution.json`](./assets/transforms/cluster_datastreams_contribution.json)
 
@@ -98,7 +98,7 @@ Weights can be adjusted based on requirements.
 File: [`cluster_datastreams_contribution_mapping.json`](./assets/mappings/cluster_datastreams_contribution_mapping.json)
 
 ## 8. Automate Enrich Policy Refreshing
-Two Watchers will execute daily to refresh enrich data. Follow these steps:
+Two Watchers will execute daily to refresh the enrichment data. Follow these steps:
 - Create a role with minimal privileges.
 - Create a user with these privileges (choose your own password).
 - Set up Watchers for (add password and endpoint):
