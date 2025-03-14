@@ -1,0 +1,19 @@
+PUT _ingest/pipeline/set_composite_tier_key
+{
+  "description": "Standardise on deployment_id (vs cluster_name) and set composite_key from @timestamp, deployment_id and tier",
+  "processors": [
+    {
+      "script": {
+        "lang": "painless",
+        "source": """
+          if (ctx.cluster_name != null) {
+            ctx.deployment_id = ctx.cluster_name;
+          }
+          if (ctx['@timestamp'] != null) {
+              ctx.composite_tier_key = ctx['@timestamp'] + '_' + ctx.deployment_id + '_' + ctx.tier.replace("/", "_");
+          }
+        """
+      }
+    }
+  ]
+}
