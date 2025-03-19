@@ -1,0 +1,76 @@
+name: Bug Report
+description: Report an issue encountered while following the Chargeback Module instructions
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: "## 🐛 Bug Report\nPlease provide a clear and concise description of the issue you encountered while following the Chargeback Module instructions."
+
+  - type: textarea
+    id: step
+    attributes:
+      label: "❓ Step of Instructions"
+      description: "Which step in the Chargeback Module instructions did the issue occur at? (Provide the section name, step number, or link to the specific instruction in the [GitHub repo](https://github.com/elastic/elasticsearch-chargeback))."
+      placeholder: "Example: 'Step 3 - Create the transform' or 'Pipeline setup section'"
+    validations:
+      required: true
+
+  - type: textarea
+    id: error
+    attributes:
+      label: "🚨 Error Message"
+      description: "Copy and paste the exact error message."
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: query
+    attributes:
+      label: "📌 Query or Command Used"
+      description: "What exact query or command caused the issue? (Remove sensitive data before posting.)"
+      render: shell
+      placeholder: |
+        Example:
+        ```json
+        GET _transform/chargeback-transform/_stats
+        ```
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: "🔢 Elastic Stack Version"
+      description: "Which version of the Elastic Stack are you using?"
+      placeholder: "Example: 8.17.1"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: "🔄 Steps to Reproduce"
+      description: "Provide a step-by-step guide to reproduce the issue."
+      placeholder: |
+        1. 
+        2.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: "✅ Expected Behavior"
+      description: "What did you expect to happen?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: "🖼️ Screenshot (if applicable)"
+      description: "Upload or link to a screenshot that illustrates the issue."
+    validations:
+      required: false
