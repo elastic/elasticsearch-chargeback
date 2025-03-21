@@ -1,0 +1,29 @@
+{
+    "description": "Add the value of ECU to the billing information",
+    "processors": [
+        {
+            "set": {
+                "field": "ess.billing.ecu_value",
+                "value": 0.85
+            }
+        },
+        {
+            "script": {
+                "lang": "painless",
+                "tag": "cost_script",
+                "description": "calculates the total ECU value based on the ecu_value field and ess.billing.total_ecu",
+                "source": "ctx['ess']['billing']['total_ecu_value'] = ctx['ess']['billing']['total_ecu'] * ctx['ess']['billing']['ecu_value'];",
+                "ignore_failure": true
+            }
+        },
+        {
+            "script": {
+                "lang": "painless",
+                "tag": "cost_script",
+                "description": "calculates the ECU rate value based on the ecu_value field and ess.billing.rate.value",
+                "source": "ctx['ess']['billing']['rate']['ecu_value'] = ctx['ess']['billing']['rate']['value'] * ctx['ess']['billing']['ecu_value'];ctx['ess']['billing']['rate']['ecu_formatted_value'] = ctx['ess']['billing']['rate']['value'] * ctx['ess']['billing']['ecu_value'] + ' per ' + ctx['ess']['billing']['unit'];",
+                "ignore_failure": true
+            }
+        }
+    ]
+}
