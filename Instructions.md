@@ -125,6 +125,8 @@ POST _transform/billing_cluster_cost/_start
 ### Per Deployment
 Aggregates query time, indexing time, and storage size per deployment per day.
 
+**Note:** The integration looks at the `event.ingested` time, and therefore the transform mentioned in dependencies needs to have been started at least 24 hours before. If not, the process will fail when you try to set up the enrichment policy based on the output of the consumption transforms.
+
 ```json
 PUT _transform/cluster_deployment_contribution
 {
@@ -198,9 +200,11 @@ POST _transform/cluster_deployment_contribution/_start
 ```
 
 ### Per Data Stream
-Aggregates query time, indexing time, and storage size per deployment, per tier, per day. Runs hourly with a 24-hour delay to ensure completeness. This does mean that if you just setup the required integrations, you don't have 24h old data yet.
+Aggregates query time, indexing time, and storage size per deployment, per tier, per day. Runs hourly with a 24-hour delay to ensure completeness. This does mean that if you just setup the required integrations, you don't have 24h old data yet. 
 
-**Note:** Since the enrichment policies and pipelines are interdependent on the data stream transform, we first create the transform without the final pipeline.
+**Note 1:** The integration looks at the `event.ingested` time, and therefore the transform mentioned in dependencies needs to have been started at least 24 hours before. If not, the process will fail when you try to set up the enrichment policy based on the output of the consumption transforms.
+
+**Note 2:** Since the enrichment policies and pipelines are interdependent on the data stream transform, we first create the transform without the final pipeline.
 
 ```json
 PUT _transform/cluster_datastreams_contribution
@@ -301,6 +305,7 @@ POST /_enrich/policy/cluster_cost_enrich_policy/_execute
 ```
 
 ### Cluster Contribution
+
 Joins `sum_query_time`, `sum_indexing_time`, `sum_store_size`, `sum_data_set_store_size`, and `tier` from Elasticsearch integration with usage data.
 
 ```json
