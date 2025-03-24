@@ -62,6 +62,7 @@ Aggregates ECU consumption per deployment per day. Runs hourly, processing `metr
 ```json
 PUT _transform/billing_cluster_cost
 {
+  "description": "Aggregates daily total ECU usage per deployment from billing metrics, using ingested timestamps with a 1-hour sync delay and running every 60 minutes.",
   "source": {
     "index": [
       "metrics-ess_billing.billing-default"
@@ -130,6 +131,7 @@ Aggregates query time, indexing time, and storage size per deployment per day.
 ```json
 PUT _transform/cluster_deployment_contribution
 {
+  "description": "Aggregates daily total ECU usage per deployment from billing metrics, using ingested timestamps with a 1-hour sync delay and running every 60 minutes.",
   "source": {
     "index": [
       "monitoring-indices"
@@ -209,6 +211,7 @@ Aggregates query time, indexing time, and storage size per deployment, per tier,
 ```json
 PUT _transform/cluster_datastreams_contribution
 {
+  "description": "Aggregates daily query time, indexing time, and storage usage per data stream, cluster, and tier from monitoring indices, using ingested timestamps with a 24-hour sync delay and running every 60 minutes.",
   "source": {
     "index": [
       "monitoring-indices"
@@ -407,6 +410,7 @@ Then, recreate and start the transform with the correct pipelines.
 ```json
 PUT _transform/cluster_datastreams_contribution
 {
+  "description": "Aggregates daily query time, indexing time, and storage usage per data stream, cluster, and tier from monitoring indices, using ingested timestamps with a 24-hour sync delay and running every 60 minutes.",
   "source": {
     "index": [
       "monitoring-indices"

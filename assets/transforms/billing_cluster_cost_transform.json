@@ -1,5 +1,6 @@
 PUT _transform/billing_cluster_cost
 {
+  "description": "Aggregates daily total ECU usage per deployment from billing metrics, using ingested timestamps with a 1-hour sync delay and running every 60 minutes.",
   "source": {
     "index": [
       "metrics-ess_billing.billing-default"

@@ -1,5 +1,6 @@
 PUT _transform/cluster_datastreams_contribution
 {
+  "description": "Aggregates daily query time, indexing time, and storage usage per data stream, cluster, and tier from monitoring indices, using ingested timestamps with a 24-hour sync delay and running every 60 minutes.",
   "source": {
     "index": [
       "monitoring-indices"
