@@ -1,0 +1,44 @@
+PUT cluster_deployment_contribution/_mapping
+{
+  "properties": {
+    "@timestamp": {
+      "type": "date"
+    },
+    "cluster_name": {
+      "type": "keyword"
+    },
+    "composite_tier_key": {
+      "type": "text",
+      "fields": {
+        "keyword": {
+          "type": "keyword",
+          "ignore_above": 256
+        }
+      }
+    },
+    "deployment_id": {
+      "type": "text",
+      "fields": {
+        "keyword": {
+          "type": "keyword",
+          "ignore_above": 256
+        }
+      }
+    },
+    "sum_data_set_store_size": {
+      "type": "double"
+    },
+    "sum_indexing_time": {
+      "type": "double"
+    },
+    "sum_query_time": {
+      "type": "double"
+    },
+    "sum_store_size": {
+      "type": "double"
+    },
+    "tier": {
+      "type": "keyword"
+    }
+  }
+}
