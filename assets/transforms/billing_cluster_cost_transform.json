@@ -47,6 +47,11 @@ PUT _transform/billing_cluster_cost
         "sum": {
           "field": "ess.billing.total_ecu"
         }
+      },
+      "total_ecu_value": {
+        "sum": {
+          "field": "ess.billing.total_ecu_value"
+        }
       }
     }
   }

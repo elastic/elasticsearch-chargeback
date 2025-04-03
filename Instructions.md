@@ -109,6 +109,11 @@ PUT _transform/billing_cluster_cost
         "sum": {
           "field": "ess.billing.total_ecu"
         }
+      },
+      "total_ecu_value": {
+        "sum": {
+          "field": "ess.billing.total_ecu_value"
+        }
       }
     }
   }
@@ -290,7 +295,7 @@ PUT /_enrich/policy/cluster_cost_enrich_policy
   "match": {
     "indices": "billing_cluster_cost",
     "match_field": "composite_key",
-    "enrich_fields": ["total_ecu","deployment_name"]
+    "enrich_fields": ["total_ecu","deployment_name","total_ecu_cost"]
   }
 }
 ```
