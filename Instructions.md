@@ -295,7 +295,7 @@ PUT /_enrich/policy/cluster_cost_enrich_policy
   "match": {
     "indices": "billing_cluster_cost",
     "match_field": "composite_key",
-    "enrich_fields": ["total_ecu","deployment_name","total_ecu_cost"]
+    "enrich_fields": ["total_ecu","deployment_name","total_ecu_value"]
   }
 }
 ```
@@ -366,23 +366,27 @@ PUT _ingest/pipeline/cluster_cost_enrichment_pipeline
             if (ctx.sum_indexing_time > 0) {
                 if (ctx.deployment_contribution.sum_indexing_time != null && ctx.deployment_contribution.sum_indexing_time != 0) 
                     ctx.ecu_index_contribution = Math.round((ctx.sum_indexing_time / ctx.deployment_contribution.sum_indexing_time) * ctx.data_stream_cost.total_ecu * 1000) / 1000.0;
+                    ctx.ecu_value_index_contribution = Math.round((ctx.sum_indexing_time / ctx.deployment_contribution.sum_indexing_time) * ctx.data_stream_cost.total_ecu_value * 1000) / 1000.0;
             }
 
             if (ctx.sum_query_time > 0) {
                 if (ctx.deployment_contribution.sum_query_time != null && ctx.deployment_contribution.sum_query_time != 0)
                     ctx.ecu_query_contribution = Math.round((ctx.sum_query_time / ctx.deployment_contribution.sum_query_time) * ctx.data_stream_cost.total_ecu * 1000) / 1000.0;
+                    ctx.ecu_value_query_contribution = Math.round((ctx.sum_query_time / ctx.deployment_contribution.sum_query_time) * ctx.data_stream_cost.total_ecu_value * 1000) / 1000.0;
             }
 
             // Gets the storage contribution from the primary data set size. For searchable snapshots this is the only value available.
             if (ctx.sum_data_set_store_size > 0) {
                 if (ctx.deployment_contribution.sum_data_set_store_size != null && ctx.deployment_contribution.sum_data_set_store_size != 0)
                     ctx.ecu_storage_contribution = Math.round((ctx.sum_data_set_store_size / ctx.deployment_contribution.sum_data_set_store_size) * ctx.data_stream_cost.total_ecu * 1000000) / 1000000.0;
+                    ctx.ecu_value_storage_contribution = Math.round((ctx.sum_data_set_store_size / ctx.deployment_contribution.sum_data_set_store_size) * ctx.data_stream_cost.total_ecu_value * 1000000) / 1000000.0;
             }
 
             // Overwrites the storage contribution when we have sum_store_size availble. This will be the case for all non-searchable snapshot data streams.
             if (ctx.sum_store_size > 0) {
               if (ctx.deployment_contribution.sum_store_size != null && ctx.deployment_contribution.sum_store_size != 0)
                   ctx.ecu_storage_contribution = Math.round((ctx.sum_store_size / ctx.deployment_contribution.sum_store_size) * ctx.data_stream_cost.total_ecu * 1000000) / 1000000.0;
+                  ctx.ecu_value_storage_contribution = Math.round((ctx.sum_store_size / ctx.deployment_contribution.sum_store_size) * ctx.data_stream_cost.total_ecu_value * 1000000) / 1000000.0;
             }
          }
         """
