@@ -52,6 +52,8 @@ This means that storage will contribute the most to the blended cost calculation
 
 ![Chargeback flow](assets/img/Chargeback%20flow.png)
 
+![data_flow](assets/img/data_flow.png)
+
 ## Dashboards
 
 Once you have loaded the dashboards, you can navigate to the `[Tech Preview] Chargeback (0.2.0)` dashboard that provides the Chargeback insight into deployments, data streams and data tiers.
