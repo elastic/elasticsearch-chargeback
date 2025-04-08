@@ -1,5 +1,6 @@
 PUT _transform/cluster_deployment_contribution
 {
+  "description": "Aggregates daily total ECU usage per deployment from billing metrics, using ingested timestamps with a 1-hour sync delay and running every 60 minutes.",
   "source": {
     "index": [
       "monitoring-indices"

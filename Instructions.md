@@ -62,6 +62,7 @@ Aggregates ECU consumption per deployment per day. Runs hourly, processing `metr
 ```json
 PUT _transform/billing_cluster_cost
 {
+  "description": "Aggregates daily total ECU usage per deployment from billing metrics, using ingested timestamps with a 1-hour sync delay and running every 60 minutes.",
   "source": {
     "index": [
       "metrics-ess_billing.billing-default"
@@ -128,6 +129,7 @@ Aggregates query time, indexing time, and storage size per deployment per day.
 ```json
 PUT _transform/cluster_deployment_contribution
 {
+  "description": "Aggregates daily total ECU usage per deployment from billing metrics, using ingested timestamps with a 1-hour sync delay and running every 60 minutes.",
   "source": {
     "index": [
       "monitoring-indices"
@@ -197,14 +199,65 @@ File: [`cluster_deployment_contribution_transform.json`](./assets/transforms/clu
 POST _transform/cluster_deployment_contribution/_start
 ```
 
+If the transform of the Elasticsearch integration has not been running for more than 24 hours, we need to create the mapping for the transform's destination index, so that we are able to set up the required enrich policy.
+
+```json
+PUT cluster_deployment_contribution/_mapping
+{
+  "properties": {
+    "@timestamp": {
+      "type": "date"
+    },
+    "cluster_name": {
+      "type": "keyword"
+    },
+    "composite_tier_key": {
+      "type": "text",
+      "fields": {
+        "keyword": {
+          "type": "keyword",
+          "ignore_above": 256
+        }
+      }
+    },
+    "deployment_id": {
+      "type": "text",
+      "fields": {
+        "keyword": {
+          "type": "keyword",
+          "ignore_above": 256
+        }
+      }
+    },
+    "sum_data_set_store_size": {
+      "type": "double"
+    },
+    "sum_indexing_time": {
+      "type": "double"
+    },
+    "sum_query_time": {
+      "type": "double"
+    },
+    "sum_store_size": {
+      "type": "double"
+    },
+    "tier": {
+      "type": "keyword"
+    }
+  }
+}
+```
+File: [`cluster_deployment_contribution_mapping.json`](./assets/mappings/cluster_deployment_contribution_mapping.json)
+
 ### Per Data Stream
-Aggregates query time, indexing time, and storage size per deployment, per tier, per day. Runs hourly with a 24-hour delay to ensure completeness. This does mean that if you just setup the required integrations, you don't have 24h old data yet.
+Aggregates query time, indexing time, and storage size per deployment, per tier, per day. Runs hourly with a 24-hour delay to ensure completeness. This does mean that if you just setup the required integrations, you don't have 24h old data yet. 
 
 **Note:** Since the enrichment policies and pipelines are interdependent on the data stream transform, we first create the transform without the final pipeline.
 
 ```json
 PUT _transform/cluster_datastreams_contribution
 {
+  "description": "Aggregates daily query time, indexing time, and storage usage per data stream, cluster, and tier from monitoring indices, using ingested timestamps with a 24-hour sync delay and running every 60 minutes.",
   "source": {
     "index": [
       "monitoring-indices"
@@ -301,6 +354,7 @@ POST /_enrich/policy/cluster_cost_enrich_policy/_execute
 ```
 
 ### Cluster Contribution
+
 Joins `sum_query_time`, `sum_indexing_time`, `sum_store_size`, `sum_data_set_store_size`, and `tier` from Elasticsearch integration with usage data.
 
 ```json
@@ -402,6 +456,7 @@ Then, recreate and start the transform with the correct pipelines.
 ```json
 PUT _transform/cluster_datastreams_contribution
 {
+  "description": "Aggregates daily query time, indexing time, and storage usage per data stream, cluster, and tier from monitoring indices, using ingested timestamps with a 24-hour sync delay and running every 60 minutes.",
   "source": {
     "index": [
       "monitoring-indices"
@@ -475,8 +530,6 @@ File: [`cluster_datastreams_contribution_transform.json`](./assets/transforms/cl
 ```sh
 POST _transform/cluster_datastreams_contribution/_start
 ```
-
-As explained, you need 24h of data being available. If you just setup the integrations, wait for 24h+ then perform the actions.
 
 ## 7. Add Runtime Fields for Blended Cost Calculation
 Create a runtime field on `cluster_datastreams_contribution` with default weights:
