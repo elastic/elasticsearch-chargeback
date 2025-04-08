@@ -355,7 +355,7 @@ PUT /_enrich/policy/cluster_cost_enrich_policy
   "match": {
     "indices": "billing_cluster_cost",
     "match_field": "composite_key",
-    "enrich_fields": ["total_ecu","deployment_name","total_ecu_value"]
+    "enrich_fields": ["total_ecu","deployment_name","total_ecu_value", "ecu_rate"]
   }
 }
 ```
