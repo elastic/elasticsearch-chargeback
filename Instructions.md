@@ -56,6 +56,61 @@ PUT _ingest/pipeline/set_composite_tier_key
 ```
 File: [`set_composite_tier_key_pipeline.json`](./assets/pipelines/set_composite_tier_key_pipeline.json)
 
+### Add pipeline for the ESS billing integration
+To calculate the _value_ of your ECU, you need to add a rate to the ESS billing information. This will cascade down.
+Modify the `ess.billing.ecu_value` field with your value rate. E.g if 1 ECU is $2.2 worth you would modify the `0.85` to `2.2`
+
+>These instructions assume this pipeline does not exist yet!
+
+```json
+PUT _ingest/pipeline/metrics-ess_billing.billing@custom
+{
+    "description": "Add the value of ECU to the billing information",
+    "processors": [
+        {
+            "set": {
+                "field": "ess.billing.ecu_value",
+                "value": 0.85
+            }
+        },
+        {
+            "script": {
+                "lang": "painless",
+                "tag": "cost_script",
+                "description": "calculates the total ECU value based on the ecu_value field and ess.billing.total_ecu",
+                "source": "ctx['ess']['billing']['total_ecu_value'] = ctx['ess']['billing']['total_ecu'] * ctx['ess']['billing']['ecu_value'];",
+                "ignore_failure": true
+            }
+        },
+        {
+            "script": {
+                "lang": "painless",
+                "tag": "cost_script",
+                "description": "calculates the ECU rate value based on the ecu_value field and ess.billing.rate.value",
+                "source": "ctx['ess']['billing']['rate']['ecu_value'] = ctx['ess']['billing']['rate']['value'] * ctx['ess']['billing']['ecu_value'];ctx['ess']['billing']['rate']['ecu_formatted_value'] = ctx['ess']['billing']['rate']['value'] * ctx['ess']['billing']['ecu_value'] + ' per ' + ctx['ess']['billing']['unit'];",
+                "ignore_failure": true
+            }
+        }
+    ],
+    "on_failure": [
+        {
+            "set": {
+                "field": "event.kind",
+                "value": "pipeline_error"
+            }
+        },
+        {
+            "append": {
+                "field": "error.message",
+                "value": "{{{ _ingest.on_failure_message }}}"
+            }
+        }
+    ]
+}
+```
+File: [`ess_billing_custom.json`](./assets/pipelines/ess_billing_custom.json)
+
+
 ## 2. Create Billing Transform
 Aggregates ECU consumption per deployment per day. Runs hourly, processing `metrics-ess_billing.billing-default`.
 
