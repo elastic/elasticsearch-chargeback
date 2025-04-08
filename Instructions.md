@@ -157,6 +157,11 @@ PUT _transform/billing_cluster_cost
         "terms": {
           "field": "ess.billing.deployment_name"
         }
+      },
+      "ecu_rate": {
+        "terms": {
+          "field": "ess.billing.ecu_value"
+        }
       }
     },
     "aggregations": {
