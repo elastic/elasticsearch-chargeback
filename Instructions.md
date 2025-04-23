@@ -56,6 +56,61 @@ PUT _ingest/pipeline/set_composite_tier_key
 ```
 File: [`set_composite_tier_key_pipeline.json`](./assets/pipelines/set_composite_tier_key_pipeline.json)
 
+### Add pipeline for the ESS billing integration
+To calculate the _value_ of your ECU, you need to add a rate to the ESS billing information. This will cascade down.
+Modify the `ess.billing.ecu_value` field with your value rate. E.g if 1 ECU is $2.2 worth you would modify the `0.85` to `2.2`
+
+>These instructions assume this pipeline does not exist yet!
+
+```json
+PUT _ingest/pipeline/metrics-ess_billing.billing@custom
+{
+    "description": "Add the value of ECU to the billing information",
+    "processors": [
+        {
+            "set": {
+                "field": "ess.billing.ecu_value",
+                "value": 0.85
+            }
+        },
+        {
+            "script": {
+                "lang": "painless",
+                "tag": "cost_script",
+                "description": "calculates the total ECU value based on the ecu_value field and ess.billing.total_ecu",
+                "source": "ctx['ess']['billing']['total_ecu_value'] = ctx['ess']['billing']['total_ecu'] * ctx['ess']['billing']['ecu_value'];",
+                "ignore_failure": true
+            }
+        },
+        {
+            "script": {
+                "lang": "painless",
+                "tag": "cost_script",
+                "description": "calculates the ECU rate value based on the ecu_value field and ess.billing.rate.value",
+                "source": "ctx['ess']['billing']['rate']['ecu_value'] = ctx['ess']['billing']['rate']['value'] * ctx['ess']['billing']['ecu_value'];ctx['ess']['billing']['rate']['ecu_formatted_value'] = ctx['ess']['billing']['rate']['value'] * ctx['ess']['billing']['ecu_value'] + ' per ' + ctx['ess']['billing']['unit'];",
+                "ignore_failure": true
+            }
+        }
+    ],
+    "on_failure": [
+        {
+            "set": {
+                "field": "event.kind",
+                "value": "pipeline_error"
+            }
+        },
+        {
+            "append": {
+                "field": "error.message",
+                "value": "{{{ _ingest.on_failure_message }}}"
+            }
+        }
+    ]
+}
+```
+File: [`ess_billing_custom.json`](./assets/pipelines/ess_billing_custom.json)
+
+
 ## 2. Create Billing Transform
 Aggregates ECU consumption per deployment per day. Runs hourly, processing `metrics-ess_billing.billing-default`.
 
@@ -103,12 +158,22 @@ PUT _transform/billing_cluster_cost
         "terms": {
           "field": "ess.billing.deployment_name"
         }
+      },
+      "ecu_rate": {
+        "terms": {
+          "field": "ess.billing.ecu_value"
+        }
       }
     },
     "aggregations": {
       "total_ecu": {
         "sum": {
           "field": "ess.billing.total_ecu"
+        }
+      },
+      "total_ecu_value": {
+        "sum": {
+          "field": "ess.billing.total_ecu_value"
         }
       }
     }
@@ -343,7 +408,7 @@ PUT /_enrich/policy/cluster_cost_enrich_policy
   "match": {
     "indices": "billing_cluster_cost",
     "match_field": "composite_key",
-    "enrich_fields": ["total_ecu","deployment_name"]
+    "enrich_fields": ["total_ecu","deployment_name","total_ecu_value", "ecu_rate"]
   }
 }
 ```
@@ -415,23 +480,27 @@ PUT _ingest/pipeline/cluster_cost_enrichment_pipeline
             if (ctx.sum_indexing_time > 0) {
                 if (ctx.deployment_contribution.sum_indexing_time != null && ctx.deployment_contribution.sum_indexing_time != 0) 
                     ctx.ecu_index_contribution = Math.round((ctx.sum_indexing_time / ctx.deployment_contribution.sum_indexing_time) * ctx.data_stream_cost.total_ecu * 1000) / 1000.0;
+                    ctx.ecu_value_index_contribution = Math.round((ctx.sum_indexing_time / ctx.deployment_contribution.sum_indexing_time) * ctx.data_stream_cost.total_ecu_value * 1000) / 1000.0;
             }
 
             if (ctx.sum_query_time > 0) {
                 if (ctx.deployment_contribution.sum_query_time != null && ctx.deployment_contribution.sum_query_time != 0)
                     ctx.ecu_query_contribution = Math.round((ctx.sum_query_time / ctx.deployment_contribution.sum_query_time) * ctx.data_stream_cost.total_ecu * 1000) / 1000.0;
+                    ctx.ecu_value_query_contribution = Math.round((ctx.sum_query_time / ctx.deployment_contribution.sum_query_time) * ctx.data_stream_cost.total_ecu_value * 1000) / 1000.0;
             }
 
             // Gets the storage contribution from the primary data set size. For searchable snapshots this is the only value available.
             if (ctx.sum_data_set_store_size > 0) {
                 if (ctx.deployment_contribution.sum_data_set_store_size != null && ctx.deployment_contribution.sum_data_set_store_size != 0)
                     ctx.ecu_storage_contribution = Math.round((ctx.sum_data_set_store_size / ctx.deployment_contribution.sum_data_set_store_size) * ctx.data_stream_cost.total_ecu * 1000000) / 1000000.0;
+                    ctx.ecu_value_storage_contribution = Math.round((ctx.sum_data_set_store_size / ctx.deployment_contribution.sum_data_set_store_size) * ctx.data_stream_cost.total_ecu_value * 1000000) / 1000000.0;
             }
 
             // Overwrites the storage contribution when we have sum_store_size availble. This will be the case for all non-searchable snapshot data streams.
             if (ctx.sum_store_size > 0) {
               if (ctx.deployment_contribution.sum_store_size != null && ctx.deployment_contribution.sum_store_size != 0)
                   ctx.ecu_storage_contribution = Math.round((ctx.sum_store_size / ctx.deployment_contribution.sum_store_size) * ctx.data_stream_cost.total_ecu * 1000000) / 1000000.0;
+                  ctx.ecu_value_storage_contribution = Math.round((ctx.sum_store_size / ctx.deployment_contribution.sum_store_size) * ctx.data_stream_cost.total_ecu_value * 1000000) / 1000000.0;
             }
          }
         """
