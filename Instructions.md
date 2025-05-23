@@ -61,6 +61,7 @@ To calculate the _value_ of your ECU, you need to add a rate to the ESS billing 
 Modify the `ess.billing.ecu_value` field with your value rate. E.g if 1 ECU is $2.2 worth you would modify the `0.85` to `2.2`
 
 >These instructions assume this pipeline does not exist yet!
+>Note: this custom pipeline should be generated on the environment where the ESS billing integration is running.
 
 ```json
 PUT _ingest/pipeline/metrics-ess_billing.billing@custom
