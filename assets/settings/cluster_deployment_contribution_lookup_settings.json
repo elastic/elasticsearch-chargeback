@@ -1,0 +1,6 @@
+PUT cluster_deployment_contribution_lookup
+{
+  "settings": {
+    "index.mode": "lookup"
+  }
+}

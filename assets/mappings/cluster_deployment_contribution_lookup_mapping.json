@@ -1,4 +1,4 @@
-PUT cluster_deployment_contribution/_mapping
+PUT cluster_deployment_contribution_lookup/_mapping
 {
   "properties": {
     "@timestamp": {
@@ -8,22 +8,13 @@ PUT cluster_deployment_contribution/_mapping
       "type": "keyword"
     },
     "composite_tier_key": {
-      "type": "text",
-      "fields": {
-        "keyword": {
-          "type": "keyword",
-          "ignore_above": 256
-        }
-      }
+      "type": "keyword"
+    },
+    "composite_key": {
+      "type": "keyword"
     },
     "deployment_id": {
-      "type": "text",
-      "fields": {
-        "keyword": {
-          "type": "keyword",
-          "ignore_above": 256
-        }
-      }
+      "type": "keyword"
     },
     "sum_data_set_store_size": {
       "type": "double"

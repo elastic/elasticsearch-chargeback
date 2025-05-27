@@ -1,0 +1,63 @@
+PUT _ingest/pipeline/metrics-ess_billing.billing@custom
+{
+    "description": "Add the value of ECU to the billing information using scaled integer and divisor",
+    "version": 2,
+    "processors": [
+      {
+        "set": {
+          "field": "ess.billing.ecu_value_scaled",
+          "value": 850
+        }
+      },
+      {
+        "set": {
+          "field": "ess.billing.ecu_value_divisor",
+          "value": 1000
+        }
+      },
+      {
+        "script": {
+          "lang": "painless",
+          "tag": "total_ecu_cost",
+          "source": """
+            if (ctx.ess.billing.ecu_value_scaled != null && ctx.ess.billing.ecu_value_divisor != null) {
+              double divisor = ctx.ess.billing.ecu_value_divisor;
+              double ecu = ctx.ess.billing.ecu_value_scaled / divisor;
+              ctx.ess.billing.total_ecu_value = Math.round(ctx.ess.billing.total_ecu * ecu * divisor) / divisor;
+            }
+          """,
+          "ignore_failure": true
+        }
+      },
+      {
+        "script": {
+          "lang": "painless",
+          "tag": "rate_and_formatted",
+          "source": """
+            if (ctx.ess.billing.ecu_value_scaled != null && ctx.ess.billing.ecu_value_divisor != null) {
+              double divisor = ctx.ess.billing.ecu_value_divisor;
+              double ecu = ctx.ess.billing.ecu_value_scaled / divisor;
+              double rate = ctx.ess.billing.rate.value * ecu;
+              ctx.ess.billing.rate.ecu_value = Math.round(rate * divisor) / divisor;
+              ctx.ess.billing.rate.ecu_formatted_value = ctx.ess.billing.rate.ecu_value + ' per ' + ctx.ess.billing.unit;
+            }
+          """,
+          "ignore_failure": true
+        }
+      }
+    ],
+    "on_failure": [
+        {
+            "set": {
+                "field": "event.kind",
+                "value": "pipeline_error"
+            }
+        },
+        {
+            "append": {
+                "field": "error.message",
+                "value": "{{{ _ingest.on_failure_message }}}"
+            }
+        }
+    ]
+}

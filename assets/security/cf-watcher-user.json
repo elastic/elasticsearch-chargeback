@@ -1,7 +1,0 @@
-POST /_security/user/cf-watcher-user
-{
-  "password": "{SELECT_YOUR_OWN_PASSWORD}",
-  "roles": ["enrichment_policy_role"],
-  "full_name": "CF Watcher User",
-  "email": "cf-watcher-user@example.com"
-}

@@ -1,4 +1,4 @@
-PUT _transform/cluster_deployment_contribution
+PUT _transform/cluster_deployment_contribution_transform
 {
   "description": "Aggregates daily total ECU usage per deployment from billing metrics, using ingested timestamps with a 1-hour sync delay and running every 60 minutes.",
   "source": {
@@ -10,8 +10,8 @@ PUT _transform/cluster_deployment_contribution
     }
   },
   "dest": {
-    "index": "cluster_deployment_contribution",
-    "pipeline": "set_composite_tier_key"
+    "index": "cluster_deployment_contribution_lookup",
+    "pipeline": "set_consumption_composite_key"
   },
   "frequency": "60m",
   "sync": {
