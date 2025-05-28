@@ -20,14 +20,6 @@ FROM monitoring-indices
 ON composite_key
 | LOOKUP JOIN cluster_deployment_contribution_lookup
 ON composite_tier_key
-| KEEP 
-    @timestamp,composite_key,composite_tier_key,
-    elasticsearch.cluster.name,elasticsearch.index.datastream,elasticsearch.index.tier,
-    sum_query_time_local,sum_query_time,
-    sum_indexing_time_local,sum_indexing_time,
-    sum_data_set_store_size_local,sum_data_set_store_size,
-    sum_store_size_local,sum_store_size,
-    ecu_rate,total_ecu,total_ecu_value
 | EVAL 
     ecu_query_contribution = CASE (sum_query_time > 0, (sum_query_time_local / sum_query_time) * total_ecu, 0), 
     ecu_value_query_contribution = CASE (sum_query_time > 0, (sum_query_time_local / sum_query_time) * total_ecu_value, 0),
@@ -70,4 +62,12 @@ ON composite_tier_key
             (ecu_value_query_contribution * query_weight)
         ) / total_weight_cold
     )
+| KEEP 
+    @timestamp,composite_key,composite_tier_key,
+    elasticsearch.cluster.name,elasticsearch.index.datastream,elasticsearch.index.tier,
+    ecu_rate,total_ecu,total_ecu_value,
+    ecu_query_contribution, 
+    ecu_index_contribution, 
+    ecu_storage_contribution,
+    ecu_weighted_contribution
 //| LIMIT 10
