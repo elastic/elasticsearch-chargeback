@@ -5,14 +5,8 @@ PUT _ingest/pipeline/metrics-ess_billing.billing@custom
     "processors": [
       {
         "set": {
-          "field": "ess.billing.ecu_value_scaled",
-          "value": 850
-        }
-      },
-      {
-        "set": {
-          "field": "ess.billing.ecu_value_divisor",
-          "value": 1000
+          "field": "ess.billing.ecu_rate",
+          "value": 0.85
         }
       },
       {
@@ -20,10 +14,11 @@ PUT _ingest/pipeline/metrics-ess_billing.billing@custom
           "lang": "painless",
           "tag": "total_ecu_cost",
           "source": """
-            if (ctx.ess.billing.ecu_value_scaled != null && ctx.ess.billing.ecu_value_divisor != null) {
-              double divisor = ctx.ess.billing.ecu_value_divisor;
-              double ecu = ctx.ess.billing.ecu_value_scaled / divisor;
-              ctx.ess.billing.total_ecu_value = Math.round(ctx.ess.billing.total_ecu * ecu * divisor) / divisor;
+            if (ctx.ess.billing.ecu_rate != null && ctx.ess.billing.total_ecu != null) {
+              def ecuRate = new BigDecimal(ctx.ess.billing.ecu_rate.toString());
+              def totalEcu = new BigDecimal(ctx.ess.billing.total_ecu.toString());
+              def totalValue = ecuRate.multiply(totalEcu).setScale(3, RoundingMode.HALF_UP);
+              ctx.ess.billing.total_ecu_value = totalValue.doubleValue();
             }
           """,
           "ignore_failure": true
@@ -34,12 +29,12 @@ PUT _ingest/pipeline/metrics-ess_billing.billing@custom
           "lang": "painless",
           "tag": "rate_and_formatted",
           "source": """
-            if (ctx.ess.billing.ecu_value_scaled != null && ctx.ess.billing.ecu_value_divisor != null) {
-              double divisor = ctx.ess.billing.ecu_value_divisor;
-              double ecu = ctx.ess.billing.ecu_value_scaled / divisor;
-              double rate = ctx.ess.billing.rate.value * ecu;
-              ctx.ess.billing.rate.ecu_value = Math.round(rate * divisor) / divisor;
-              ctx.ess.billing.rate.ecu_formatted_value = ctx.ess.billing.rate.ecu_value + ' per ' + ctx.ess.billing.unit;
+            if (ctx.ess.billing.ecu_rate != null && ctx.ess.billing.rate?.value != null) {
+              def ecu = new BigDecimal(ctx.ess.billing.ecu_rate.toString());
+              def rate = new BigDecimal(ctx.ess.billing.rate.value.toString());
+              def ecuRate = rate.multiply(ecu).setScale(3, RoundingMode.HALF_UP);
+              ctx.ess.billing.rate.ecu_value = ecuRate.doubleValue();
+              ctx.ess.billing.rate.ecu_formatted_value = ecuRate.toPlainString() + ' per ' + ctx.ess.billing.unit;
             }
           """,
           "ignore_failure": true
