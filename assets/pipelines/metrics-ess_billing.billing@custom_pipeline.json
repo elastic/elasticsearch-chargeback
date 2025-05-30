@@ -1,58 +1,58 @@
 PUT _ingest/pipeline/metrics-ess_billing.billing@custom
 {
-    "description": "Add the value of ECU to the billing information using scaled integer and divisor",
-    "version": 2,
-    "processors": [
-      {
-        "set": {
-          "field": "ess.billing.ecu_rate",
-          "value": 0.85
-        }
-      },
-      {
-        "script": {
-          "lang": "painless",
-          "tag": "total_ecu_cost",
-          "source": """
-            if (ctx.ess.billing.ecu_rate != null && ctx.ess.billing.total_ecu != null) {
-              def ecuRate = new BigDecimal(ctx.ess.billing.ecu_rate.toString());
-              def totalEcu = new BigDecimal(ctx.ess.billing.total_ecu.toString());
-              def totalValue = ecuRate.multiply(totalEcu).setScale(3, RoundingMode.HALF_UP);
-              ctx.ess.billing.total_ecu_value = totalValue.doubleValue();
-            }
-          """,
-          "ignore_failure": true
-        }
-      },
-      {
-        "script": {
-          "lang": "painless",
-          "tag": "rate_and_formatted",
-          "source": """
-            if (ctx.ess.billing.ecu_rate != null && ctx.ess.billing.rate?.value != null) {
-              def ecu = new BigDecimal(ctx.ess.billing.ecu_rate.toString());
-              def rate = new BigDecimal(ctx.ess.billing.rate.value.toString());
-              def ecuRate = rate.multiply(ecu).setScale(3, RoundingMode.HALF_UP);
-              ctx.ess.billing.rate.ecu_value = ecuRate.doubleValue();
-              ctx.ess.billing.rate.ecu_formatted_value = ecuRate.toPlainString() + ' per ' + ctx.ess.billing.unit;
-            }
-          """,
-          "ignore_failure": true
-        }
+  "description": "Add the value of ECU to the billing information using plain decimal math",
+  "version": 2,
+  "processors": [
+    {
+      "set": {
+        "field": "ess.billing.ecu_rate",
+        "value": 0.85
       }
-    ],
-    "on_failure": [
-        {
-            "set": {
-                "field": "event.kind",
-                "value": "pipeline_error"
-            }
-        },
-        {
-            "append": {
-                "field": "error.message",
-                "value": "{{{ _ingest.on_failure_message }}}"
-            }
-        }
-    ]
+    },
+    {
+      "script": {
+        "lang": "painless",
+        "tag": "total_ecu_cost",
+        "source": """
+          if (ctx.ess.billing.ecu_rate != null && ctx.ess.billing.total_ecu != null) {
+            def ecuRate = new BigDecimal(ctx.ess.billing.ecu_rate.toString());
+            def totalEcu = new BigDecimal(ctx.ess.billing.total_ecu.toString());
+            def totalValue = ecuRate.multiply(totalEcu).setScale(3, RoundingMode.HALF_UP);
+            ctx.ess.billing.total_ecu_value = totalValue.doubleValue();
+          }
+        """,
+        "ignore_failure": true
+      }
+    },
+    {
+      "script": {
+        "lang": "painless",
+        "tag": "rate_and_formatted",
+        "source": """
+          if (ctx.ess.billing.ecu_rate != null && ctx.ess.billing.rate?.value != null) {
+            def ecu = new BigDecimal(ctx.ess.billing.ecu_rate.toString());
+            def rate = new BigDecimal(ctx.ess.billing.rate.value.toString());
+            def ecuRate = rate.multiply(ecu).setScale(3, RoundingMode.HALF_UP);
+            ctx.ess.billing.rate.ecu_value = ecuRate.doubleValue();
+            ctx.ess.billing.rate.ecu_formatted_value = ecuRate.toPlainString() + ' per ' + ctx.ess.billing.unit;
+          }
+        """,
+        "ignore_failure": true
+      }
+    }
+  ],
+  "on_failure": [
+    {
+      "set": {
+        "field": "event.kind",
+        "value": "pipeline_error"
+      }
+    },
+    {
+      "append": {
+        "field": "error.message",
+        "value": "{{{ _ingest.on_failure_message }}}"
+      }
+    }
+  ]
 }
