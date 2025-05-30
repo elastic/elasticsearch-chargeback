@@ -1,4 +1,4 @@
-PUT _transform/billing_cluster_cost_transform
+PUT _transform/billing_cluster_cost_transform/
 {
   "description": "Aggregates daily total ECU usage per deployment from billing metrics, using ingested timestamps with a 1-hour sync delay and running every 60 minutes.",
   "source": {
@@ -41,11 +41,6 @@ PUT _transform/billing_cluster_cost_transform
         "terms": {
           "field": "ess.billing.deployment_name"
         }
-      },
-      "ecu_rate": {
-        "terms": {
-          "field": "ess.billing.ecu_value"
-        }
       }
     },
     "aggregations": {
@@ -57,6 +52,11 @@ PUT _transform/billing_cluster_cost_transform
       "total_ecu_value": {
         "sum": {
           "field": "ess.billing.total_ecu_value"
+        }
+      },
+      "ecu_rate": {
+        "max": {
+          "field": "ess.billing.ecu_value"
         }
       }
     }
