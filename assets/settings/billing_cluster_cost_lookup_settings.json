@@ -1,6 +1,0 @@
-PUT billing_cluster_cost_lookup
-{
-  "settings": {
-    "index.mode": "lookup"
-  }
-}
