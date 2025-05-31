@@ -30,7 +30,10 @@ FROM monitoring-indices
     index_weight = 20,
     total_weight_hot = storage_weight + query_weight + index_weight,
     total_weight_cold = storage_weight + query_weight,
-    ece_portion = CASE (elasticsearch.index.tier == "hot/content", (query_portion * query_weight + indexing_portion * index_weight + store_portion * storage_weight) / total_weight_hot, (query_portion * query_weight + store_portion * storage_weight) / total_weight_cold)
+    ece_portion = CASE (
+            elasticsearch.index.tier == "hot/content", 
+            (query_portion * query_weight + indexing_portion * index_weight + store_portion * storage_weight) / total_weight_hot, 
+            (query_portion * query_weight + store_portion * storage_weight) / total_weight_cold)
 //| KEEP
 //    @timestamp, 
 //    elasticsearch.cluster.name, 
