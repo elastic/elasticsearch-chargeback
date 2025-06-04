@@ -1,6 +1,6 @@
-PUT _transform/cluster_deployment_contribution_transform
+PUT _transform/cluster_datastream_contribution_transform
 {
-  "description": "Aggregates daily total ECU usage per DEPLOYMENT from billing metrics, using ingested timestamps with a 1-hour sync delay and running every 60 minutes.",
+  "description": "Aggregates daily total ECU usage per DATASTREAM from billing metrics, using ingested timestamps with a 1-hour sync delay and running every 60 minutes.",
   "source": {
     "index": [
       "monitoring-indices"
@@ -10,7 +10,7 @@ PUT _transform/cluster_deployment_contribution_transform
     }
   },
   "dest": {
-    "index": "cluster_deployment_contribution_lookup",
+    "index": "cluster_datastream_contribution_lookup",
     "pipeline": "set_consumption_composite_key"
   },
   "frequency": "60m",
@@ -32,26 +32,30 @@ PUT _transform/cluster_deployment_contribution_transform
         "terms": {
           "field": "elasticsearch.cluster.name"
         }
+      },
+      "datastream": {
+        "terms": {
+          "field": "elasticsearch.index.datastream"
+        }
       }
     },
     "aggregations": {
-      "deployment_sum_indexing_time": {
+      "datastream_sum_indexing_time": {
         "sum": {
           "field": "elasticsearch.index.total.indexing.index_time_in_millis"
         }
       },
-      "deployment_sum_query_time": {
+      "datastream_sum_query_time": {
         "sum": {
           "field": "elasticsearch.index.total.search.query_time_in_millis"
         }
       },
-      
-      "deployment_sum_store_size": {
+      "datastream_sum_store_size": {
         "sum": {
           "field": "elasticsearch.index.total.store.size_in_bytes"
         }
       },
-      "deployment_sum_data_set_store_size": {
+      "datastream_sum_data_set_store_size": {
         "sum": {
           "field": "elasticsearch.index.primaries.store.total_data_set_size_in_bytes"
         }

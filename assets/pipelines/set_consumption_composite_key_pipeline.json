@@ -1,6 +1,6 @@
 PUT _ingest/pipeline/set_consumption_composite_key
 {
-  "description": "Consumption Transform: Set composite_key from @timestamp and deployment_id. Set composite_tier_key from @timestamp, deployment_id and tier",
+  "description": "Consumption Transform: Set all the possible correlation keys. To be used in consumption transforms.",
   "processors": [
     {
       "script": {
@@ -11,7 +11,8 @@ PUT _ingest/pipeline/set_consumption_composite_key
           }
           if (ctx['@timestamp'] != null) {
             ctx.composite_key = ZonedDateTime.parse(ctx['@timestamp']).toLocalDate().toString() + '_' + ctx.deployment_id;
-            ctx.composite_tier_key = ctx.composite_key + '_' + ctx.tier.replace('/', '_');
+            if (ctx.tier != null) ctx.composite_tier_key = ctx.composite_key + '_' + ctx.tier.replace('/', '_');
+            if (ctx.datastream != null) ctx.composite_datastream_key = ctx.composite_key + '_' + ctx.datastream;
           }
         """
       }

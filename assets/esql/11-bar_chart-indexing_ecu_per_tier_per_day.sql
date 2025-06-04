@@ -1,0 +1,11 @@
+FROM billing_cluster_cost_lookup 
+| LOOKUP JOIN cluster_deployment_contribution_lookup ON composite_key
+| LOOKUP JOIN cluster_tier_contribution_lookup ON composite_key
+| EVAL 
+    indexing = CASE (deployment_sum_indexing_time > 0, tier_sum_indexing_time / deployment_sum_indexing_time * total_ecu)
+| STATS  
+    agg_indexing = sum(indexing)
+    BY 
+    @timestamp,
+    tier 
+| WHERE agg_indexing > 0
