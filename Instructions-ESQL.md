@@ -576,6 +576,132 @@ POST _transform/cluster_datastream_contribution_transform/_start
 POST _transform/cluster_datastream_contribution_transform/_schedule_now
 ```
 
+2.3 Tier and data stream-related
+
+```json
+PUT cluster_tier_and_datastream_contribution_lookup
+{
+  "settings": {
+    "index.mode": "lookup"
+  },
+  "mappings": {
+    "properties": {
+      "@timestamp": {
+        "type": "date"
+      },
+      "composite_key": {
+        "type": "keyword"
+      },
+      "composite_tier_key": {
+        "type": "keyword"
+      },
+      "cluster_name": {
+        "type": "keyword"
+      },
+      "deployment_id": {
+        "type": "keyword"
+      },
+      "tier": {
+        "type": "keyword"
+      },
+      "datastream": {
+        "type": "keyword"
+      },
+      "tier_and_datastream_sum_indexing_time": {
+        "type": "double"
+      },
+      "tier_and_datastream_sum_query_time": {
+        "type": "double"
+      },
+      "tier_and_datastream_sum_store_size": {
+        "type": "double"
+      },
+      "tier_and_datastream_sum_data_set_store_size": {
+        "type": "double"
+      }
+    }
+  }
+}
+```
+
+```json
+PUT _transform/cluster_tier_and_datastream_contribution_transform
+{
+  "description": "Aggregates daily total ECU usage per TIER and DATA STREAM from billing metrics, using ingested timestamps with a 1-hour sync delay and running every 60 minutes.",
+  "source": {
+    "index": [
+      "monitoring-indices"
+    ],
+    "query": {
+      "match_all": {}
+    }
+  },
+  "dest": {
+    "index": "cluster_tier_and_datastream_contribution_lookup",
+    "pipeline": "set_consumption_composite_key"
+  },
+  "frequency": "60m",
+  "sync": {
+    "time": {
+      "field": "event.ingested",
+      "delay": "1h"
+    }
+  },
+  "pivot": {
+    "group_by": {
+      "@timestamp": {
+        "date_histogram": {
+          "field": "@timestamp",
+          "calendar_interval": "1d"
+        }
+      },
+      "cluster_name": {
+        "terms": {
+          "field": "elasticsearch.cluster.name"
+        }
+      },
+      "tier": {
+        "terms": {
+          "field": "elasticsearch.index.tier"
+        }
+      },
+      "datastream": {
+        "terms": {
+          "field": "elasticsearch.index.datastream"
+        }
+      }
+    },
+    "aggregations": {
+      "tier_and_datastream_sum_indexing_time": {
+        "sum": {
+          "field": "elasticsearch.index.total.indexing.index_time_in_millis"
+        }
+      },
+      "tier_and_datastream_sum_query_time": {
+        "sum": {
+          "field": "elasticsearch.index.total.search.query_time_in_millis"
+        }
+      },
+      "tier_and_datastream_sum_store_size": {
+        "sum": {
+          "field": "elasticsearch.index.total.store.size_in_bytes"
+        }
+      },
+      "tier_and_datastream_sum_data_set_store_size": {
+        "sum": {
+          "field": "elasticsearch.index.primaries.store.total_data_set_size_in_bytes"
+        }
+      }
+    }
+  }
+}
+```
+
+```
+POST _transform/cluster_tier_and_datastream_contribution_transform/_start
+POST _transform/cluster_tier_and_datastream_contribution_transform/_schedule_now
+```
+
 3. Import dashboard saved-objects
 
 File: [`esql-dashboard.json`](./assets/saved_objects/esql-dashboard.ndjson)
