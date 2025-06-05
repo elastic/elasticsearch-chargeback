@@ -4,12 +4,12 @@
 
 Follow these steps in order using the Kibana Dev Console.
 
-1. Set up Billing-related indices and transform
+## 1. Set up Billing-related Indices and Transform
 
-1.1. Update / Create the ESS Billing integration's `@custom` pipeline. 
+### 1.1. Add Pipeline for the ESS Billing Integration
 
 To calculate the _value_ of your ECU, you need to add a rate to the ESS billing information. This will cascade down.
-Modify the `ess.billing.ecu_value` field with your value rate. E.g if 1 ECU is $2.2 worth you would modify the `0.85` to `2.2`
+Modify the `ess.billing.ecu_value` field with your value rate. E.g if 1 ECU is $2.2 worth you would modify the `0.85` to `2.2`.
 
 ```JSON
 PUT _ingest/pipeline/metrics-ess_billing.billing@custom
@@ -71,8 +71,12 @@ PUT _ingest/pipeline/metrics-ess_billing.billing@custom
   ]
 }
 ```
+File: [`metrics-ess_billing.billing@custom`](./assets/pipelines/metrics-ess_billing.billing@custom_pipeline.json)
 
-1.2.  Create the pipline that will be used to create a composite key by the billing transform:
+
+### 1.2. Set Composite Tier Key Pipeline
+
+Extends `set_composite_key` by adding the tier value to `composite_key`.
 
 ```JSON
 PUT _ingest/pipeline/set_billing_composite_key
@@ -92,8 +96,11 @@ PUT _ingest/pipeline/set_billing_composite_key
   ]
 }
 ```
+File: [`set_billing_composite_key`](./assets/pipelines/set_billing_composite_key_pipeline.json)
 
-1.3.  Create the `billing_cluster_cost_lookup` index with index mode "lookup":
+### 1.3.  Create Destination Index
+
+Create the `billing_cluster_cost_lookup` index with index mode "lookup".
 
 ```JSON
 PUT billing_cluster_cost_lookup
@@ -152,9 +159,9 @@ PUT billing_cluster_cost_lookup
   }
 }
 ```
-File: [`billing_cluster_cost_lookup.json`](./assets/indices/billing_cluster_cost_lookup.json)
+File: [`billing_cluster_cost_lookup`](./assets/indices/billing_cluster_cost_lookup.json)
 
-1.4. Create the billing transform:
+### 1.4. Create Billing Transform
 
 ```JSON
 PUT _transform/billing_cluster_cost_transform/
@@ -222,17 +229,20 @@ PUT _transform/billing_cluster_cost_transform/
   }
 }
 ```
+File: [`billing_cluster_cost_transform`](./assets/transforms/billing_cluster_cost_transform.json)
 
-1.5 Start and schedule the transform:
+
+Start the transform.
 
 ```
 POST _transform/billing_cluster_cost_transform/_start
-POST _transform/billing_cluster_cost_transform/_schedule_now
 ```
 
-2. Set up Consumption-related indices and transform
+## 2. Set up Consumption-related Indices and Transforms
 
-2.1 Deployment-related
+### 2.1 Dimension: Deployment (Lookup Index + Transform)
+
+#### Create Destination Index
 
 ```JSON
 PUT cluster_deployment_contribution_lookup
@@ -270,6 +280,8 @@ PUT cluster_deployment_contribution_lookup
   }
 }
 ```
+
+#### Create Transform
 
 ```json
 PUT _transform/cluster_deployment_contribution_transform
@@ -335,12 +347,15 @@ PUT _transform/cluster_deployment_contribution_transform
 }
 ```
 
+Start the transform.
+
 ```
 POST _transform/cluster_deployment_contribution_transform/_start
-POST _transform/cluster_deployment_contribution_transform/_schedule_now
 ```
 
-2.2 - Tier-related
+### 2.2 Dimension: Data tier (Lookup Index + Transform)
+
+#### Create Destination Index
 
 ```json
 PUT cluster_tier_contribution_lookup
@@ -384,6 +399,8 @@ PUT cluster_tier_contribution_lookup
   }
 }
 ```
+
+#### Create Transform
 
 ```json
 PUT _transform/cluster_tier_contribution_transform
@@ -453,12 +470,13 @@ PUT _transform/cluster_tier_contribution_transform
 }
 ```
 
+Start the transform.
+
 ```
 POST _transform/cluster_tier_contribution_transform/_start
-POST _transform/cluster_tier_contribution_transform/_schedule_now
 ```
 
-2.3 Data stream-related
+### 2.3 Dimension: Data stream (Lookup Index + Transfrom)
 
 ```json
 PUT cluster_datastream_contribution_lookup
@@ -502,6 +520,8 @@ PUT cluster_datastream_contribution_lookup
   }
 }
 ```
+
+#### Create Transform
 
 ```json
 PUT _transform/cluster_datastream_contribution_transform
@@ -571,12 +591,15 @@ PUT _transform/cluster_datastream_contribution_transform
 }
 ```
 
+Start the transform.
+
 ```
 POST _transform/cluster_datastream_contribution_transform/_start
-POST _transform/cluster_datastream_contribution_transform/_schedule_now
 ```
 
-2.3 Tier and data stream-related
+### 2.4 Dimension: Data Tier and Data Stream (Lookup Index + Transform)
+
+#### Create Lookup Index
 
 ```json
 PUT cluster_tier_and_datastream_contribution_lookup
@@ -623,6 +646,8 @@ PUT cluster_tier_and_datastream_contribution_lookup
   }
 }
 ```
+
+#### Create Transform
 
 ```json
 PUT _transform/cluster_tier_and_datastream_contribution_transform
@@ -697,11 +722,16 @@ PUT _transform/cluster_tier_and_datastream_contribution_transform
 }
 ```
 
+Start the transform.
+
 ```
 POST _transform/cluster_tier_and_datastream_contribution_transform/_start
-POST _transform/cluster_tier_and_datastream_contribution_transform/_schedule_now
 ```
 
-3. Import dashboard saved-objects
+## 3. Load the Dashboard
+
+- Navigate to _Deployment > Stack Management > Saved objects_
+- Click *Import* and upload the ndjson file
+- Select _Check for existing objects_
 
 File: [`esql-dashboard.json`](./assets/saved_objects/esql-dashboard.ndjson)
