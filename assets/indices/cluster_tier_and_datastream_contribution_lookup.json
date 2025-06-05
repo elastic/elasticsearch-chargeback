@@ -1,0 +1,43 @@
+PUT cluster_tier_and_datastream_contribution_lookup
+{
+  "settings": {
+    "index.mode": "lookup"
+  },
+  "mappings": {
+    "properties": {
+      "@timestamp": {
+        "type": "date"
+      },
+      "composite_key": {
+        "type": "keyword"
+      },
+      "composite_tier_key": {
+        "type": "keyword"
+      },
+      "cluster_name": {
+        "type": "keyword"
+      },
+      "deployment_id": {
+        "type": "keyword"
+      },
+      "tier": {
+        "type": "keyword"
+      },
+      "datastream": {
+        "type": "keyword"
+      },
+      "tier_and_datastream_sum_indexing_time": {
+        "type": "double"
+      },
+      "tier_and_datastream_sum_query_time": {
+        "type": "double"
+      },
+      "tier_and_datastream_sum_store_size": {
+        "type": "double"
+      },
+      "tier_and_datastream_sum_data_set_store_size": {
+        "type": "double"
+      }
+    }
+  }
+}
