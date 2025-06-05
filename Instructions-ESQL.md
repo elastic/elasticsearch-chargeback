@@ -281,6 +281,8 @@ PUT cluster_deployment_contribution_lookup
 }
 ```
 
+File: [`cluster_deployment_contribution_lookup`](./assets/indices/cluster_deployment_contribution_lookup.json)
+
 #### Create Transform
 
 ```json
@@ -347,6 +349,8 @@ PUT _transform/cluster_deployment_contribution_transform
 }
 ```
 
+File: [`cluster_deployment_contribution_transform`](./assets/transforms/cluster_deployment_contribution_transform.json)
+
 Start the transform.
 
 ```
@@ -399,6 +403,8 @@ PUT cluster_tier_contribution_lookup
   }
 }
 ```
+
+File: [`cluster_tier_contribution_lookup`](./assets/indices/cluster_tier_contribution_lookup.json)
 
 #### Create Transform
 
@@ -470,6 +476,8 @@ PUT _transform/cluster_tier_contribution_transform
 }
 ```
 
+File: [`cluster_tier_contribution_transform`](./assets/transforms/cluster_tier_contribution_transform.json)
+
 Start the transform.
 
 ```
@@ -520,6 +528,8 @@ PUT cluster_datastream_contribution_lookup
   }
 }
 ```
+
+File: [`cluster_datastream_contribution_lookup`](./assets/indices/cluster_datastream_contribution_lookup.json)
 
 #### Create Transform
 
@@ -591,6 +601,9 @@ PUT _transform/cluster_datastream_contribution_transform
 }
 ```
 
+File: [`cluster_datastream_contribution_transform`](./assets/transforms/cluster_datastream_contribution_transform.json)
+
+
 Start the transform.
 
 ```
@@ -646,6 +659,9 @@ PUT cluster_tier_and_datastream_contribution_lookup
   }
 }
 ```
+
+
+File: [`cluster_tier_and_datastream_contribution_lookup`](./assets/indices/cluster_tier_and_datastream_contribution_lookup.json)
 
 #### Create Transform
 
@@ -721,6 +737,8 @@ PUT _transform/cluster_tier_and_datastream_contribution_transform
   }
 }
 ```
+
+File: [`cluster_tier_and_datastream_contribution_transform`](./assets/transforms/cluster_tier_and_datastream_contribution_transform.json)
 
 Start the transform.
 
