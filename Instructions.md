@@ -729,7 +729,7 @@ Files:
 ## 9. Load the Dashboard
 
 - Navigate to _Deployment > Stack Management > Saved objects_
-- Click *Import* and upload the ndjson file
+- Click *Import* and upload the ndjson files
 - Select _Check for existing objects_
 
-File: [`chargeback_module.ndjson`](./assets/saved_objects/chargeback_module.ndjson)
+File: [`chargeback_module_v2.ndjson`](./assets/saved_objects/chargeback_module_v2.ndjson)
