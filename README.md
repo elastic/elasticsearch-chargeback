@@ -63,9 +63,8 @@ To be able to take indexing, querying and storage into consideration in a weight
 
 This means that storage will contribute the most to the blended cost calculation, and that indexing will only contribute to this blended cost on the hot tier. You should consider these weights, and adjust these based on your own best judgement. 
 
-![Chargeback flow](integration/assets/img/ChargebackFlow.png)
-
-![data_flow](integration/assets/img/data_flow.png)
+![Chargeback flow](integration/assets/0.0.2/img/ChargebackFlow.png)
+![data_flow](integration/assets/0.0.2/img/data_flow.png)
 
 ### Dashboards
 
