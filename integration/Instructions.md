@@ -2,6 +2,10 @@
 
 This document outlines the steps to install the Chargeback integration, which makes use of the ES|QL LOOKUP JOIN feature introduced in 8.18.
 
+## Migrate from "module" to integration
+
+If you have already installed the Chargeback "module" and want to rather use the integration, please follow the [Decommisioning](../module/Decommisioning.md) instructions of the module, and then return to these instructions.
+
 ## Instructions version 0.0.2
 
 To install the Chargeback integration (version 0.0.2), please follow these steps:
