@@ -22,3 +22,5 @@ DELETE _transform/billing_cluster_cost
 
 DELETE _ingest/pipeline/set_composite_key
 ```
+
+Also, remove the Dashboard from Saved Obejects.
