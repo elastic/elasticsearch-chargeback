@@ -50,11 +50,11 @@ The first layer of processing that we do, is five transforms:
     - per deployment, per datastream per day.
     - per tier, per datastream per day.
 
-![Transforms](integration/assets/0.0.2/img/Transforms.png)
+![Transforms](integration/assets/img/Transforms.png)
 
 All of the transforms create their own lookup index. There is also a lookup index for the configuration.
 
-![Lookup Indices](integration/assets/0.0.2/img/LookupIndices.png)
+![Lookup Indices](integration/assets/img/LookupIndices.png)
 
 To be able to take indexing, querying and storage into consideration in a weighted fashion, we use the following weights (see  [Integration `Instructions.md`](integration/Instructions.md) on how to change these):
 - indexing: 20 (only considered for the hot tier)
@@ -63,8 +63,8 @@ To be able to take indexing, querying and storage into consideration in a weight
 
 This means that storage will contribute the most to the blended cost calculation, and that indexing will only contribute to this blended cost on the hot tier. You should consider these weights, and adjust these based on your own best judgement. 
 
-![Chargeback flow](integration/assets/0.0.2/img/ChargebackFlow.png)
-![data_flow](integration/assets/0.0.2/img/data_flow.png)
+![Chargeback flow](integration/assets/img/ChargebackFlow.png)
+![data_flow](integration/assets/img/data_flow.png)
 
 ### Dashboards
 
@@ -72,7 +72,7 @@ Once you have uploaded the integration, you can navigate to the `[Chargeback] Co
 
 ### Sample dashboard
 
-![Chargeback](<integration/assets/0.0.2/img/[Chargeback] Cost and Consumption breakdown.png>)
+![Chargeback](<integration/assets/img/[Chargeback] Cost and Consumption breakdown.png>)
 
 ## Chargeback "module"
 
@@ -134,4 +134,3 @@ The dashboard also links out to:
 ### Sample dashboard
 
 ![Chargeback](module/assets/img/[Tech%20Preview]%20Chargeback%20(0.2.0).png)
-
