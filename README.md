@@ -18,18 +18,25 @@ Both the "module" as well as integration provides the same Dashboard. The "modul
 
 ### Version
 
-0.0.2
+0.0.3
 
 ### Dependencies
 
 This process must be set up on the **Monitoring cluster**, where all monitoring data is collected.
 
 #### Requirements
-- The Monitoring cluster must be running Elastic Stack 8.18.0 or higher for the integration.
+
+Either one of the following conditions must be true:
+A: The Elasticsearch integration: 
+- Elasticsearch integration (version 1.16.0+) must collect data from all deployments sending data to the Monitoring cluster.
+- The Transform `logs-elasticsearch.index_pivot-default-{VERSION}` must be running on the Monitoring cluster.
+B: Stack Monitoring:
+- Stack Monitoring must be enabled and sending metrics to the Monitoring cluster.
+
+All of the following conditions must be met:
+- Monitoring cluster needs to be on 8.18.0+ to be able to use the ES|QL LOOKUP JOIN feature.
 - The Monitoring cluster must be hosted on Elastic Cloud (ECH).
-- **Elasticsearch Service Billing** integration (version 1.0.0+) must be installed on the Monitoring cluster.
-- **Elasticsearch** integration (version 1.16.0+) must collect data from all deployments sending data to the Monitoring cluster.
-- The **Transform**  `logs-elasticsearch.index_pivot-default-{VERSION}` must be running on the Monitoring cluster.
+- Elasticsearch Service Billing integration (version 1.0.0+) must be installed on the Monitoring cluster.
 
 ### Setup instructions
 
