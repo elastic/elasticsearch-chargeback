@@ -31,7 +31,6 @@ All of the following conditions must be met:
 - Create the required `mode: lookup` indices by executing all of the commands.
 
 <details>
-
 <summary>Index creation commands</summary>
 
 ```JSON
@@ -40,9 +39,7 @@ All of the following conditions must be met:
 POST _aliases
 {
   "actions": [
-    { "add": { "index": "metrics-elasticsearch.stack_monitoring.index*", "alias": "chargeback-monitoring-read", "is_write_index": false }},
-    { "add": { "index": ".monitoring-es-*", "alias": "chargeback-monitoring-read", "is_write_index": false }},
-    { "add": { "index": "metricbeat-*", "alias": "chargeback-monitoring-read", "is_write_index": false }}
+    { "add": { "index": ".monitoring-es-8-mb", "alias": "chargeback-monitoring-read", "is_write_index": false }}
   ]
 }
 
@@ -119,6 +116,7 @@ PUT billing_cluster_cost_lookup
     }
   }
 }
+
 
 PUT cluster_datastream_contribution_lookup
 {
@@ -200,6 +198,7 @@ PUT cluster_tier_and_datastream_contribution_lookup
   }
 }
 
+
 PUT cluster_tier_contribution_lookup
 {
   "settings": {
@@ -243,3 +242,20 @@ Asset: [`chargeback-0.0.3.zip`](assets/0.0.3/chargeback-0.0.3.zip)
 
 ![alt text](assets/img/UploadItAsAZip.png)
 
+## Update config
+
+<details>
+<summary>Update blended rate weightings</summary>
+
+```JSON
+POST chargeback_conf_lookup/_update/config
+{
+  "doc": {
+    "conf_ecu_rate": 0.85,
+    "conf_indexing_weight": 50,
+    "conf_query_weight": 20,
+    "conf_storage_weight": 40
+  }
+}
+```
+</details>
