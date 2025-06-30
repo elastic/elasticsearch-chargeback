@@ -40,27 +40,9 @@ All of the following conditions must be met:
 POST _aliases
 {
   "actions": [
-    {
-      "add": {
-        "index": "metrics-elasticsearch.stack_monitoring.index*",
-        "alias": "chargeback-monitoring-read",
-        "is_write_index": false
-      }
-    },
-    {
-      "add": {
-        "index": ".monitoring-es-*",
-        "alias": "chargeback-monitoring-read",
-        "is_write_index": false
-      }
-    },
-    {
-      "add": {
-        "index": "metricbeat-*",
-        "alias": "chargeback-monitoring-read",
-        "is_write_index": false
-      }
-    }
+    { "add": { "index": "metrics-elasticsearch.stack_monitoring.index*", "alias": "chargeback-monitoring-read", "is_write_index": false }},
+    { "add": { "index": ".monitoring-es-*", "alias": "chargeback-monitoring-read", "is_write_index": false }},
+    { "add": { "index": "metricbeat-*", "alias": "chargeback-monitoring-read", "is_write_index": false }}
   ]
 }
 
@@ -68,13 +50,7 @@ POST _aliases
 POST _aliases
 {
   "actions": [
-    {
-      "add": {
-        "index": "monitoring-indices",
-        "alias": "chargeback-monitoring-read",
-        "is_write_index": false
-      }
-    }
+    { "add": { "index": "monitoring-indices", "alias": "chargeback-monitoring-read", "is_write_index": false }}
   ]
 }
 
