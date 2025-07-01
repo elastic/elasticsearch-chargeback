@@ -12,7 +12,12 @@ Both Chargeback module and integration is based on the **Elasticsearch Service B
 
 ## The difference between **Chargeback module** and **Chargeback integration**
 
-Both the "module" as well as integration provides the same Dashboard. The "module" has a lot more moving parts and is more difficult to set up. The integration is much simpler to install, but it requires the ES|QL LOOKUP JOIN feature that was released in 8.18.0.
+The recommended approach is to use the *Chargeback integration* because of the following:
+- Our limited team cannot maintain more than one stream
+- All focus will be on the integration
+- The "module" has much more moving parts and is more difficult to set up, and is therefore prone to more issues
+
+The only reason you should choose the "module" in favour of the integration is if you cannot upgrade your monitoring cluster to 8.18 or later, and is stuck on 8.17.1 or later.
 
 ## Chargeback Integration
 
