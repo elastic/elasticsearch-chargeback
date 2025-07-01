@@ -4,7 +4,7 @@ FinOps is an operational framework and cultural practice designed to maximize th
 
 The **Chargeback module** and **Chargeback integration** helps users answer a key question: How is my organisation consuming the Elastic solution, and to which tenants can I allocate these costs?
 
-Both Chargeback module and integration is based on the **Elasticsearch Service Billing** and **Elasticsearch** integrations. Its purpose is to provide data for chargeback calculations, offering a breakdown of Elastic Consumption Units (ECU) per:
+Both Chargeback module and integration are based on the **Elasticsearch Service Billing** and **Elasticsearch** integrations. Their purpose is to provide data for chargeback calculations, offering a breakdown of Elastic Consumption Units (ECU) per:
 - Deployment
 - Data tier
 - Data stream
