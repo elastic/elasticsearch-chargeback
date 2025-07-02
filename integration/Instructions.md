@@ -35,6 +35,13 @@ All of the following conditions must be met:
 
 ```JSON
 # The usage transforms can work on both Cloud Stack monitoring data, or Elasticsearch Integration data
+
+# Check to see which of the sources you have available.
+# Stack Monitoring
+GET .monitoring-es-8-mb/_count 
+# ES Integration
+GET monitoring-indices/_count
+
 # If you have Stack monitoring in place and do not have the Elasticsearch Integration running, create this alias.
 POST _aliases
 {
@@ -75,6 +82,7 @@ PUT chargeback_conf_lookup
   }
 }
 
+# Add the default configuration to the chargeback_conf_lookup index.
 POST chargeback_conf_lookup/_doc/config
 {
   "config_join_key": "chargeback_config",
@@ -83,6 +91,8 @@ POST chargeback_conf_lookup/_doc/config
   "conf_query_weight": 20,
   "conf_storage_weight": 40
 }
+
+# Create the lookup indices for billing and cluster contributions.
 
 PUT billing_cluster_cost_lookup
 {
@@ -225,6 +235,7 @@ PUT cluster_tier_contribution_lookup
     }
   }
 }
+
 ```
 
 </details>
