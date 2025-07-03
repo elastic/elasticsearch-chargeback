@@ -23,7 +23,7 @@ The only reason you should choose the "module" in favour of the integration is i
 
 ### Version
 
-0.0.3
+0.1.0
 
 ### Dependencies
 
