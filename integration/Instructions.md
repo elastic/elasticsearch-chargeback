@@ -6,7 +6,7 @@ This document outlines the steps to install the Chargeback integration, which ma
 
 If you have already installed the Chargeback "module" and want to rather use the integration, please follow the [Decommisioning](../module/Decommisioning.md) instructions of the module, and then return to these instructions.
 
-## Instructions version 0.1.1
+## Instructions version 0.1.2
 
 To install the Chargeback integration, please follow these steps:
 
@@ -72,7 +72,7 @@ PUT chargeback_conf_lookup
   "mappings": {
     "_meta": {
       "managed": true,
-      "package": { "name": "chargeback", "version": "0.1.1" }
+      "package": { "name": "chargeback", "version": "0.1.2" }
     },
     "properties": {
       "config_join_key": { "type": "keyword" },
@@ -106,7 +106,7 @@ PUT billing_cluster_cost_lookup
   "mappings": {
     "_meta": {
       "managed": true,
-      "package": { "name": "chargeback", "version": "0.1.1" }
+      "package": { "name": "chargeback", "version": "0.1.2" }
     },
     "properties": {
       "@timestamp": { "type": "date" },
@@ -139,7 +139,7 @@ PUT cluster_datastream_contribution_lookup
   "mappings": {
     "_meta": {
       "managed": true,
-      "package": { "name": "chargeback", "version": "0.1.1" }
+      "package": { "name": "chargeback", "version": "0.1.2" }
     },
     "properties": {
       "@timestamp": { "type": "date" },
@@ -166,7 +166,7 @@ PUT cluster_deployment_contribution_lookup
   "mappings": {
     "_meta": {
       "managed": true,
-      "package": { "name": "chargeback", "version": "0.1.1" }
+      "package": { "name": "chargeback", "version": "0.1.2" }
     },
     "properties": {
       "@timestamp": { "type": "date" },
@@ -191,7 +191,7 @@ PUT cluster_tier_and_datastream_contribution_lookup
   "mappings": {
     "_meta": {
       "managed": true,
-      "package": { "name": "chargeback", "version": "0.1.1" }
+      "package": { "name": "chargeback", "version": "0.1.2" }
     },
     "properties": {
       "@timestamp": { "type": "date" },
@@ -219,7 +219,7 @@ PUT cluster_tier_contribution_lookup
   "mappings": {
     "_meta": {
       "managed": true,
-      "package": { "name": "chargeback", "version": "0.1.1" }
+      "package": { "name": "chargeback", "version": "0.1.2" }
     },
     "properties": {
       "@timestamp": { "type": "date" },
@@ -243,7 +243,7 @@ PUT cluster_tier_contribution_lookup
 
 3. Upload ZIP File: 
 
-Asset: [`chargeback-0.1.1.zip`](assets/0.1.1/chargeback-0.1.1.zip)
+Asset: [`chargeback-0.1.2.zip`](assets/0.1.2/chargeback-0.1.2.zip)
 
 - Browse to Integrations, and click on `+ Create new integration`
 
