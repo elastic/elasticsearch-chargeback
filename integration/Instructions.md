@@ -13,9 +13,11 @@ To install the Chargeback integration, please follow these steps:
 1. Meet Prerequisites: 
 
 Either one of the following conditions must be true:
+
 A: The Elasticsearch integration: 
 - Elasticsearch integration (version 1.16.0+) must collect data from all deployments sending data to the Monitoring cluster.
 - The Transform `logs-elasticsearch.index_pivot-default-{VERSION}` must be running on the Monitoring cluster.
+
 B: Stack Monitoring:
 - Stack Monitoring must be enabled and sending metrics to the Monitoring cluster.
 
