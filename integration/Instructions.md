@@ -10,23 +10,23 @@ If you have already installed the Chargeback "module" and want to rather use the
 
 To install the Chargeback integration, please follow these steps:
 
-1. Meet Prerequisites: 
+### 1. Meet Prerequisites: 
 
 Either one of the following conditions must be true:
 
-A: The Elasticsearch integration: 
+#### A: The Elasticsearch integration: 
 - Elasticsearch integration (version 1.16.0+) must collect data from all deployments sending data to the Monitoring cluster.
 - The Transform `logs-elasticsearch.index_pivot-default-{VERSION}` must be running on the Monitoring cluster.
 
-B: Stack Monitoring:
+#### B: Stack Monitoring:
 - Stack Monitoring must be enabled and sending metrics to the Monitoring cluster.
 
-All of the following conditions must be met:
+#### All of the following conditions must be met:
 - Monitoring cluster needs to be on 8.18.0+ to be able to use the ES|QL LOOKUP JOIN feature.
 - The Monitoring cluster must be hosted on Elastic Cloud (ECH).
 - Elasticsearch Service Billing integration (version 1.0.0+) must be installed on the Monitoring cluster.
 
-2. Set up the usage alias, and create Lookup Indices: 
+### 2. Set up the usage alias, and create Lookup Indices: 
 - Copy the Index creation commands (below) to Kibana Dev Tools.
 - Run the appropriate command to create the right alias. Only one of the alias must be created.
 - If required, modify the desired values for the `chargeback_conf_lookup` index. Note, these can be changed at a later stage.
