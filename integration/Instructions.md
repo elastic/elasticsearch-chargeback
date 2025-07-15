@@ -6,7 +6,7 @@ This document outlines the steps to install the Chargeback integration, which ma
 
 If you have already installed the Chargeback "module" and want to rather use the integration, please follow the [Decommisioning](../module/Decommisioning.md) instructions of the module, and then return to these instructions.
 
-## Instructions version 0.1.2
+## Setup Instructions
 
 To install the Chargeback integration, please follow these steps:
 
