@@ -57,7 +57,6 @@ POST chargeback_conf_lookup/_doc/config
 }
 
 # Create the lookup indices for billing and cluster contributions.
-
 PUT billing_cluster_cost_lookup
 {
   "settings": {
