@@ -247,7 +247,7 @@ Asset: [`chargeback-0.1.3.zip`](assets/0.1.3/chargeback-0.1.3.zip)
 ## Update config
 
 <details>
-<summary>TO update blended rate weightings, or the conversion currency and rate, use the following command:</summary>
+<summary>To update blended rate weightings, or the conversion currency and rate, use the following command:</summary>
 
 ```JSON
 POST chargeback_conf_lookup/_update/config
