@@ -6,28 +6,32 @@ This document outlines the steps to install the Chargeback integration, which ma
 
 If you have already installed the Chargeback "module" and want to rather use the integration, please follow the [Decommisioning](../module/Decommisioning.md) instructions of the module, and then return to these instructions.
 
-## Instructions version 0.0.3
+## Setup Instructions
 
-To install the Chargeback integration (version 0.0.3), please follow these steps:
+To install the Chargeback integration, please follow these steps:
 
-1. Meet Prerequisites: 
+### 1. Meet Prerequisites: 
 
 Either one of the following conditions must be true:
-A: The Elasticsearch integration: 
+
+#### A: The Elasticsearch integration: 
 - Elasticsearch integration (version 1.16.0+) must collect data from all deployments sending data to the Monitoring cluster.
 - The Transform `logs-elasticsearch.index_pivot-default-{VERSION}` must be running on the Monitoring cluster.
-B: Stack Monitoring:
+
+#### B: Stack Monitoring:
 - Stack Monitoring must be enabled and sending metrics to the Monitoring cluster.
 
-All of the following conditions must be met:
+#### All of the following conditions must be met:
 - Monitoring cluster needs to be on 8.18.0+ to be able to use the ES|QL LOOKUP JOIN feature.
 - The Monitoring cluster must be hosted on Elastic Cloud (ECH).
 - Elasticsearch Service Billing integration (version 1.0.0+) must be installed on the Monitoring cluster.
 
-2. Set up the usage alias, and create Lookup Indices: 
+### 2. Set up the usage alias, and create Lookup Indices: 
 - Copy the Index creation commands (below) to Kibana Dev Tools.
 - Run the appropriate command to create the right alias. Only one of the alias must be created.
-- If required, modify the desired values for the `chargeback_conf_lookup` index, to be able to set the blended weight calculations and the ECU rate. Note, these can be changed at a later stage.
+- If required, modify the desired values for the `chargeback_conf_lookup` index. Note, these can be changed at a later stage.
+    - Change the `conf_*_weigh` values to set the blended weight calculations, or use defaults.
+    - Change the `conf_ecu_rate` value so that the dashboard is in the desired rate, and `conf_ecu_rate_unit` to the unit representing the rate. For example a rate of `17.6` and unit of `ZAR` will show the cost in South African Rand.
 - Create the required `mode: lookup` indices by executing all of the commands.
 
 <details>
@@ -37,24 +41,24 @@ All of the following conditions must be met:
 # The usage transforms can work on both Cloud Stack monitoring data, or Elasticsearch Integration data
 
 # Check to see which of the sources you have available.
-# Stack Monitoring
-GET .monitoring-es-8-mb/_count 
 # ES Integration
 GET monitoring-indices/_count
+# Stack Monitoring
+GET .monitoring-es-8-mb/_count 
 
-# If you have Stack monitoring in place and do not have the Elasticsearch Integration running, create this alias.
-POST _aliases
-{
-  "actions": [
-    { "add": { "index": ".monitoring-es-8-mb", "alias": "chargeback-monitoring-read", "is_write_index": false }}
-  ]
-}
-
-# If you do have the Elasticsearch Integration running, create this alias.
+# If you do have the Elasticsearch Integration running, create this alias. It is preferable to use the Elasticsearch Integration as it is more performant.
 POST _aliases
 {
   "actions": [
     { "add": { "index": "monitoring-indices", "alias": "chargeback-monitoring-read", "is_write_index": false }}
+  ]
+}
+
+# If you cannot use the Elasticsearch Integration, but have Stack monitoring in place, create this alias.
+POST _aliases
+{
+  "actions": [
+    { "add": { "index": ".monitoring-es-8-mb", "alias": "chargeback-monitoring-read", "is_write_index": false }}
   ]
 }
 
@@ -70,11 +74,12 @@ PUT chargeback_conf_lookup
   "mappings": {
     "_meta": {
       "managed": true,
-      "package": { "name": "chargeback", "version": "0.0.3" }
+      "package": { "name": "chargeback", "version": "0.1.3" }
     },
     "properties": {
       "config_join_key": { "type": "keyword" },
       "conf_ecu_rate": { "type": "float" },
+      "conf_ecu_rate_unit": { "type": "keyword"},
       "conf_indexing_weight": { "type": "integer" },
       "conf_query_weight": { "type": "integer" },
       "conf_storage_weight": { "type": "integer" }
@@ -87,13 +92,13 @@ POST chargeback_conf_lookup/_doc/config
 {
   "config_join_key": "chargeback_config",
   "conf_ecu_rate": 0.85,
+  "conf_ecu_rate_unit": "EUR",
   "conf_indexing_weight": 20,
   "conf_query_weight": 20,
   "conf_storage_weight": 40
 }
 
 # Create the lookup indices for billing and cluster contributions.
-
 PUT billing_cluster_cost_lookup
 {
   "settings": {
@@ -103,7 +108,7 @@ PUT billing_cluster_cost_lookup
   "mappings": {
     "_meta": {
       "managed": true,
-      "package": { "name": "chargeback", "version": "0.0.3" }
+      "package": { "name": "chargeback", "version": "0.1.3" }
     },
     "properties": {
       "@timestamp": { "type": "date" },
@@ -127,7 +132,6 @@ PUT billing_cluster_cost_lookup
   }
 }
 
-
 PUT cluster_datastream_contribution_lookup
 {
   "settings": {
@@ -137,7 +141,7 @@ PUT cluster_datastream_contribution_lookup
   "mappings": {
     "_meta": {
       "managed": true,
-      "package": { "name": "chargeback", "version": "0.0.3" }
+      "package": { "name": "chargeback", "version": "0.1.3" }
     },
     "properties": {
       "@timestamp": { "type": "date" },
@@ -164,7 +168,7 @@ PUT cluster_deployment_contribution_lookup
   "mappings": {
     "_meta": {
       "managed": true,
-      "package": { "name": "chargeback", "version": "0.0.3" }
+      "package": { "name": "chargeback", "version": "0.1.3" }
     },
     "properties": {
       "@timestamp": { "type": "date" },
@@ -189,7 +193,7 @@ PUT cluster_tier_and_datastream_contribution_lookup
   "mappings": {
     "_meta": {
       "managed": true,
-      "package": { "name": "chargeback", "version": "0.0.3" }
+      "package": { "name": "chargeback", "version": "0.1.3" }
     },
     "properties": {
       "@timestamp": { "type": "date" },
@@ -208,7 +212,6 @@ PUT cluster_tier_and_datastream_contribution_lookup
   }
 }
 
-
 PUT cluster_tier_contribution_lookup
 {
   "settings": {
@@ -218,7 +221,7 @@ PUT cluster_tier_contribution_lookup
   "mappings": {
     "_meta": {
       "managed": true,
-      "package": { "name": "chargeback", "version": "0.0.3" }
+      "package": { "name": "chargeback", "version": "0.1.3" }
     },
     "properties": {
       "@timestamp": { "type": "date" },
@@ -243,7 +246,7 @@ PUT cluster_tier_contribution_lookup
 
 3. Upload ZIP File: 
 
-Asset: [`chargeback-0.0.3.zip`](assets/0.0.3/chargeback-0.0.3.zip)
+Asset: [`chargeback-0.1.3.zip`](assets/0.1.3/chargeback-0.1.3.zip)
 
 - Browse to Integrations, and click on `+ Create new integration`
 
@@ -263,7 +266,8 @@ POST chargeback_conf_lookup/_update/config
 {
   "doc": {
     "conf_ecu_rate": 0.85,
-    "conf_indexing_weight": 50,
+    "conf_ecu_rate_unit": "EUR",
+    "conf_indexing_weight": 20,
     "conf_query_weight": 20,
     "conf_storage_weight": 40
   }
