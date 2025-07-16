@@ -12,7 +12,7 @@ To install the Chargeback integration, please follow these steps:
 
 ### 1. Meet Prerequisites
 
-See [Requirements](README.md) for details.
+See [Requirements](README.md#requirements) for details.
 
 ### 2. Set up the usage alias, and create Lookup Indices: 
 - Copy the Index creation commands (below) to Kibana Dev Tools.
@@ -247,7 +247,7 @@ Asset: [`chargeback-0.1.3.zip`](assets/0.1.3/chargeback-0.1.3.zip)
 ## Update config
 
 <details>
-<summary>Update blended rate weightings</summary>
+<summary>TO update blended rate weightings, or the conversion currency and rate, use the following command:</summary>
 
 ```JSON
 POST chargeback_conf_lookup/_update/config
