@@ -2,7 +2,7 @@
 
 ## Version
 
-Chargeback integration: 0.1.3
+Chargeback integration: 0.1.4
 
 ## Dependencies
 
