@@ -1,6 +1,7 @@
 # Elasticsearch Chargeback module
 
-Please note that the [Chargeback Integration](../integration/Instructions.md) is the preferred installation option.
+Please note that the [Chargeback Integration](../integration/Instructions.md) is the preferred installation option
+and will receive updates. The module will not be maintained.
 
 ## Version
 
