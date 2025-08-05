@@ -227,6 +227,15 @@ PUT cluster_tier_contribution_lookup
   }
 }
 
+# Create Data View for Dashboard control.
+POST kbn:/api/data_views/data_view
+{
+  "data_view": {
+    "name": "Chargeback: Billing Cluster Cost",
+    "title": "billing_cluster_cost_lookup",
+    "id": "2bf6c0d816ef0a2d56d03ede549c16c08c35db2cf02d78c12756a98a33f50e4f"
+  }
+}
 ```
 
 </details>
