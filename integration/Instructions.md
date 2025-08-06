@@ -247,3 +247,10 @@ POST chargeback_conf_lookup/_update/config
 ```
 
 </details>
+
+## Upgrade integration
+
+To upgrade the integration, do the following:
+- Depending on the change in version, you might need to delete the `*_lookup` indices, and create them again.
+- Upload the new asset (ZIP) file to Kibana.
+- Start the transforms.
