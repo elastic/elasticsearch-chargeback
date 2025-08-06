@@ -17,7 +17,7 @@ See [Requirements](README.md#requirements) for details.
 ### 2. Create Lookup Indices and Data View: 
 - Copy the Index creation commands (below) to Kibana Dev Tools.
 - If required, modify the desired values for the `chargeback_conf_lookup` index. Note, these can be changed at a later stage.
-    - Change the `conf_*_weigh` values to set the blended weight calculations, or use defaults.
+    - Change the `conf_*_weight` values to set the blended weight calculations, or use defaults.
     - Change the `conf_ecu_rate` value so that the dashboard is in the desired rate, and `conf_ecu_rate_unit` to the unit representing the rate. For example a rate of `17.6` and unit of `ZAR` will show the cost in South African Rand, wherease a rate of `1` and unit of `USD` will show the cost in United States Dollar.
 - Create the required `mode: lookup` indices by executing all of the commands.
 - Create the required Kibana data view which is used in the Dashboard control.
