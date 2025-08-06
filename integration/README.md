@@ -2,7 +2,7 @@
 
 ## Version
 
-Chargeback integration: 0.1.5
+Chargeback integration: 0.1.6
 
 ## Dependencies
 
@@ -10,19 +10,14 @@ This process must be set up on the **Monitoring cluster**, where all monitoring 
 
 ### Requirements
 
-Either one of the following conditions must be true:
+To use this integration, the following prerequisites must be met:
 
-#### A: The Elasticsearch integration: 
-- Elasticsearch integration (version 1.16.0+) must collect data from all deployments sending data to the Monitoring cluster.
-- The Transform `logs-elasticsearch.index_pivot-default-{VERSION}` must be running on the Monitoring cluster.
+- The monitoring cluster, where this integration is installed, must be on version 8.18.0+ due to its use of [ES|QL LOOKUP JOIN](https://www.elastic.co/docs/reference/query-languages/esql/esql-lookup-join).
+- The [**Elasticsearch Service Billing**](https://www.elastic.co/docs/reference/integrations/ess_billing/) integration (v1.4.1+) must be installed and running.
+- The [**Elasticsearch**](https://www.elastic.co/docs/reference/integrations/elasticsearch/) integration (v1.16.0+) must be installed and collecting [usage data](https://www.elastic.co/docs/reference/integrations/elasticsearch/#indices-and-data-streams-usage-analysis) from all relevant deployments.
+- The Transform named `logs-elasticsearch.index_pivot-default-{VERSION}` must be running, which is an asset of the **Elasticsearch** integration.
 
-#### B: Stack Monitoring:
-- Stack Monitoring must be enabled and sending metrics to the Monitoring cluster.
-
-#### All of the following conditions must be met:
-- Monitoring cluster needs to be on 8.18.0+ to be able to use the ES|QL LOOKUP JOIN feature.
-- The Monitoring cluster must be hosted on Elastic Cloud (ECH).
-- Elasticsearch Service Billing integration (version 1.0.0+) must be installed on the Monitoring cluster.
+This integration must be installed on the **Monitoring cluster** where the above mentioned relevant usage and billing data is collected.
 
 ## Setup instructions
 
@@ -45,7 +40,7 @@ The first layer of processing that we do, is five transforms:
 
 ![Transforms](assets/img/Transforms.png)
 
-All of the transforms create their own lookup index. There is also a lookup index for the configuration.
+All of the transforms create their own lookup index. There is also a lookup index for the configuration. The usage transforms need to be started manually.
 
 ![Lookup Indices](assets/img/LookupIndices.png)
 
