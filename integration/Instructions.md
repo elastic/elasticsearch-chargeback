@@ -219,7 +219,7 @@ POST kbn:/api/data_views/data_view
 
 ### 3. Upload ZIP File: 
 
-- Asset: [`chargeback-0.6.5.zip`](assets/0.1.6/chargeback-0.1.6.zip)
+- Asset: [`chargeback-0.1.6.zip`](assets/0.1.6/chargeback-0.1.6.zip)
 - Browse to Integrations, and click on `+ Create new integration`
 
 ![alt text](assets/img/CreateNewIntegration.png)
