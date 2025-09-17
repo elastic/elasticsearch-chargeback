@@ -14,8 +14,8 @@ To use this integration, the following prerequisites must be met:
 
 - The monitoring cluster, where this integration is installed, must be on version 8.18.0+ due to its use of [ES|QL LOOKUP JOIN](https://www.elastic.co/docs/reference/query-languages/esql/esql-lookup-join).
 - The [**Elasticsearch Service Billing**](https://www.elastic.co/docs/reference/integrations/ess_billing/) integration (v1.4.1+) must be installed and running.
-- The [**Elasticsearch**](https://www.elastic.co/docs/reference/integrations/elasticsearch/) integration (v1.16.0+) must be installed and collecting [usage data](https://www.elastic.co/docs/reference/integrations/elasticsearch/#indices-and-data-streams-usage-analysis) from all relevant deployments.
-- The Transform named `logs-elasticsearch.index_pivot-default-{VERSION}` must be running, which is an asset of the **Elasticsearch** integration.
+- The [**Elasticsearch**](https://www.elastic.co/docs/reference/integrations/elasticsearch/) integration (v1.16.0+) must be installed, but needs not to be added to an agent. 
+- The Transform named `logs-elasticsearch.index_pivot-default-{VERSION}` must be running, which is an asset of the **Elasticsearch** integration. This is the only required asset of the **Elasticsearch** integration.
 
 This integration must be installed on the **Monitoring cluster** where the above mentioned relevant usage and billing data is collected.
 
