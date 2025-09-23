@@ -25,8 +25,8 @@ See [Requirements](README.md#requirements) for details.
 <details>
 
 ```
-# Create the lookup indices for chargeback configuration and billing metrics
-# These indices are used to store configuration and billing data for chargeback calculations.
+# Create the config lookup index for chargeback configuration.
+# This index will store a single document with the configuration settings.
 
 PUT chargeback_conf_lookup
 {
@@ -37,7 +37,7 @@ PUT chargeback_conf_lookup
   "mappings": {
     "_meta": {
       "managed": true,
-      "package": { "name": "chargeback", "version": "0.1.7" }
+      "package": { "name": "chargeback", "version": "0.2.0" }
     },
     "properties": {
       "config_join_key": { "type": "keyword" },
@@ -61,157 +61,15 @@ POST chargeback_conf_lookup/_doc/config
   "conf_storage_weight": 40
 }
 
-# Create the lookup indices for billing and cluster contributions.
-PUT billing_cluster_cost_lookup
-{
-  "settings": {
-    "index.mode": "lookup",
-    "index.hidden": true
-  },
-  "mappings": {
-    "_meta": {
-      "managed": true,
-      "package": { "name": "chargeback", "version": "0.1.7" }
-    },
-    "properties": {
-      "@timestamp": { "type": "date" },
-      "billing_name": {
-        "type": "text",
-        "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
-      },
-      "billing_type": {
-        "type": "text",
-        "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
-      },
-      "composite_key": { "type": "keyword" },
-      "config_join_key": { "type": "keyword" },
-      "deployment_id": { "type": "keyword" },
-      "deployment_name": {
-        "type": "text",
-        "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
-      },
-      "total_ecu": { "type": "float" }
-    }
-  }
-}
-
-PUT cluster_datastream_contribution_lookup
-{
-  "settings": {
-    "index.mode": "lookup",
-    "index.hidden": true
-  },
-  "mappings": {
-    "_meta": {
-      "managed": true,
-      "package": { "name": "chargeback", "version": "0.1.7" }
-    },
-    "properties": {
-      "@timestamp": { "type": "date" },
-      "composite_key": { "type": "keyword" },
-      "composite_datastream_key": { "type": "keyword" },
-      "config_join_key": { "type": "keyword" },
-      "cluster_name": { "type": "keyword" },
-      "deployment_id": { "type": "keyword" },
-      "datastream": { "type": "keyword" },
-      "datastream_sum_indexing_time": { "type": "double" },
-      "datastream_sum_query_time": { "type": "double" },
-      "datastream_sum_store_size": { "type": "double" },
-      "datastream_sum_data_set_store_size": { "type": "double" }
-    }
-  }
-}
-
-PUT cluster_deployment_contribution_lookup
-{
-  "settings": {
-    "index.mode": "lookup",
-    "index.hidden": true
-  },
-  "mappings": {
-    "_meta": {
-      "managed": true,
-      "package": { "name": "chargeback", "version": "0.1.7" }
-    },
-    "properties": {
-      "@timestamp": { "type": "date" },
-      "composite_key": { "type": "keyword" },
-      "config_join_key": { "type": "keyword" },
-      "cluster_name": { "type": "keyword" },
-      "deployment_id": { "type": "keyword" },
-      "deployment_sum_indexing_time": { "type": "double" },
-      "deployment_sum_query_time": { "type": "double" },
-      "deployment_sum_store_size": { "type": "double" },
-      "deployment_sum_data_set_store_size": { "type": "double" }
-    }
-  }
-}
-
-PUT cluster_tier_and_datastream_contribution_lookup
-{
-  "settings": {
-    "index.mode": "lookup",
-    "index.hidden": true
-  },
-  "mappings": {
-    "_meta": {
-      "managed": true,
-      "package": { "name": "chargeback", "version": "0.1.7" }
-    },
-    "properties": {
-      "@timestamp": { "type": "date" },
-      "composite_key": { "type": "keyword" },
-      "composite_tier_key": { "type": "keyword" },
-      "config_join_key": { "type": "keyword" },
-      "cluster_name": { "type": "keyword" },
-      "deployment_id": { "type": "keyword" },
-      "tier": { "type": "keyword" },
-      "datastream": { "type": "keyword" },
-      "tier_and_datastream_sum_indexing_time": { "type": "double" },
-      "tier_and_datastream_sum_query_time": { "type": "double" },
-      "tier_and_datastream_sum_store_size": { "type": "double" },
-      "tier_and_datastream_sum_data_set_store_size": { "type": "double" }
-    }
-  }
-}
-
-PUT cluster_tier_contribution_lookup
-{
-  "settings": {
-    "index.mode": "lookup",
-    "index.hidden": true
-  },
-  "mappings": {
-    "_meta": {
-      "managed": true,
-      "package": { "name": "chargeback", "version": "0.1.7" }
-    },
-    "properties": {
-      "@timestamp": { "type": "date" },
-      "composite_key": { "type": "keyword" },
-      "composite_tier_key": { "type": "keyword" },
-      "config_join_key": { "type": "keyword" },
-      "cluster_name": { "type": "keyword" },
-      "deployment_id": { "type": "keyword" },
-      "tier": { "type": "keyword" },
-      "tier_sum_indexing_time": { "type": "double" },
-      "tier_sum_query_time": { "type": "double" },
-      "tier_sum_store_size": { "type": "double" },
-      "tier_sum_data_set_store_size": { "type": "double" }
-    }
-  }
-}
-
-# Create Data View for Dashboard control.
+# Create data view used for control.
 POST kbn:/api/data_views/data_view
 {
   "data_view": {
-    "name": "Chargeback: Billing Cluster Cost",
+    "name": "[Chargeback] Billing Cluster Cost",
     "title": "billing_cluster_cost_lookup",
     "id": "2bf6c0d816ef0a2d56d03ede549c16c08c35db2cf02d78c12756a98a33f50e4f"
   }
 }
-
 ```
 
 </details>
@@ -219,7 +77,7 @@ POST kbn:/api/data_views/data_view
 
 ### 3. Upload ZIP File: 
 
-- Asset: [`chargeback-0.1.7.zip`](assets/0.1.7/chargeback-0.1.7.zip)
+- Asset: [`chargeback-0.2.0.zip`](assets/0.2.0/chargeback-0.2.0.zip)
 - Browse to Integrations, and click on `+ Create new integration`
 
 ![alt text](assets/img/CreateNewIntegration.png)
