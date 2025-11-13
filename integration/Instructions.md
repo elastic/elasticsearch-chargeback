@@ -37,7 +37,7 @@ PUT chargeback_conf_lookup
   "mappings": {
     "_meta": {
       "managed": true,
-      "package": { "name": "chargeback", "version": "0.2.0" }
+      "package": { "name": "chargeback", "version": "0.2.1" }
     },
     "properties": {
       "config_join_key": { "type": "keyword" },
@@ -77,7 +77,7 @@ POST kbn:/api/data_views/data_view
 
 ### 3. Upload ZIP File: 
 
-- Asset: [`chargeback-0.2.0.zip`](assets/0.2.0/chargeback-0.2.0.zip)
+- Asset: [`chargeback-0.2.1.zip`](assets/0.2.1/chargeback-0.2.1.zip)
 - Browse to Integrations, and click on `+ Create new integration`
 
 ![alt text](assets/img/CreateNewIntegration.png)
