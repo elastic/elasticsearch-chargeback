@@ -19,6 +19,15 @@ To use this integration, the following prerequisites must be met:
 
 This integration must be installed on the **Monitoring cluster** where the above mentioned relevant usage and billing data is collected.
 
+### Version compatiblity
+
+| Integration Version | Required Stack Version | Notes |
+|---------------------|------------------------|-------|
+| Up to 0.2.1 | 8.18.0+ | Basic ES\|QL LOOKUP JOIN support |
+| 0.2.2+ | 9.2.0+ | Requires smart lookup join (conditional joins) |
+
+
+
 ## Setup instructions
 
 Please see [Integration `Instructions.md`](Instructions.md) to install the integration.
