@@ -38,7 +38,7 @@ PUT chargeback_conf_lookup
   "mappings": {
     "_meta": {
       "managed": true,
-      "package": { "name": "chargeback", "version": "0.2.2" }
+      "package": { "name": "chargeback", "version": "0.2.3" }
     },
     "properties": {
       "config_join_key": { "type": "keyword" },
@@ -65,16 +65,6 @@ POST chargeback_conf_lookup/_doc/config
   "conf_start_date": "2024-01-01T12:00:00.000Z",
   "conf_end_date": "2030-12-31T23:59:59.000Z"
 }
-
-# Create data view used for control.
-POST kbn:/api/data_views/data_view
-{
-  "data_view": {
-    "name": "[Chargeback] Billing Cluster Cost",
-    "title": "billing_cluster_cost_lookup",
-    "id": "2bf6c0d816ef0a2d56d03ede549c16c08c35db2cf02d78c12756a98a33f50e4f"
-  }
-}
 ```
 
 </details>
@@ -82,7 +72,7 @@ POST kbn:/api/data_views/data_view
 
 ### 3. Upload ZIP File: 
 
-- Asset: [`chargeback-0.2.2.zip`](assets/0.2.2/chargeback-0.2.2.zip)
+- Asset: [`chargeback-0.2.3.zip`](assets/0.2.1/chargeback-0.2.3.zip)
 - Browse to Integrations, and click on `+ Create new integration`
 
 ![alt text](assets/img/CreateNewIntegration.png)
@@ -91,25 +81,6 @@ POST kbn:/api/data_views/data_view
 
 ![alt text](assets/img/UploadItAsAZip.png)
 
-## Update config
-
-<details>
-<summary>To update blended rate weightings, or the conversion currency and rate, use the following command:</summary>
-
-```JSON
-POST chargeback_conf_lookup/_update/config
-{
-  "doc": {
-    "conf_ecu_rate": 0.85,
-    "conf_ecu_rate_unit": "EUR",
-    "conf_indexing_weight": 20,
-    "conf_query_weight": 20,
-    "conf_storage_weight": 40
-  }
-}
-```
-
-</details>
 
 ## Upgrade integration
 
