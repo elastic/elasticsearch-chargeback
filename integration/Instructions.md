@@ -1,6 +1,6 @@
 # Chargeback (ES|QL Version) Integration
 
-This document outlines the steps to install the Chargeback integration, which makes use of the `ES|QL LOOKUP JOIN` feature introduced in 8.18.
+This document outlines the steps to install the Chargeback integration, which makes use of the smart `ES|QL LOOKUP JOIN` feature (conditional joins) requiring Stack version 9.2.0+.
 
 ## Migrate from "module" to integration
 
@@ -32,13 +32,12 @@ See [Requirements](README.md#requirements) for details.
 PUT chargeback_conf_lookup
 {
   "settings": { 
-    "index.mode": "lookup", 
-    "index.hidden": true 
+    "index.mode": "lookup"
   },
   "mappings": {
     "_meta": {
       "managed": true,
-      "package": { "name": "chargeback", "version": "0.2.3" }
+      "package": { "name": "chargeback", "version": "0.2.4" }
     },
     "properties": {
       "config_join_key": { "type": "keyword" },
@@ -72,7 +71,7 @@ POST chargeback_conf_lookup/_doc/config
 
 ### 3. Upload ZIP File: 
 
-- Asset: [`chargeback-0.2.3.zip`](assets/0.2.1/chargeback-0.2.3.zip)
+- Asset: [`chargeback-0.2.4.zip`](assets/0.2.4/chargeback-0.2.4.zip)
 - Browse to Integrations, and click on `+ Create new integration`
 
 ![alt text](assets/img/CreateNewIntegration.png)
