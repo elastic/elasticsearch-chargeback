@@ -72,7 +72,7 @@ POST chargeback_conf_lookup/_doc/config
 
 ### 3. Upload ZIP File: 
 
-- Asset: [`chargeback-0.2.3.zip`](assets/0.2.1/chargeback-0.2.3.zip)
+- Asset: [`chargeback-0.2.4.zip`](assets/0.2.4/chargeback-0.2.4.zip)
 - Browse to Integrations, and click on `+ Create new integration`
 
 ![alt text](assets/img/CreateNewIntegration.png)
