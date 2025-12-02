@@ -38,7 +38,7 @@ PUT chargeback_conf_lookup
   "mappings": {
     "_meta": {
       "managed": true,
-      "package": { "name": "chargeback", "version": "0.2.3" }
+      "package": { "name": "chargeback", "version": "0.2.6" }
     },
     "properties": {
       "config_join_key": { "type": "keyword" },
@@ -54,7 +54,7 @@ PUT chargeback_conf_lookup
 }
 
 # Add the default configuration to the chargeback_conf_lookup index.
-POST chargeback_conf_lookup/_doc/config
+POST chargeback_conf_lookup/_doc
 {
   "config_join_key": "chargeback_config",
   "conf_ecu_rate": 0.85,
@@ -72,7 +72,7 @@ POST chargeback_conf_lookup/_doc/config
 
 ### 3. Upload ZIP File: 
 
-- Asset: [`chargeback-0.2.3.zip`](assets/0.2.1/chargeback-0.2.3.zip)
+- Asset: [`chargeback-0.2.6.zip`](assets/0.2.1/chargeback-0.2.6.zip)
 - Browse to Integrations, and click on `+ Create new integration`
 
 ![alt text](assets/img/CreateNewIntegration.png)
