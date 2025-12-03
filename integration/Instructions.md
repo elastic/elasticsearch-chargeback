@@ -36,7 +36,7 @@ PUT chargeback_conf_lookup
   "mappings": {
     "_meta": {
       "managed": true,
-      "package": { "name": "chargeback", "version": "0.2.7" }
+      "package": { "name": "chargeback", "version": "0.2.8" }
     },
     "properties": {
       "config_join_key": { "type": "keyword" },
@@ -126,7 +126,7 @@ POST chargeback_conf_lookup/_doc
 
 ### 3. Upload ZIP File: 
 
-- Asset: [`chargeback-0.2.7.zip`](assets/0.2.7/chargeback-0.2.7.zip)
+- Asset: [`chargeback-0.2.8.zip`](assets/0.2.8/chargeback-0.2.8.zip)
 - Browse to Integrations, and click on `+ Create new integration`
 
 ![alt text](assets/img/CreateNewIntegration.png)
@@ -135,10 +135,22 @@ POST chargeback_conf_lookup/_doc
 
 ![alt text](assets/img/UploadItAsAZip.png)
 
+### 4. Transforms Auto-Start
+
+Starting from version 0.2.8, all Chargeback transforms are configured to auto-start upon installation. You no longer need to manually start the transforms.
+
+### 5. Configure Alerting Rules (Optional)
+
+Version 0.2.8 includes three pre-configured alerting rule templates:
+- **Transform Health Monitoring** - Monitors transform health status
+- **New Chargeback Group Detection** - Alerts on new chargeback group tags
+- **Missing Usage Data** - Detects deployments with missing usage data
+
+These rules can be configured in **Stack Management → Rules** after installation.
 
 ## Upgrade integration
 
 To upgrade the integration, do the following:
 - Depending on the change in version, you might need to delete the `*_lookup` indices, and create them again.
 - Upload the new asset (ZIP) file to Kibana.
-- Start the transforms.
+- For versions prior to 0.2.8, start the transforms manually. From 0.2.8 onwards, transforms auto-start.

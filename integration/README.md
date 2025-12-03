@@ -2,7 +2,7 @@
 
 ## Version
 
-Chargeback integration: 0.2.7
+Chargeback integration: 0.2.8
 
 ## Dependencies
 
@@ -47,7 +47,7 @@ The first layer of processing that we do, is five transforms:
 
 ![Transforms](assets/img/Transforms.png)
 
-All of the transforms create their own lookup index. There is also a lookup index for the configuration. The usage transforms need to be started manually.
+All of the transforms create their own lookup index. There is also a lookup index for the configuration. Starting from version 0.2.8, all transforms are configured to auto-start upon installation.
 
 ![Lookup Indices](assets/img/LookupIndices.png)
 
@@ -68,3 +68,13 @@ Once you have uploaded the integration, you can navigate to the `[Chargeback] Co
 ## Sample dashboard
 
 ![Chargeback](<assets/img/[Chargeback] Cost and Consumption breakdown.png>)
+
+## Alerting Rules
+
+Version 0.2.8 includes three pre-configured Kibana alerting rule templates to help monitor your Chargeback integration:
+
+1. **Transform Health Monitoring** - Monitors the health status of all Chargeback transforms and alerts when issues are detected
+2. **New Chargeback Group Detection** - Notifies when a new `chargeback_group` tag is added to a deployment
+3. **Missing Usage Data** - Alerts when a deployment with a chargeback group assigned is not sending usage/consumption data
+
+These alerting templates are automatically installed with the integration and can be configured through **Stack Management → Rules** in Kibana.
