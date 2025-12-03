@@ -15,7 +15,7 @@ PUT chargeback_conf_lookup
     "properties": {
       "config_join_key": { "type": "keyword" },
       "conf_ecu_rate": { "type": "float" },
-      "conf_ecu_rate_unit": { "type": "keyword"},
+      "conf_ecu_rate_unit": { "type": "keyword" },
       "conf_indexing_weight": { "type": "integer" },
       "conf_query_weight": { "type": "integer" },
       "conf_storage_weight": { "type": "integer" },
