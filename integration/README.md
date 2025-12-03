@@ -2,11 +2,7 @@
 
 ## Version
 
-<<<<<<< HEAD
-Chargeback integration: 0.2.4
-=======
-Chargeback integration: 0.2.6
->>>>>>> origin/main
+Chargeback integration: 0.2.7
 
 ## Dependencies
 
@@ -29,8 +25,6 @@ This integration must be installed on the **Monitoring cluster** where the above
 |---------------------|------------------------|-------|
 | Up to 0.2.1 | 8.18.0+ | Basic ES\|QL LOOKUP JOIN support |
 | 0.2.2+ | 9.2.0+ | Requires smart lookup join (conditional joins) |
-
-
 
 ## Setup instructions
 
