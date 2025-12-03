@@ -2,7 +2,11 @@
 
 ## Version
 
+<<<<<<< HEAD
 Chargeback integration: 0.2.4
+=======
+Chargeback integration: 0.2.6
+>>>>>>> origin/main
 
 ## Dependencies
 
