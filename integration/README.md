@@ -49,6 +49,8 @@ The first layer of processing that we do, is five transforms:
 
 All of the transforms create their own lookup index. There is also a lookup index for the configuration. Starting from version 0.2.8, all transforms are configured to auto-start upon installation.
 
+**Performance Note:** On clusters with months of historical monitoring data for multiple deployments, the initial transform execution may process a large volume of data. This can cause temporary performance impact during the first run. The transforms will then run incrementally on their configured schedules (15-60 minute intervals), processing only new data with minimal overhead.
+
 ![Lookup Indices](assets/img/LookupIndices.png)
 
 To be able to take indexing, querying and storage into consideration in a weighted fashion, we use the following weights (see  [Integration `Instructions.md`](Instructions.md) on how to change these):
@@ -78,3 +80,5 @@ Version 0.2.8 includes three pre-configured Kibana alerting rule templates to he
 3. **Missing Usage Data** - Alerts when a deployment with a chargeback group assigned is not sending usage/consumption data
 
 These alerting templates are automatically installed with the integration and can be configured through **Stack Management → Rules** in Kibana.
+
+**Important:** For alert rules 2 and 3, ensure that the Chargeback transforms are running before setting them up. These alerting rules query the lookup indices created by the transforms (`billing_cluster_cost_lookup`, `cluster_deployment_contribution_lookup`, etc.). If the transforms are not started, the alerts will not function correctly.

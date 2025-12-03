@@ -139,6 +139,8 @@ POST chargeback_conf_lookup/_doc
 
 Starting from version 0.2.8, all Chargeback transforms are configured to auto-start upon installation. You no longer need to manually start the transforms.
 
+**Performance Note:** On clusters with months of historical monitoring data for multiple deployments, the initial transform execution may process a large volume of data. This can cause temporary performance impact during the first run. The transforms will then run incrementally on their configured schedules (15-60 minute intervals), processing only new data with minimal overhead.
+
 ### 5. Configure Alerting Rules (Optional)
 
 Version 0.2.8 includes three pre-configured alerting rule templates:
@@ -147,6 +149,8 @@ Version 0.2.8 includes three pre-configured alerting rule templates:
 - **Missing Usage Data** - Detects deployments with missing usage data
 
 These rules can be configured in **Stack Management → Rules** after installation.
+
+**Important:** For the New Chargeback Group Detection and Missing Usage Data alert rules, ensure that the Chargeback transforms are running before setting them up. These alerting rules query the lookup indices created by the transforms. If the transforms are not started, the alerts will not function correctly.
 
 ## Upgrade integration
 
