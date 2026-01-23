@@ -2,7 +2,7 @@
 
 ## Version
 
-Chargeback integration: 0.2.10
+Chargeback integration: 0.2.9
 
 ## Dependencies
 
@@ -19,7 +19,7 @@ To use this integration, the following prerequisites must be met:
 
 This integration must be installed on the **Monitoring cluster** where the above mentioned relevant usage and billing data is collected.
 
-### Version compatiblity
+### Version compatibility
 
 | Integration Version | Required Stack Version | Notes |
 |---------------------|------------------------|-------|
@@ -47,7 +47,7 @@ The first layer of processing that we do, is five transforms:
 
 ![Transforms](assets/img/Transforms.png)
 
-All of the transforms create their own lookup index. There is also a lookup index for the configuration. Starting from version 0.2.8, all transforms are configured to auto-start upon installation. **Version 0.2.10 introduces automated creation of the `chargeback_conf_lookup` index via a bootstrap transform**, eliminating the need for manual index creation.
+All of the transforms create their own lookup index. There is also a lookup index for the configuration. Starting from version 0.2.8, all transforms are configured to auto-start upon installation.
 
 **Performance Note:** On clusters with months of historical monitoring data for multiple deployments, the initial transform execution may process a large volume of data. This can cause temporary performance impact during the first run. The transforms will then run incrementally on their configured schedules (15-60 minute intervals), processing only new data with minimal overhead.
 
@@ -82,17 +82,3 @@ Version 0.2.8 includes three pre-configured Kibana alerting rule templates to he
 These alerting templates are automatically installed with the integration and can be configured through **Stack Management → Rules** in Kibana.
 
 **Important:** For alert rules 2 and 3, ensure that the Chargeback transforms are running before setting them up. These alerting rules query the lookup indices created by the transforms (`billing_cluster_cost_lookup`, `cluster_deployment_contribution_lookup`, etc.). If the transforms are not started, the alerts will not function correctly.
-
-## Version 0.2.10 Release Notes
-
-### Bug Fixes
-- **Visualization Display Issues:** Fixed visualizations not loading correctly due to integer division returning zero in ES|QL queries. All calculations now use TO_DOUBLE type conversion to prevent this issue.
-
-### Enhancements
-- **Automated Configuration Index:** The `chargeback_conf_lookup` index is now automatically created via a bootstrap transform during installation. This eliminates the need for manual index creation steps.
-  - Default ECU rate: 0.85 EUR
-  - Default weights: indexing=20, query=20, storage=40
-  - Default date range: 2010-01-01 to 2046-12-31
-
-### Maintenance
-- Bumped all transform pipeline versions to 0.2.10
