@@ -13,7 +13,7 @@ This process must be set up on the **Monitoring cluster**, where all monitoring 
 To use this integration, the following prerequisites must be met:
 
 - The monitoring cluster, where this integration is installed, must be on version 9.2.0+ due to its use of (smart) [ES|QL LOOKUP JOIN](https://www.elastic.co/docs/reference/query-languages/esql/esql-lookup-join).
-- The [**Elasticsearch Service Billing**](https://www.elastic.co/docs/reference/integrations/ess_billing/) integration (v1.4.1+) must be installed and running.
+- The [**Elasticsearch Service Billing**](https://www.elastic.co/docs/reference/integrations/ess_billing/) integration (v1.7.0+) must be installed and running.
 - The [**Elasticsearch**](https://www.elastic.co/docs/reference/integrations/elasticsearch/) integration (v1.16.0+) must be installed, but needs not to be added to an agent. 
 - The Transform named `logs-elasticsearch.index_pivot-default-{VERSION}` must be running, which is an asset of the **Elasticsearch** integration. This is the only required asset of the **Elasticsearch** integration.
 
@@ -21,10 +21,11 @@ This integration must be installed on the **Monitoring cluster** where the above
 
 ### Version compatibility
 
-| Integration Version | Required Stack Version | Notes |
-|---------------------|------------------------|-------|
-| Up to 0.2.1 | 8.18.0+ | Basic ES\|QL LOOKUP JOIN support |
-| 0.2.2+ | 9.2.0+ | Requires smart lookup join (conditional joins) |
+| Integration Version | Required Stack Version | ESS Billing Version | Notes |
+|---------------------|------------------------|---------------------|-------|
+| Up to 0.2.1 | 8.18.0+ | 1.4.1+ | Basic ES\|QL LOOKUP JOIN support |
+| 0.2.2 - 0.2.9 | 9.2.0+ | 1.4.1+ | Requires smart lookup join (conditional joins) |
+| 0.2.10+ | 9.2.0+ | 1.7.0+ | Requires ESS Billing 1.7.0 features |
 
 ## Setup instructions
 
