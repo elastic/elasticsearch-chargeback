@@ -1,5 +1,5 @@
-# DECOMMISIONING
-Use below commands to decommision the chargeback components (remove them from the cluster)
+# DECOMMISSIONING
+Use below commands to decommission the chargeback components (remove them from the cluster)
 
 >This includes removing the indices!
 
@@ -23,4 +23,4 @@ DELETE _transform/billing_cluster_cost
 DELETE _ingest/pipeline/set_composite_key
 ```
 
-Also, remove the Dashboard from Saved Obejects.
+Also, remove the Dashboard from Saved Objects.
