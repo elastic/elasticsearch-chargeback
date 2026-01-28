@@ -1,12 +1,27 @@
 # On-Premises Billing Integration - Testing Notes
 
+**Date**: 2026-01-28  
+**Outcome**: Successful - On-prem billing data flows through to Chargeback dashboard
+
 This document captures the testing process and workarounds needed when testing in a single-cluster environment.
 
 ## Test Environment
 
 - **Stack Version**: 9.2.0 (required for Chargeback dashboard compatibility)
-- **Tool**: `elastic-package stack up -d --version=9.2.0`
+- **Tool**: [`elastic-package`](https://github.com/elastic/elastic-package) - used for building and installing the integration package
+- **Stack Command**: `elastic-package stack up -d --version=9.2.0`
 - **Cluster**: Single-node local cluster (no CCS configured)
+
+## Package Build
+
+The `onprem_billing-0.1.0.zip` was built using `elastic-package build`. The transforms are configured to support both local and CCS environments:
+
+```yaml
+source:
+  index:
+    - "monitoring-indices"      # Local cluster
+    - "*:monitoring-indices"    # Remote clusters (CCS)
+```
 
 ## Testing Steps
 
@@ -76,24 +91,16 @@ cd packages/onprem_billing && elastic-package build && elastic-package install
 
 ## Testing Workarounds
 
-### Issue 1: Single-Cluster CCS Pattern
+### Issue 1: Single-Cluster CCS Pattern (Resolved)
 
-**Problem**: The transforms use `*:monitoring-indices` which is a Cross-Cluster Search (CCS) pattern that only searches **remote clusters**, not the local cluster.
+**Problem**: Early versions used only `*:monitoring-indices` which is a Cross-Cluster Search (CCS) pattern that only searches **remote clusters**, not the local cluster.
 
 **Error**:
 ```
 No clusters exist for [*:monitoring-indices]
 ```
 
-**Solution**: The package was updated to use both patterns:
-```yaml
-source:
-  index:
-    - "monitoring-indices"      # Local cluster
-    - "*:monitoring-indices"    # Remote clusters (CCS)
-```
-
-This change is now in the package source and works for both single-cluster testing and production CCS setups.
+**Resolution**: The package (0.1.0) now includes both patterns (see [Package Build](#package-build) above), supporting both single-cluster testing and production CCS setups.
 
 ### Issue 2: Daily Aggregation Timing
 
@@ -195,7 +202,7 @@ POST _transform/logs-chargeback.billing_cluster_cost-default-0.2.5/_start
 14. Update `billing_cluster_cost` transform sync field for testing
 15. Verify `billing_cluster_cost_lookup` has data with `deployment_group`
 
-## Expected Final Output
+## Test Output
 
 **metrics-ess_billing.billing-onprem**:
 ```json
