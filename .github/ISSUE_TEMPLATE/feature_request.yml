@@ -1,0 +1,74 @@
+name: Feature Request
+description: Suggest a new feature or enhancement for the Chargeback Integration or Module
+title: "[Enhancement]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: "## 💡 Feature Request\nThank you for taking the time to suggest an improvement! Please provide as much detail as possible to help us understand your request."
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: "📦 Component"
+      description: "Which component does this feature request apply to?"
+      options:
+        - Chargeback Integration
+        - Chargeback Module
+        - Both
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: "📝 Description"
+      description: "A clear and concise description of the feature you'd like to see."
+      placeholder: "Describe the feature..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: "🎯 Use Case / Problem"
+      description: "What problem does this feature solve? What is the business value?"
+      placeholder: "Explain the use case and why this feature would be valuable..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: "💡 Proposed Solution"
+      description: "How do you envision this feature working?"
+      placeholder: "Describe your proposed implementation or solution..."
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: "🔄 Alternatives Considered"
+      description: "Have you considered any alternative approaches or workarounds?"
+      placeholder: "Describe any alternatives you've considered..."
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: "🔢 Current Version"
+      description: "Which version of Chargeback are you currently using?"
+      placeholder: "Example: 0.2.10"
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: "📎 Additional Context"
+      description: "Add any other context, screenshots, or examples about the feature request."
+    validations:
+      required: false
