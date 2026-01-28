@@ -6,14 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### 0.2.10 (pending ESS Billing 1.7.0)
-- **Bug Fixes:** Fixed visualizations not loading correctly due to integer division returning zero in ES|QL queries. All calculations now use TO_DOUBLE type conversion.
-- **Enhancements:** Automated `chargeback_conf_lookup` index creation via a bootstrap transform during installation.
-- **Note:** This version requires ESS Billing integration v1.7.0+ which has not been released yet.
-
 ---
 
 ## Integration Releases
+
+### [0.2.10] - 2026-01-27
+#### Fixed
+- Visualizations not loading correctly due to integer division returning zero in ES|QL queries. All calculations now use `TO_DOUBLE` type conversion.
+
+#### Added
+- Automated `chargeback_conf_lookup` index creation via a bootstrap transform during installation
+  - Default ECU rate: 0.85 EUR
+  - Default weights: indexing=20, query=20, storage=40
+  - Default date range: 2010-01-01 to 2046-12-31
+
+#### Changed
+- Requires ESS Billing integration v1.7.0+
+- Bumped all transform pipeline versions to 0.2.10
 
 ### [0.2.9] - 2025-12-05
 #### Added
