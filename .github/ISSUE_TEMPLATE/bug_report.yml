@@ -1,28 +1,17 @@
 name: Bug Report
-description: Report an issue encountered while using the Chargeback Integration or Module
+description: Report an issue encountered while using the Chargeback Integration
 title: "[Bug]: "
 labels: ["bug"]
 body:
   - type: markdown
     attributes:
-      value: "## 🐛 Bug Report\nPlease provide a clear and concise description of the issue you encountered while using the Chargeback Integration or Module."
-
-  - type: dropdown
-    id: component
-    attributes:
-      label: "📦 Component"
-      description: "Which component are you using?"
-      options:
-        - Chargeback Integration (recommended)
-        - Chargeback Module (legacy)
-    validations:
-      required: true
+      value: "## 🐛 Bug Report\nPlease provide a clear and concise description of the issue you encountered while using the Chargeback Integration."
 
   - type: textarea
     id: step
     attributes:
       label: "❓ Step of Instructions"
-      description: "Which step in the instructions did the issue occur at? (Provide the section name, step number, or link to the specific instruction in the [GitHub repo](https://github.com/elastic/elasticsearch-chargeback))."
+      description: "Which step in the Chargeback Integration instructions did the issue occur at? (Provide the section name, step number, or link to the specific instruction in the [GitHub repo](https://github.com/elastic/elasticsearch-chargeback/tree/main/integration))."
       placeholder: "Example: 'Step 3 - Create the transform' or 'Pipeline setup section'"
     validations:
       required: true

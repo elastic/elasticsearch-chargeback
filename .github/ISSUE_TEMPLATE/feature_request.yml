@@ -1,24 +1,11 @@
 name: Feature Request
-description: Suggest a new feature or enhancement for the Chargeback Integration or Module
+description: Suggest a new feature or enhancement for the Chargeback Integration
 title: "[Enhancement]: "
 labels: ["enhancement"]
 body:
   - type: markdown
     attributes:
       value: "## 💡 Feature Request\nThank you for taking the time to suggest an improvement! Please provide as much detail as possible to help us understand your request."
-
-  - type: dropdown
-    id: component
-    attributes:
-      label: "📦 Component"
-      description: "Which component does this feature request apply to?"
-      options:
-        - Chargeback Integration
-        - Chargeback Module
-        - Both
-        - Not sure
-    validations:
-      required: true
 
   - type: textarea
     id: description
