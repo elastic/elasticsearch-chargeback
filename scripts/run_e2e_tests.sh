@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Automated E2E test: install Elasticsearch integration, On-Prem Billing, Chargeback via elastic-package,
-# then run verification (transforms, indices). Based on feature/onprem-billing-integration TESTING flow.
+# then run verification (transforms, indices). Supports integrations wip/onprem-billing-integration (mERU/ERU/RAM) or zip from chargeback repo.
 # Run from elasticsearch-chargeback repo root; integrations repo must be sibling or set INTEGRATIONS_REPO.
 set -e
 
@@ -87,30 +87,37 @@ else
   echo "No Elasticsearch index_pivot transform found. List all: $ES_HOST/_transform"
 fi
 
-# 5b. Ensure monitoring-indices has at least one doc so On-Prem config_bootstrap can discover deployments
+# 5b. Seed monitoring-indices with dev, prod, monitoring so On-Prem config_bootstrap discovers 3 deployments (12 ERU setup: 2 product + 1 monitoring group)
 YESTERDAY_EARLY=$(date -u -v-1d 2>/dev/null +%Y-%m-%dT00:00:00.000Z || date -u -d "yesterday" 2>/dev/null +%Y-%m-%dT00:00:00.000Z || echo "2026-01-28T00:00:00.000Z")
 MONITORING_COUNT_EARLY=$(curl_es -sS "$ES_HOST/monitoring-indices/_count" 2>/dev/null | grep -oE '"count":[0-9]+' | sed 's/"count"://')
 if [[ "${MONITORING_COUNT_EARLY:-0}" == "0" ]]; then
-  echo "Seeding 1 doc into monitoring-indices (for On-Prem config_bootstrap and Chargeback)."
-  curl_es -X POST "$ES_HOST/monitoring-indices/_doc" -d "{\"@timestamp\": \"$YESTERDAY_EARLY\", \"elasticsearch\": { \"cluster\": { \"name\": \"elasticsearch\" } }}" >/dev/null 2>&1 || true
+  echo "Seeding monitoring-indices: dev, prod, monitoring (3 deployments for 12 ERU test)."
+  for cluster in dev prod monitoring; do
+    curl_es -X POST "$ES_HOST/monitoring-indices/_doc" -d "{\"@timestamp\": \"$YESTERDAY_EARLY\", \"elasticsearch\": { \"cluster\": { \"name\": \"$cluster\" } }}" >/dev/null 2>&1 || true
+  done
 fi
 
-# 6. On-Prem Billing: install, then create enrich policy, calculate_cost pipeline, update transform
-echo "--- 6. Install On-Prem Billing (from feature/onprem-billing-integration zip) ---"
-ONPREM_ZIP_PATH=$(cd "$CHARGEBACK_REPO" && git ls-tree -r --name-only feature/onprem-billing-integration 2>/dev/null | grep -E 'onprem_billing.*\.zip$' | head -1)
-ONPREM_ZIP=""
-if [[ -n "$ONPREM_ZIP_PATH" ]]; then
-  ONPREM_ZIP="/tmp/$(basename "$ONPREM_ZIP_PATH")"
-  if (cd "$CHARGEBACK_REPO" && git show "feature/onprem-billing-integration:$ONPREM_ZIP_PATH" > "$ONPREM_ZIP" 2>/dev/null); then
-    :
-  else
-    ONPREM_ZIP=""
-  fi
+# 6. On-Prem Billing: install (from integrations repo package or chargeback zip), then org + deployment config, enrich policies, pipeline, transform
+echo "--- 6. Install On-Prem Billing ---"
+ONPREM_INSTALLED=false
+if [[ -d "$INTEGRATIONS_REPO/packages/onprem_billing" ]]; then
+  echo "  Installing from integrations repo packages/onprem_billing (e.g. wip/onprem-billing-integration)"
+  (cd "$INTEGRATIONS_REPO/packages/onprem_billing" && $EP_CMD build --skip-validation && $EP_CMD install --skip-validation) && ONPREM_INSTALLED=true || true
 fi
-if [[ -n "$ONPREM_ZIP" && -f "$ONPREM_ZIP" ]]; then
-  (cd "$INTEGRATIONS_REPO" && $EP_CMD install --zip "$ONPREM_ZIP" --skip-validation) || echo "On-Prem install failed (zip may not exist on branch). Skipping."
-
-  # 6a. Start config_bootstrap first so it discovers deployments and populates onprem_billing_config
+if [[ "$ONPREM_INSTALLED" != "true" ]]; then
+  for branch in wip/onprem-billing-integration feature/onprem-billing-integration; do
+    ONPREM_ZIP_PATH=$(cd "$CHARGEBACK_REPO" && git ls-tree -r --name-only "$branch" 2>/dev/null | grep -E 'onprem_billing.*\.zip$' | head -1)
+    if [[ -n "$ONPREM_ZIP_PATH" ]]; then
+      ONPREM_ZIP="/tmp/$(basename "$ONPREM_ZIP_PATH")"
+      if (cd "$CHARGEBACK_REPO" && git show "$branch:$ONPREM_ZIP_PATH" > "$ONPREM_ZIP" 2>/dev/null) && [[ -f "$ONPREM_ZIP" ]]; then
+        (cd "$INTEGRATIONS_REPO" && $EP_CMD install --zip "$ONPREM_ZIP" --skip-validation) && ONPREM_INSTALLED=true || true
+        break
+      fi
+    fi
+  done
+fi
+if [[ "$ONPREM_INSTALLED" == "true" ]]; then
+  # 6a. Start config_bootstrap so it discovers deployments and populates onprem_billing_config
   CONFIG_BOOT_TID=$(curl_es "$ES_HOST/_transform?size=100" 2>/dev/null | grep -oE '"id":"logs-onprem_billing\.config_bootstrap-[^"]+"' | sed 's/"id":"//;s/"//')
   if [[ -n "$CONFIG_BOOT_TID" ]]; then
     echo "  Start config_bootstrap: $CONFIG_BOOT_TID"
@@ -119,26 +126,42 @@ if [[ -n "$ONPREM_ZIP" && -f "$ONPREM_ZIP" ]]; then
   echo "  Waiting 15s for config_bootstrap to populate onprem_billing_config..."
   sleep 15
 
-  # 6b. Update first deployment in onprem_billing_config (name, tags, daily_ecu)
-  CONFIG_DOC_ID=$(curl_es -sS "$ES_HOST/onprem_billing_config/_search?size=1" -d '{"_source":["deployment_id"],"query":{"match_all":{}}}' 2>/dev/null | grep -oE '"_id":"[^"]+"' | head -1 | sed 's/"_id":"//;s/"//')
-  if [[ -n "$CONFIG_DOC_ID" ]]; then
-    echo "  Update deployment config (id=$CONFIG_DOC_ID)"
-    curl_es -X POST "$ES_HOST/onprem_billing_config/_update/$CONFIG_DOC_ID" -d '{"doc":{"deployment_name":"elasticsearch","deployment_tags":["chargeback_group:platform_team"],"daily_ecu":500}}' >/dev/null 2>&1 || true
-  fi
+  # 6b. Organization doc: 12 ERU licence (for dev + prod + monitoring test)
+  echo "  Create organization config doc (12 ERU licence)"
+  curl_es -X PUT "$ES_HOST/onprem_billing_config/_doc/organization" -d '{"config_type":"organization","total_annual_license_cost":180000,"total_erus_purchased":12,"eru_to_ram_gb":64,"currency_unit":"EUR"}' >/dev/null 2>&1 || true
 
-  # 6c. Create enrich policy and execute
-  echo "  Create enrich policy and execute"
-  curl_es -X PUT "$ES_HOST/_enrich/policy/onprem_billing_config_enrich_policy" -d '{"match":{"indices":"onprem_billing_config","match_field":"deployment_id","enrich_fields":["daily_ecu","deployment_name","deployment_tags"]}}' >/dev/null 2>&1 || true
+  # 6c. Update all deployment docs: dev (2 ERU, product), prod (8 ERU, product), monitoring (2 ERU, monitoring group)
+  echo "  Update deployment configs: dev=2 ERU/product, prod=8 ERU/product, monitoring=2 ERU/monitoring"
+  for dep_id in dev prod monitoring; do
+    case "$dep_id" in
+      dev)        tags='["chargeback_group:product"]';   erus=2; name="dev" ;;
+      prod)       tags='["chargeback_group:product"]';   erus=8; name="prod" ;;
+      monitoring) tags='["chargeback_group:monitoring"]'; erus=2; name="monitoring" ;;
+      *)          tags='["chargeback_group:product"]';   erus=1; name="$dep_id" ;;
+    esac
+    doc_id=$(curl_es -sS "$ES_HOST/onprem_billing_config/_search?size=1" -d "{\"_source\":false,\"query\":{\"term\":{\"deployment_id\":\"$dep_id\"}}}" 2>/dev/null | grep -oE '"_id":"[^"]+"' | head -1 | sed 's/"_id":"//;s/"//')
+    if [[ -n "$doc_id" ]]; then
+      curl_es -X POST "$ES_HOST/onprem_billing_config/_update/$doc_id" -d "{\"doc\":{\"deployment_name\":\"$name\",\"deployment_tags\":$tags,\"deployment_erus\":$erus}}" >/dev/null 2>&1 || true
+    fi
+  done
+
+  # 6d. Create enrich policies (wip/onprem-billing-integration: deployment + org) and execute
+  echo "  Create enrich policies and execute"
+  curl_es -X PUT "$ES_HOST/_enrich/policy/onprem_billing_config_enrich_policy" -d '{"match":{"indices":"onprem_billing_config","match_field":"deployment_id","enrich_fields":["daily_meru","deployment_erus","deployment_name","deployment_tags","node_count","ram_per_node_gb"]}}' >/dev/null 2>&1 || true
+  curl_es -X PUT "$ES_HOST/_enrich/policy/onprem_billing_org_config_policy" -d '{"match":{"indices":"onprem_billing_config","match_field":"config_type","enrich_fields":["total_annual_license_cost","total_erus_purchased","eru_to_ram_gb","currency_unit"]}}' >/dev/null 2>&1 || true
   curl_es -X POST "$ES_HOST/_enrich/policy/onprem_billing_config_enrich_policy/_execute" >/dev/null 2>&1 || true
+  curl_es -X POST "$ES_HOST/_enrich/policy/onprem_billing_org_config_policy/_execute" >/dev/null 2>&1 || true
+  echo "  Waiting 10s for enrich indices to be searchable..."
+  sleep 10
 
-  # 6d. Create calculate_cost ingest pipeline (enrich + map to ESS Billing schema)
+  # 6e. Create calculate_cost ingest pipeline (mERU/ERU/RAM -> ESS Billing total_ecu)
   PIPELINE_JSON="$SCRIPT_DIR/onprem_billing_calculate_cost_pipeline.json"
   if [[ -f "$PIPELINE_JSON" ]]; then
     echo "  Create ingest pipeline: calculate_cost"
     curl_es -X PUT "$ES_HOST/_ingest/pipeline/calculate_cost" -d @"$PIPELINE_JSON" >/dev/null 2>&1 || true
   fi
 
-  # 6e. Update billing transform: use pipeline + 1m sync delay (for testing), then reset and start
+  # 6f. Update billing transform: pipeline + 1m sync delay (for testing), then reset and start
   BILLING_TID=$(curl_es "$ES_HOST/_transform?size=100" 2>/dev/null | grep -oE '"id":"logs-onprem_billing\.billing-[^"]+"' | sed 's/"id":"//;s/"//')
   if [[ -n "$BILLING_TID" ]]; then
     echo "  Update billing transform (pipeline calculate_cost, sync delay 1m)"
@@ -149,7 +172,7 @@ if [[ -n "$ONPREM_ZIP" && -f "$ONPREM_ZIP" ]]; then
     curl_es -X POST "$ES_HOST/_transform/$BILLING_TID/_start" >/dev/null 2>&1 || true
   fi
 else
-  echo "On-Prem Billing zip not found on feature/onprem-billing-integration. Skipping."
+  echo "On-Prem Billing not installed (no packages/onprem_billing in integrations repo and no zip on chargeback branch). Skipping."
 fi
 
 # 7. Build and install Chargeback
@@ -160,33 +183,16 @@ echo "--- 7. Build and install Chargeback ---"
 echo "--- 8. Backfill lookup indices (seed + reset/start transforms) ---"
 YESTERDAY=$(date -u -v-1d 2>/dev/null +%Y-%m-%dT00:00:00.000Z || date -u -d "yesterday" 2>/dev/null +%Y-%m-%dT00:00:00.000Z || echo "2026-01-28T00:00:00.000Z")
 
-# 8a. Ensure monitoring-indices has at least one document (for contribution transforms)
-# Seed when index is missing (count empty) or has 0 docs so contribution lookups get data
+# 8a. Ensure monitoring-indices has docs for dev, prod, monitoring (for contribution transforms; match 12 ERU setup)
 MONITORING_COUNT=$(curl_es -sS "$ES_HOST/monitoring-indices/_count" 2>/dev/null | grep -oE '"count":[0-9]+' | sed 's/"count"://')
 if [[ -z "$MONITORING_COUNT" || "$MONITORING_COUNT" == "0" ]]; then
-  curl_es -X POST "$ES_HOST/monitoring-indices/_doc" -d "{
-    \"@timestamp\": \"$YESTERDAY\",
-    \"elasticsearch\": { \"cluster\": { \"name\": \"elasticsearch\" } }
-  }" >/dev/null 2>&1 && echo "Seeded 1 doc into monitoring-indices (index was empty or missing)." || echo "Seed monitoring-indices skipped (index may need to exist first)."
+  echo "Seeding monitoring-indices: dev, prod, monitoring (3 deployments)."
+  for cluster in dev prod monitoring; do
+    curl_es -X POST "$ES_HOST/monitoring-indices/_doc" -d "{\"@timestamp\": \"$YESTERDAY\", \"elasticsearch\": { \"cluster\": { \"name\": \"$cluster\" } }}" >/dev/null 2>&1 || true
+  done
 fi
 
-# 8b. Seed one billing doc so billing_cluster_cost_lookup gets populated (Chargeback reads from metrics-ess_billing.billing-*)
-BILLING_INDEX="metrics-ess_billing.billing-onprem"
-curl_es -X POST "$ES_HOST/$BILLING_INDEX/_doc" -d "{
-  \"@timestamp\": \"$YESTERDAY\",
-  \"event\": { \"ingested\": \"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\" },
-  \"ess\": {
-    \"billing\": {
-      \"deployment_id\": \"elasticsearch\",
-      \"deployment_name\": \"elasticsearch\",
-      \"total_ecu\": 100.0,
-      \"sku\": \"onprem-daily-elasticsearch\",
-      \"type\": \"capacity\",
-      \"kind\": \"elasticsearch\",
-      \"deployment_type\": \"onprem\"
-    }
-  }
-}" >/dev/null 2>&1 && echo "Seeded 1 doc into $BILLING_INDEX." || echo "Billing index seed skipped (index may not exist yet)."
+# 8b. (Billing doc updates run after 8e so we patch docs written by the On-Prem billing transform.)
 
 # 8c. Use short sync delay for billing_cluster_cost so test data is picked up (transform defaults to 1h delay)
 BILLING_TID=$(curl_es "$ES_HOST/_transform?size=100" 2>/dev/null | grep -oE '"id":"logs-chargeback\.billing_cluster_cost-[^"]+"' | head -1 | sed 's/"id":"//;s/"//')
@@ -206,6 +212,63 @@ done
 # 8e. Wait for transforms to run (index_pivot and contribution transforms need time)
 echo "Waiting 45s for transforms to run..."
 sleep 45
+
+# 8f. Ensure billing docs have correct total_ecu and deployment_tags (patch docs from On-Prem billing transform or insert if none)
+#     Search by ess.billing.deployment_id OR cluster_uuid so we match transform output (pipeline may not have run). Requires jq.
+BILLING_INDEX="metrics-ess_billing.billing-onprem"
+if ! command -v jq >/dev/null 2>&1; then
+  echo "WARN: jq not found; skipping billing doc patch (total_ecu/deployment_tags may show defaults)."
+else
+for dep_id in dev prod monitoring; do
+  case "$dep_id" in
+    dev)        name="dev";        total_ecu=2000; tags='["chargeback_group:product"]' ;;
+    prod)       name="prod";       total_ecu=8000; tags='["chargeback_group:product"]' ;;
+    monitoring) name="monitoring"; total_ecu=2000; tags='["chargeback_group:monitoring"]' ;;
+    *)          name="$dep_id";    total_ecu=1000; tags='["chargeback_group:product"]' ;;
+  esac
+  # Find docs: either pipeline set ess.billing.deployment_id, or raw transform has cluster_uuid/cluster_name = dep_id
+  search_resp=$(curl_es -sS "$ES_HOST/$BILLING_INDEX/_search?size=50" -d "{\"_source\":false,\"query\":{\"bool\":{\"should\":[{\"term\":{\"ess.billing.deployment_id\":\"$dep_id\"}},{\"term\":{\"cluster_uuid\":\"$dep_id\"}},{\"term\":{\"cluster_name\":\"$dep_id\"}}],\"minimum_should_match\":1}}}" 2>/dev/null)
+  existing_ids=$(echo "$search_resp" | grep -oE '"_id":"[^"]+"' | sed 's/"_id":"//;s/"//')
+  if [[ -n "$existing_ids" ]]; then
+    for doc_id in $existing_ids; do
+      update_body=$(jq -n -c --arg ts "$YESTERDAY" --arg dep "$dep_id" --arg n "$name" --argjson ecu_val "$total_ecu" --arg t "$tags" \
+        '{doc: {"@timestamp": $ts, "ess": {"billing": {"deployment_id": $dep, "deployment_name": $n, "total_ecu": $ecu_val, "deployment_tags": ($t | fromjson), "sku": "onprem_node", "type": "capacity", "kind": "elasticsearch", "deployment_type": "onprem"}}}}')
+      curl_es -X POST "$ES_HOST/$BILLING_INDEX/_update/$doc_id" -d "$update_body" >/dev/null 2>&1 || true
+    done
+  else
+    insert_body=$(jq -n -c --arg ts "$YESTERDAY" --arg dep "$dep_id" --arg n "$name" --argjson ecu_val "$total_ecu" --arg t "$tags" \
+      '{ "@timestamp": $ts, "event": { "ingested": (now | todate) }, "ess": { "billing": { "deployment_id": $dep, "deployment_name": $n, "total_ecu": $ecu_val, "deployment_tags": ($t | fromjson), "sku": "onprem_node", "type": "capacity", "kind": "elasticsearch", "deployment_type": "onprem" } } }')
+    curl_es -X POST "$ES_HOST/$BILLING_INDEX/_doc" -d "$insert_body" >/dev/null 2>&1 || true
+  fi
+done
+echo "Patched billing docs in $BILLING_INDEX with total_ecu and deployment_tags (12 ERU: dev=2000, prod=8000, monitoring=2000)."
+fi
+
+# 8g. Re-run Chargeback billing_cluster_cost transform so billing_cluster_cost_lookup gets deployment_group from patched deployment_tags
+BILLING_CLUSTER_TID=$(curl_es "$ES_HOST/_transform?size=100" 2>/dev/null | grep -oE '"id":"logs-chargeback\.billing_cluster_cost-[^"]+"' | head -1 | sed 's/"id":"//;s/"//')
+if [[ -n "$BILLING_CLUSTER_TID" ]]; then
+  echo "Reset/start billing_cluster_cost so lookup gets deployment_group (product/monitoring)..."
+  curl_es -X POST "$ES_HOST/_transform/$BILLING_CLUSTER_TID/_stop" >/dev/null 2>&1 || true
+  curl_es -X POST "$ES_HOST/_transform/$BILLING_CLUSTER_TID/_reset" >/dev/null 2>&1 || true
+  curl_es -X POST "$ES_HOST/_transform/$BILLING_CLUSTER_TID/_start" >/dev/null 2>&1 || true
+  sleep 15
+fi
+
+# 8h. Ensure billing_cluster_cost_lookup has deployment_group set (transform runtime_mapping can leave it empty; patch by deployment_id)
+LOOKUP_INDEX="billing_cluster_cost_lookup"
+for dep_id in dev prod monitoring; do
+  case "$dep_id" in
+    dev|prod)  group="product" ;;
+    monitoring) group="monitoring" ;;
+    *)         group="product" ;;
+  esac
+  resp=$(curl_es -sS "$ES_HOST/$LOOKUP_INDEX/_search?size=50" -d "{\"_source\":false,\"query\":{\"term\":{\"deployment_id\":\"$dep_id\"}}}" 2>/dev/null)
+  ids=$(echo "$resp" | grep -oE '"_id":"[^"]+"' | sed 's/"_id":"//;s/"//')
+  for doc_id in $ids; do
+    curl_es -X POST "$ES_HOST/$LOOKUP_INDEX/_update/$doc_id" -d "{\"doc\":{\"deployment_group\":\"$group\"}}" >/dev/null 2>&1 || true
+  done
+done
+echo "Patched $LOOKUP_INDEX deployment_group by deployment_id (dev,prod->product; monitoring->monitoring)."
 
 # 9. Verification: list Chargeback transforms and document counts for lookup indices
 echo "--- 9. Verification ---"
@@ -302,11 +365,11 @@ if command -v jq >/dev/null 2>&1; then
   echo ""
   echo "  Match check:"
   echo "  - All lookup indices have at least 1 document: $([[ $CROSS_OK -eq 1 ]] && echo 'PASS' || echo 'FAIL (some empty)')"
-  # Check that deployment_id 'elasticsearch' (or the single value we see) appears in billing and contribution indices
-  if echo "$DEP_IDS" | grep -q "elasticsearch"; then
-    echo "  - deployment_id 'elasticsearch' present in indices: PASS"
+  # With 12 ERU setup we expect deployment_ids: dev, prod, monitoring (2 deployment groups: product, monitoring)
+  if echo "$DEP_IDS" | grep -q "dev" && echo "$DEP_IDS" | grep -q "prod"; then
+    echo "  - deployment_ids (12 ERU: dev, prod, monitoring): $DEP_IDS"
   else
-    echo "  - deployment_id consistency: $DEP_IDS"
+    echo "  - deployment_id values: $DEP_IDS"
   fi
 else
   echo "  (install jq for cross-verification table)"

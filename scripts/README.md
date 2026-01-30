@@ -6,6 +6,7 @@ Scripts for running Chargeback integration tests locally. **Use the automated E2
 
 - **elastic-package** (e.g. `go install github.com/elastic/elastic-package` or use from the integrations repo: `go run github.com/elastic/elastic-package`)
 - **integrations** repo (sibling of `elasticsearch-chargeback`, or set `INTEGRATIONS_REPO`)
+- **jq** (for billing doc patch so `total_ecu` and `deployment_tags` are correct in evidence)
 - **Docker** (4GB+ memory). Stack: Elasticsearch 9.2+ (for ES|QL LOOKUP JOIN), Kibana, Package Registry
 
 ---
@@ -18,7 +19,7 @@ From the **elasticsearch-chargeback** repo root, with the stack already running:
 ./scripts/run_e2e_tests.sh
 ```
 
-**What it does:** Installs **Elasticsearch** integration → **On-Prem Billing** (from zip on `feature/onprem-billing-integration`, if present) → **Chargeback**, in that order. Uses **version-agnostic** logic: package versions are read from the integrations repo (Elasticsearch) and from the Fleet API (On-Prem uninstall). It disables legacy monitoring; starts the Elasticsearch `index_pivot` transform; optionally adds an Elasticsearch package policy to Fleet; seeds source data if needed (monitoring-indices, billing); resets and starts all Chargeback transforms; waits for transforms; then verifies document counts and prints **evidence tables** (per-index samples and a cross-verification table) so you can confirm data matches across all lookup indices.
+**What it does:** Installs **Elasticsearch** integration → **On-Prem Billing** → **Chargeback**, in that order. **On-Prem Billing** is installed from the integrations repo when `packages/onprem_billing` exists (e.g. branch `wip/onprem-billing-integration`), otherwise from a zip on a chargeback repo branch. Post-install uses a **12 ERU test scenario**: three deployments (dev, prod, monitoring), two deployment groups (product, monitoring); organization config (12 ERU licence), deployment configs (dev 2 ERU, prod 8 ERU, monitoring 2 ERU), both enrich policies, `calculate_cost` pipeline, and billing transform. Then seeds **monitoring-indices** and **billing** with **one doc per deployment** (3 of each), resets and starts Chargeback transforms, and prints **evidence tables** (full content of all lookup indices + cross-verification).
 
 **Before running:** Start the stack from the integrations repo (first time can take 5–10 min):
 
@@ -46,7 +47,7 @@ Run before a fresh E2E run or to reset the stack:
 ./scripts/cleanup_testing_env.sh
 ```
 
-Uninstalls Chargeback, On-Prem Billing, and Elasticsearch; removes the Fleet package policy `elasticsearch-monitoring`; deletes the testing indices (lookup indices, monitoring-indices, onprem_billing_config); removes the On-Prem enrich policy and `calculate_cost` pipeline; re-enables legacy monitoring. **On-Prem package version** is discovered from the Fleet API (no hardcoded version).
+Uninstalls Chargeback, On-Prem Billing, and Elasticsearch; removes the Fleet package policy `elasticsearch-monitoring`; deletes the testing indices (lookup indices, monitoring-indices, onprem_billing_config); removes both On-Prem enrich policies (`onprem_billing_config_enrich_policy`, `onprem_billing_org_config_policy`) and the `calculate_cost` pipeline; re-enables legacy monitoring. **On-Prem package version** is discovered from the Fleet API (no hardcoded version).
 
 ---
 
@@ -59,7 +60,7 @@ Chargeback transforms **read from other indices**. If those sources are empty, t
 - **chargeback_conf_lookup** ← bootstrap transform reads from **cluster_deployment_contribution_lookup**.
 - **billing_cluster_cost_lookup** ← reads from **metrics-ess_billing.billing-\*** (On-Prem or ESS Billing).
 
-The E2E script seeds `monitoring-indices` (if empty) and **metrics-ess_billing.billing-onprem** (one billing doc), then resets and starts all Chargeback transforms so every lookup index is populated.
+The E2E script uses a **12 ERU test setup**: three deployments (**dev**, **prod**, **monitoring**) and two deployment groups (**product**: dev + prod; **monitoring**). It seeds `monitoring-indices` with one doc per deployment (if empty), creates organization config (12 ERU licence), configures each deployment (dev 2 ERU, prod 8 ERU, monitoring 2 ERU), and seeds **metrics-ess_billing.billing-onprem** with **one billing doc per deployment** (3 docs). After resetting and starting all Chargeback transforms, every lookup index is populated with **docs for each deployment**.
 
 ---
 

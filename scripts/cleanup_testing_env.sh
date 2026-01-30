@@ -50,9 +50,10 @@ else
   echo "On-Prem Billing not installed or version could not be determined."
 fi
 
-# 2b. Remove On-Prem enrich policy and calculate_cost pipeline (created by e2e script)
-echo "--- 2b. Remove On-Prem enrich policy and pipeline ---"
+# 2b. Remove On-Prem enrich policies and calculate_cost pipeline (created by e2e script; wip/onprem-billing-integration uses both)
+echo "--- 2b. Remove On-Prem enrich policies and pipeline ---"
 curl_es -X DELETE "$ES_HOST/_enrich/policy/onprem_billing_config_enrich_policy" >/dev/null 2>&1 && echo "Deleted enrich policy onprem_billing_config_enrich_policy." || echo "Enrich policy skip or already gone."
+curl_es -X DELETE "$ES_HOST/_enrich/policy/onprem_billing_org_config_policy" >/dev/null 2>&1 && echo "Deleted enrich policy onprem_billing_org_config_policy." || echo "Org enrich policy skip or already gone."
 curl_es -X DELETE "$ES_HOST/_ingest/pipeline/calculate_cost" >/dev/null 2>&1 && echo "Deleted pipeline calculate_cost." || echo "Pipeline skip or already gone."
 
 # 3. Uninstall Elasticsearch integration
