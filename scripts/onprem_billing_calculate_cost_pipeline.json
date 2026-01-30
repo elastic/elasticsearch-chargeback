@@ -1,0 +1,37 @@
+{
+  "description": "On-Prem Billing: Enriches and maps to ESS Billing schema",
+  "processors": [
+    {
+      "enrich": {
+        "policy_name": "onprem_billing_config_enrich_policy",
+        "field": "cluster_uuid",
+        "target_field": "cost_config",
+        "max_matches": 1,
+        "ignore_missing": true,
+        "ignore_failure": true
+      }
+    },
+    {
+      "script": {
+        "lang": "painless",
+        "ignore_failure": true,
+        "description": "Map to ESS Billing schema with daily ECU from enrichment",
+        "source": "String deploymentId = ctx.cluster_uuid; String deploymentName = ctx.cluster_name; double dailyEcu = 100.0; List deploymentTags = new ArrayList(); if (ctx.cost_config != null) { if (ctx.cost_config.deployment_name != null) { deploymentName = ctx.cost_config.deployment_name; } if (ctx.cost_config.daily_ecu != null) { dailyEcu = ctx.cost_config.daily_ecu; } if (ctx.cost_config.deployment_tags != null) { deploymentTags = ctx.cost_config.deployment_tags; } } if (ctx.ess == null) ctx.ess = new HashMap(); if (ctx.ess.billing == null) ctx.ess.billing = new HashMap(); ctx.ess.billing.deployment_id = deploymentId; ctx.ess.billing.deployment_name = deploymentName; ctx.ess.billing.deployment_type = 'onprem'; ctx.ess.billing.deployment_tags = deploymentTags; ctx.ess.billing.kind = 'elasticsearch'; ctx.ess.billing.type = 'capacity'; ctx.ess.billing.unit = 'day'; ctx.ess.billing.zone_count = 1; ctx.ess.billing.name = 'On-Premises: ' + deploymentName; ctx.ess.billing.sku = 'onprem-daily-' + deploymentId; if (ctx['@timestamp'] != null) { ctx.ess.billing.from = ctx['@timestamp']; String ts = ctx['@timestamp'].toString(); if (ts.length() >= 10) { ctx.ess.billing.to = ts.substring(0, 10) + 'T23:59:59.999Z'; } } ctx.ess.billing.total_ecu = dailyEcu; ctx.ess.billing.put('quantity.value', 1.0); ctx.ess.billing.put('quantity.formatted_value', '1 day'); ctx.ess.billing.put('display_quantity.value', 1.0); ctx.ess.billing.put('display_quantity.formatted_value', '1 day'); ctx.ess.billing.put('display_quantity.type', 'default'); ctx.remove('cluster_uuid'); ctx.remove('cluster_name'); ctx.remove('cost_config'); ctx.remove('doc_count');"
+      }
+    },
+    {
+      "pipeline": {
+        "description": "[Fleet] Global pipeline for all data streams",
+        "ignore_missing_pipeline": true,
+        "name": "global@custom"
+      }
+    },
+    {
+      "pipeline": {
+        "description": "[Fleet] Pipeline for all data streams of type metrics",
+        "ignore_missing_pipeline": true,
+        "name": "metrics@custom"
+      }
+    }
+  ]
+}
