@@ -16,7 +16,7 @@ See [Requirements](README.md#requirements) for details.
 
 ### 2. Upload ZIP File: 
 
-- Asset: [`chargeback-0.2.10.zip`](assets/0.2.10/chargeback-0.2.10.zip)
+- Asset: [`chargeback-0.3.0.zip`](assets/0.3.0/chargeback-0.3.0.zip)
 - Browse to Integrations, and click on `+ Create new integration`
 
 ![alt text](assets/img/CreateNewIntegration.png)
@@ -30,7 +30,7 @@ See [Requirements](README.md#requirements) for details.
 Starting from version 0.2.8, all Chargeback transforms are configured to auto-start upon installation. You no longer need to manually start the transforms.
 
 **Starting from version 0.2.10**, the `chargeback_conf_lookup` index is automatically created via a bootstrap transform during installation. No manual setup is required! The transform creates the index with default configuration:
-- **ECU rate:** 0.85 EUR
+- **Chargeable unit rate:** 0.85 EUR
 - **Weights:** indexing=20, query=20, storage=40
 - **Date range:** 2010-01-01 to 2046-12-31
 
@@ -59,9 +59,12 @@ To upgrade the integration, do the following:
 - No manual steps required for the `chargeback_conf_lookup` index - the bootstrap transform will automatically create it if it doesn't exist.
 - If you previously manually created the `chargeback_conf_lookup` index, it will continue to work with the new version.
 
+**Upgrading from 0.2.x to 0.3.0 (breaking change):**
+- Field names have changed from ECU to chargeable units: `total_ecu` → `total_chargeable_units`, `conf_ecu_rate` → `conf_chargeable_unit_rate`, `conf_ecu_rate_unit` → `conf_chargeable_unit_rate_unit`. Existing lookup indices and config documents use the old schema; new data from the updated transforms will use the new schema. See [CHANGELOG](../CHANGELOG.md) and upgrade documentation for migration steps.
+
 ## Configuration
 
-Configuration values are stored in the `chargeback_conf_lookup` index, which is automatically created by version 0.2.10. The dashboard automatically applies the correct configuration based on the billing date falling within the `conf_start_date` and `conf_end_date` range.
+Configuration values are stored in the `chargeback_conf_lookup` index, which is automatically created by version 0.2.10+. The dashboard automatically applies the correct configuration based on the billing date falling within the `conf_start_date` and `conf_end_date` range.
 
 ### Update the default configuration:
 
@@ -71,8 +74,8 @@ Using `_update/config` updates the document with ID `config`:
 POST chargeback_conf_lookup/_update/config
 {
   "doc": {
-    "conf_ecu_rate": 0.85,
-    "conf_ecu_rate_unit": "EUR",
+    "conf_chargeable_unit_rate": 0.85,
+    "conf_chargeable_unit_rate_unit": "EUR",
     "conf_indexing_weight": 20,
     "conf_query_weight": 20,
     "conf_storage_weight": 40,
@@ -90,8 +93,8 @@ Using `_doc` creates a new document with an auto-generated ID:
 POST chargeback_conf_lookup/_doc
 {
   "config_join_key": "chargeback_config",
-  "conf_ecu_rate": 0.95,
-  "conf_ecu_rate_unit": "EUR",
+  "conf_chargeable_unit_rate": 0.95,
+  "conf_chargeable_unit_rate_unit": "EUR",
   "conf_indexing_weight": 20,
   "conf_query_weight": 20,
   "conf_storage_weight": 40,

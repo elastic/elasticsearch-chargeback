@@ -2,7 +2,7 @@
 
 ## Version
 
-Chargeback integration: 0.2.10
+Chargeback integration: 0.3.0
 
 ## Dependencies
 
@@ -25,7 +25,8 @@ This integration must be installed on the **Monitoring cluster** where the above
 |---------------------|------------------------|---------------------|-------|
 | Up to 0.2.1 | 8.18.0+ | 1.4.1+ | Basic ES\|QL LOOKUP JOIN support |
 | 0.2.2 - 0.2.9 | 9.2.0+ | 1.4.1+ | Requires smart lookup join (conditional joins) |
-| 0.2.10+ | 9.2.0+ | 1.7.0+ | Requires ESS Billing 1.7.0 features |
+| 0.2.10 - 0.2.x | 9.2.0+ | 1.7.0+ | Requires ESS Billing 1.7.0 features |
+| 0.3.0+ | 9.2.0+ | 1.7.0+ | Chargeable units schema (breaking change from 0.2.x) |
 
 ## Setup instructions
 
@@ -39,7 +40,7 @@ The Chargeback Module is building on two distinct data sets:
 
 The first layer of processing that we do, is five transforms: 
 
-- From the billing data, we get one value, namely the total ECU (cost), per deployment per day.
+- From the billing data, we get one value, namely the total chargeable units (cost), per deployment per day.
 - From the usage data, we get values for indexing, querying and storage:
     - per deployment per day.
     - per tier per day.
@@ -84,6 +85,14 @@ These alerting templates are automatically installed with the integration and ca
 
 **Important:** For alert rules 2 and 3, ensure that the Chargeback transforms are running before setting them up. These alerting rules query the lookup indices created by the transforms (`billing_cluster_cost_lookup`, `cluster_deployment_contribution_lookup`, etc.). If the transforms are not started, the alerts will not function correctly.
 
+## Version 0.3.0 Release Notes
+
+### Breaking changes
+- **ECU → chargeable units:** Field names have been renamed for consistency: `total_ecu` → `total_chargeable_units`, `conf_ecu_rate` → `conf_chargeable_unit_rate`, `conf_ecu_rate_unit` → `conf_chargeable_unit_rate_unit`. Dashboard ES|QL and config lookup index use the new names. Existing data in lookup indices from 0.2.x uses the old schema; see upgrade documentation for migration.
+
+### Maintenance
+- Bumped all transform pipeline versions to 0.3.0
+
 ## Version 0.2.10 Release Notes
 
 ### Bug Fixes
@@ -91,9 +100,9 @@ These alerting templates are automatically installed with the integration and ca
 
 ### Enhancements
 - **Automated Configuration Index:** The `chargeback_conf_lookup` index is now automatically created via a bootstrap transform during installation. This eliminates the need for manual index creation steps.
-  - Default ECU rate: 0.85 EUR
+  - Default chargeable unit rate: 0.85 EUR
   - Default weights: indexing=20, query=20, storage=40
   - Default date range: 2010-01-01 to 2046-12-31
 
 ### Maintenance
-- Bumped all transform pipeline versions to 0.2.10
+- Bumped all transform pipeline versions to 0.3.0
