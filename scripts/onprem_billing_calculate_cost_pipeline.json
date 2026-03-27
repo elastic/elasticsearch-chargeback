@@ -37,6 +37,13 @@
       }
     },
     {
+      "set": {
+        "field": "event.ingested",
+        "value": "{{{_ingest.timestamp}}}",
+        "description": "Set event.ingested to ingest time so billing_cluster_cost transform sync works"
+      }
+    },
+    {
       "pipeline": {
         "description": "[Fleet] Global pipeline for all data streams",
         "ignore_missing_pipeline": true,
