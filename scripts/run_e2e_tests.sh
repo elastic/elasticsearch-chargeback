@@ -10,12 +10,12 @@
 #   so the install creates them from the local package. Use when the dashboard in Kibana still shows
 #   "Unknown column [total_ecu]" (e.g. because a previous install came from the registry).
 #
-# Tested with: Elasticsearch/Kibana 9.2.2, Chargeback integration 0.3.0.
+# Tested with: Elasticsearch/Kibana 9.2.2, Chargeback integration 0.3.1.
 set -e
 
 # Versions this E2E is intended for (for documentation and optional checks)
 STACK_VERSION="${STACK_VERSION:-9.2.2}"
-CHARGEBACK_VERSION="${CHARGEBACK_VERSION:-0.3.0}"
+CHARGEBACK_VERSION="${CHARGEBACK_VERSION:-0.3.1}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPLACE_CHARGEBACK_DASHBOARD="${REPLACE_CHARGEBACK_DASHBOARD:-0}"

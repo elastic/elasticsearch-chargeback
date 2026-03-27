@@ -2,7 +2,7 @@
 
 ## Version
 
-Chargeback integration: 0.3.0
+Chargeback integration: 0.3.1
 
 ## Dependencies
 
@@ -26,7 +26,8 @@ This integration must be installed on the **Monitoring cluster** where the above
 | Up to 0.2.1 | 8.18.0+ | 1.4.1+ | Basic ES\|QL LOOKUP JOIN support |
 | 0.2.2 - 0.2.9 | 9.2.0+ | 1.4.1+ | Requires smart lookup join (conditional joins) |
 | 0.2.10 - 0.2.x | 9.2.0+ | 1.7.0+ | Requires ESS Billing 1.7.0 features |
-| 0.3.0+ | 9.2.0+ | 1.7.0+ | Chargeable units schema (breaking change from 0.2.x) |
+| 0.3.0 | 9.2.0+ | 1.7.0+ | Chargeable units schema (breaking change from 0.2.x) |
+| 0.3.1+ | 9.2.0+ | 1.7.0+ | Field renames, deployment_tags fix, explicit lookup mappings |
 
 ## Setup instructions
 
@@ -84,6 +85,14 @@ Version 0.2.8 includes three pre-configured Kibana alerting rule templates to he
 These alerting templates are automatically installed with the integration and can be configured through **Stack Management → Rules** in Kibana.
 
 **Important:** For alert rules 2 and 3, ensure that the Chargeback transforms are running before setting them up. These alerting rules query the lookup indices created by the transforms (`billing_cluster_cost_lookup`, `cluster_deployment_contribution_lookup`, etc.). If the transforms are not started, the alerts will not function correctly.
+
+## Version 0.3.1 Release Notes
+
+### Enhancements
+- **Explicit `billing_cluster_cost_lookup` mappings removed** from `manifest.yml` (managed by transform field definitions).
+- **`deployment_tags` fix:** billing_cluster_cost transform now handles `ess.billing.deployment_tags` as either a string or array.
+- **Dashboard:** Added `@timestamp` exists filter for package validation.
+- Bumped all transform pipeline versions to `0.3.1-billing` / `0.3.1-usage`.
 
 ## Version 0.3.0 Release Notes
 

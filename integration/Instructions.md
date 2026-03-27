@@ -16,7 +16,7 @@ See [Requirements](README.md#requirements) for details.
 
 ### 2. Upload ZIP File: 
 
-- Asset: [`chargeback-0.3.0.zip`](assets/0.3.0/chargeback-0.3.0.zip)
+- Asset: [`chargeback-0.3.1.zip`](assets/0.3.1/chargeback-0.3.1.zip)
 - Browse to Integrations, and click on `+ Create new integration`
 
 ![alt text](assets/img/CreateNewIntegration.png)
@@ -59,7 +59,10 @@ To upgrade the integration, do the following:
 - No manual steps required for the `chargeback_conf_lookup` index - the bootstrap transform will automatically create it if it doesn't exist.
 - If you previously manually created the `chargeback_conf_lookup` index, it will continue to work with the new version.
 
-**Upgrading from 0.2.x to 0.3.0 (breaking change):**
+**Upgrading from 0.3.0 to 0.3.1:**
+- Upload the new ZIP. Transforms will reset and restart automatically. No manual steps required.
+
+**Upgrading from 0.2.x to 0.3.0/0.3.1 (breaking change):**
 - Field names have changed from ECU to chargeable units: `total_ecu` → `total_chargeable_units`, `conf_ecu_rate` → `conf_chargeable_unit_rate`, `conf_ecu_rate_unit` → `conf_chargeable_unit_rate_unit`. Existing lookup indices and config documents use the old schema; new data from the updated transforms will use the new schema. See [CHANGELOG](../CHANGELOG.md) and upgrade documentation for migration steps.
 
 ## Configuration

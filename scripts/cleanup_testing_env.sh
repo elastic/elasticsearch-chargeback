@@ -2,12 +2,12 @@
 # Clean up testing environment: uninstall Chargeback, On-Prem Billing, Elasticsearch;
 # remove Fleet package policy; delete lookup/monitoring indices; re-enable legacy monitoring.
 # Run from elasticsearch-chargeback repo root; integrations repo must be sibling or set INTEGRATIONS_REPO.
-# Tested with: Elasticsearch/Kibana 9.2.2, Chargeback integration 0.3.0.
+# Tested with: Elasticsearch/Kibana 9.2.2, Chargeback integration 0.3.1.
 set -e
 
 # Versions this cleanup is intended for (for documentation and optional checks)
 STACK_VERSION="${STACK_VERSION:-9.2.2}"
-CHARGEBACK_VERSION="${CHARGEBACK_VERSION:-0.3.0}"
+CHARGEBACK_VERSION="${CHARGEBACK_VERSION:-0.3.1}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CHARGEBACK_REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
