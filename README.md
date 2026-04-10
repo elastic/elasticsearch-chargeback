@@ -10,6 +10,12 @@ Both Chargeback module and integration are based on the **Elasticsearch Service 
 - Data stream
 - Day
 
+## Support
+
+Chargeback is created and supported by Elastic **Field** (Customer Engineering), not Elastic Product. It is **not** generally available (GA). While it remains in technical preview, get help through Field—for example your Elastic account team or the Elastician who shared this work with you. Standard Elastic Support does not cover it until that is explicitly arranged.
+
+When Chargeback reaches GA, **Field** will coordinate with **Elastic Support** to put an official support model in place for entitled customers.
+
 ## Choosing between the **Chargeback integration** and **Chargeback module**
 
 The recommended approach is to use the *Chargeback integration* because of the following:
