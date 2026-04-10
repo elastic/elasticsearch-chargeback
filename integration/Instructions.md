@@ -16,7 +16,7 @@ See [Requirements](README.md#requirements) for details.
 
 ### 2. Upload ZIP File: 
 
-- Asset: [`chargeback-0.3.1.zip`](assets/0.3.1/chargeback-0.3.1.zip)
+- Asset: [`chargeback-0.3.2.zip`](assets/0.3.2/chargeback-0.3.2.zip)
 - Browse to Integrations, and click on `+ Create new integration`
 
 ![alt text](assets/img/CreateNewIntegration.png)
@@ -29,7 +29,7 @@ See [Requirements](README.md#requirements) for details.
 
 Starting from version 0.2.8, all Chargeback transforms are configured to auto-start upon installation. You no longer need to manually start the transforms.
 
-**Starting from version 0.2.10** (now current: v0.3.1), the `chargeback_conf_lookup` index is automatically created via a bootstrap transform during installation. No manual setup is required! The transform creates the index with default configuration:
+**Starting from version 0.2.10** (now current: v0.3.2), the `chargeback_conf_lookup` index is automatically created via a bootstrap transform during installation. No manual setup is required! The transform creates the index with default configuration:
 - **Chargeable unit rate:** 0.85 EUR
 - **Weights:** indexing=20, query=20, storage=40
 - **Date range:** 2010-01-01 to 2046-12-31
@@ -59,9 +59,13 @@ To upgrade the integration, do the following:
 - No manual steps required for the `chargeback_conf_lookup` index - the bootstrap transform will automatically create it if it doesn't exist.
 - If you previously manually created the `chargeback_conf_lookup` index, it will continue to work with the new version.
 
+**Upgrading from 0.3.1 to 0.3.2:**
+- Contribution transforms read usage data from `monitoring-indices*` and cross-cluster `*:monitoring-indices*` so a customized Elasticsearch integration index-pivot destination still matches when its name uses the `monitoring-indices*` prefix (default remains `monitoring-indices`).
+- No change to `chargeback_conf_lookup` field names or manual configuration steps.
+
 ## Configuration
 
-Configuration values are stored in the `chargeback_conf_lookup` index, which is automatically created by version 0.2.10+ (current: v0.3.1). The dashboard automatically applies the correct configuration based on the billing date falling within the `conf_start_date` and `conf_end_date` range.
+Configuration values are stored in the `chargeback_conf_lookup` index, which is automatically created by version 0.2.10+ (current: v0.3.2). The dashboard automatically applies the correct configuration based on the billing date falling within the `conf_start_date` and `conf_end_date` range.
 
 ### Update the default configuration:
 
