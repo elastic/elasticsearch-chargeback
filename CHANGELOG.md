@@ -10,6 +10,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Integration Releases
 
+### [0.3.0] - TBD
+#### Breaking changes
+- **ECU → chargeable units:** Renamed fields for consistency: `total_ecu` → `total_chargeable_units`, `conf_ecu_rate` → `conf_chargeable_unit_rate`, `conf_ecu_rate_unit` → `conf_chargeable_unit_rate_unit`. Dashboard ES|QL queries and config lookup index use the new field names. Existing lookup indices from 0.2.x retain the old schema; new data from updated transforms uses the new schema. See upgrade documentation for migrating existing data.
+
+#### Changed
+- Bumped transform pipeline versions to 0.3.0
+- Documentation and UI text updated from "ECU" to "chargeable units"
+
 ### [0.2.10] - 2026-01-27
 #### Fixed
 - Visualizations not loading correctly due to integer division returning zero in ES|QL queries. All calculations now use `TO_DOUBLE` type conversion.
