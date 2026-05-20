@@ -63,6 +63,9 @@ To upgrade the integration, do the following:
 - Contribution transforms read usage data from `monitoring-indices*` and cross-cluster `*:monitoring-indices*` so a customized Elasticsearch integration index-pivot destination still matches when its name uses the `monitoring-indices*` prefix (default remains `monitoring-indices`).
 - No change to `chargeback_conf_lookup` field names or manual configuration steps.
 
+**Upgrading from 0.2.x to 0.3.0/0.3.1 (breaking change):**
+- Field names have changed from ECU to chargeable units: `total_ecu` → `total_chargeable_units`, `conf_ecu_rate` → `conf_chargeable_unit_rate`, `conf_ecu_rate_unit` → `conf_chargeable_unit_rate_unit`. Existing lookup indices and config documents use the old schema; new data from the updated transforms will use the new schema. See [CHANGELOG](../CHANGELOG.md) and upgrade documentation for migration steps.
+
 ## Troubleshooting
 
 If the dashboard is empty after install, see **[docs/troubleshooting.md](docs/troubleshooting.md)** (same content as `packages/chargeback/docs/troubleshooting.md` in the [elastic/integrations](https://github.com/elastic/integrations) repository).
