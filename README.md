@@ -29,3 +29,7 @@ The only reason you should choose the "module" in favour of the integration is i
 
 - For the [Chargeback Integration](integration/README.md): Follow the [`integration/Instructions.md`](integration/Instructions.md) to install the integration.
 - For the [Chargeback module](module/README.md): Follow the [`module/Instructions.md`](module/Instructions.md) to install the module.
+
+## Troubleshooting
+
+If the Chargeback dashboard is empty after install, see **[integration/docs/troubleshooting.md](integration/docs/troubleshooting.md)** (step-by-step checks for billing/usage data, transforms, lookup indices, and configuration).

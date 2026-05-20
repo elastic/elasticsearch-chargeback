@@ -63,6 +63,10 @@ To upgrade the integration, do the following:
 - Contribution transforms read usage data from `monitoring-indices*` and cross-cluster `*:monitoring-indices*` so a customized Elasticsearch integration index-pivot destination still matches when its name uses the `monitoring-indices*` prefix (default remains `monitoring-indices`).
 - No change to `chargeback_conf_lookup` field names or manual configuration steps.
 
+## Troubleshooting
+
+If the dashboard is empty after install, see **[docs/troubleshooting.md](docs/troubleshooting.md)** (same content as `packages/chargeback/docs/troubleshooting.md` in the [elastic/integrations](https://github.com/elastic/integrations) repository).
+
 ## Configuration
 
 Configuration values are stored in the `chargeback_conf_lookup` index, which is automatically created by version 0.2.10+ (current: v0.3.2). The dashboard automatically applies the correct configuration based on the billing date falling within the `conf_start_date` and `conf_end_date` range.

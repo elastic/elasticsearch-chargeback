@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Troubleshooting guide for empty or incomplete Chargeback dashboards (`integration/docs/troubleshooting.md`), linked from the repository and integration READMEs.
+
 ---
 
 ## Integration Releases

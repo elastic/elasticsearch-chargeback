@@ -31,6 +31,10 @@ This integration must be installed on the **Monitoring cluster** where the above
 
 Please see [Integration `Instructions.md`](Instructions.md) to install the integration.
 
+## Troubleshooting
+
+See [Instructions.md — Troubleshooting](Instructions.md#troubleshooting) and [docs/troubleshooting.md](docs/troubleshooting.md).
+
 ## Data flow
 
 The Chargeback Module is building on two distinct data sets: 
