@@ -16,7 +16,7 @@ See [Requirements](README.md#requirements) for details.
 
 ### 2. Upload ZIP File: 
 
-- Asset: [`chargeback-0.3.1.zip`](assets/0.3.1/chargeback-0.3.1.zip)
+- Asset: [`chargeback-0.3.2.zip`](assets/0.3.2/chargeback-0.3.2.zip)
 - Browse to Integrations, and click on `+ Create new integration`
 
 ![alt text](assets/img/CreateNewIntegration.png)
@@ -61,6 +61,10 @@ To upgrade the integration, do the following:
 
 **Upgrading from 0.3.0 to 0.3.1:**
 - Upload the new ZIP. Transforms will reset and restart automatically. No manual steps required.
+
+**Upgrading from 0.3.1 to 0.3.2:**
+- Contribution transforms read usage data from `monitoring-indices*` and cross-cluster `*:monitoring-indices*` so a customized Elasticsearch integration index-pivot destination still matches when its name uses the `monitoring-indices*` prefix (default remains `monitoring-indices`).
+- Fixes dashboard panels that failed with `Unknown column [total_ecu]` / `[conf_ecu_rate]` on 0.3.1 by dual-writing legacy ECU field names on lookup indices. After upgrade, restart `billing_cluster_cost` and `chargeback_conf_lookup` transforms (or reinstall the package). Delete and re-import the Chargeback dashboard saved objects if Kibana did not replace them—see [troubleshooting](docs/troubleshooting.md).
 
 **Upgrading from 0.2.x to 0.3.0/0.3.1 (breaking change):**
 - Field names have changed from ECU to chargeable units: `total_ecu` → `total_chargeable_units`, `conf_ecu_rate` → `conf_chargeable_unit_rate`, `conf_ecu_rate_unit` → `conf_chargeable_unit_rate_unit`. Existing lookup indices and config documents use the old schema; new data from the updated transforms will use the new schema. See [CHANGELOG](../CHANGELOG.md) and upgrade documentation for migration steps.
