@@ -6,18 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### Added
+---
+
+## Integration Releases
+
+### [0.3.2] - 2026-05-26
+
+#### Added
 
 - Troubleshooting guide for empty or incomplete Chargeback dashboards (`integration/docs/troubleshooting.md`), linked from the repository and integration READMEs ([#93](https://github.com/elastic/elasticsearch-chargeback/issues/93)).
 - Support section in repository README documenting Field ownership and non-GA status ([#93](https://github.com/elastic/elasticsearch-chargeback/issues/93)).
 
-### Fixed
+#### Fixed
 
-- **0.3.2** dual-writes legacy ECU field names on lookup indices so bundled dashboard ES|QL `COALESCE` queries validate ([#99](https://github.com/elastic/elasticsearch-chargeback/issues/99)); ships with [elastic/integrations#19196](https://github.com/elastic/integrations/pull/19196).
+- Dual-writes legacy ECU field names on lookup indices so bundled dashboard ES|QL `COALESCE` queries validate ([#99](https://github.com/elastic/elasticsearch-chargeback/issues/99)); package source: [elastic/integrations#19196](https://github.com/elastic/integrations/pull/19196).
 
----
+#### Changed
 
-## Integration Releases
+- Contribution transforms read usage data from `monitoring-indices*` and cross-cluster `*:monitoring-indices*` (from integrations [#18269](https://github.com/elastic/integrations/pull/18269)).
 
 ### [0.3.0] - TBD
 #### Breaking changes

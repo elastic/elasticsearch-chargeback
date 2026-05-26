@@ -65,8 +65,10 @@ if [[ "$SKIP_E2E" -eq 0 ]]; then
   echo ">>> Step 2: E2E tests (install + issue #99 proof)"
   export REPLACE_CHARGEBACK_DASHBOARD="$REPLACE_DASHBOARD"
   E2E_LOG="${CHARGEBACK_E2E_LOG:-/tmp/chargeback_e2e_pass.log}"
+  set +e
   "$SCRIPT_DIR/run_e2e_tests.sh" 2>&1 | tee "$E2E_LOG"
   E2E_EXIT="${PIPESTATUS[0]}"
+  set -e
   if [[ "$E2E_EXIT" -ne 0 ]]; then
     echo "E2E failed (exit $E2E_EXIT). See $E2E_LOG" >&2
     exit "$E2E_EXIT"

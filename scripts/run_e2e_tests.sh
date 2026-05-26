@@ -516,6 +516,10 @@ echo "--- Evidence complete: tables above prove data consistency across all *loo
 # 12. Proof for elasticsearch-chargeback#99: dual-write fields + dashboard indexing ES|QL (COALESCE)
 echo ""
 echo "--- 12. Issue #99 proof: legacy ECU fields + dashboard indexing ES|QL ---"
+if ! command -v jq >/dev/null 2>&1; then
+  echo "  Step 12 requires jq (e.g. brew install jq). Install jq and re-run." >&2
+  exit 1
+fi
 ESQL_PROOF_OK=1
 CONF_COUNT=$(curl_es "$ES_HOST/chargeback_conf_lookup/_count" 2>/dev/null | jq -r '.count // 0' 2>/dev/null || echo 0)
 if [[ "${CONF_COUNT:-0}" -eq 0 ]]; then

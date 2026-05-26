@@ -102,7 +102,7 @@ In **Stack Management → Transforms**, filter by **`chargeback`**. The integrat
 | `cluster_deployment_contribution` | `cluster_deployment_contribution_lookup` | `frequency: 60m`, sync delay **1h** on `@timestamp` |
 | `cluster_datastream_contribution` | `cluster_datastream_contribution_lookup` | `frequency: 60m`, sync delay **1h** on `@timestamp` |
 | `cluster_tier_contribution` | `cluster_tier_contribution_lookup` | `frequency: 60m`, sync delay **1h** on `@timestamp` |
-| `cluster_tier_and_ds_contribution` | `cluster_tier_and_ds_contribution_lookup` | `frequency: 60m`, sync delay **1h** on `@timestamp` |
+| `cluster_tier_and_ds_contribution` | `cluster_tier_and_datastream_contribution_lookup` | `frequency: 60m`, sync delay **1h** on `@timestamp` |
 
 Fleet transform IDs typically look like:
 

@@ -11,7 +11,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CHARGEBACK_REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
-INTEGRATIONS_REPO="${INTEGRATIONS_REPO:-$(cd "$CHARGEBACK_REPO/../integrations" 2>/dev/null && pwd)}"
+INTEGRATIONS_REPO="${INTEGRATIONS_REPO:-$CHARGEBACK_REPO/../integrations}"
 SKIP_BUILD=0
 
 while [[ $# -gt 0 ]]; do
@@ -33,6 +33,7 @@ if [[ ! -d "$INTEGRATIONS_REPO/packages/chargeback" ]]; then
   echo "Set INTEGRATIONS_REPO to your elastic/integrations clone." >&2
   exit 1
 fi
+INTEGRATIONS_REPO="$(cd "$INTEGRATIONS_REPO" && pwd)"
 
 if command -v elastic-package >/dev/null 2>&1; then
   EP_CMD="elastic-package"
