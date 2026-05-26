@@ -49,7 +49,7 @@ The chargeback repo does **not** block integrations merge. It ships the **downlo
 1. On integrations branch (e.g. `fix/chargeback-99-esql-dual-write`): merge-ready package commit.
 2. Run `./scripts/release_chargeback.sh --cleanup-first --replace-dashboard` from elasticsearch-chargeback.
 3. Open chargeback PR: `integration/assets/0.3.2/chargeback-0.3.2.zip`, scripts, troubleshooting — link **integrations #19196** and **#99**.
-4. Paste E2E step 12 output into **both** PR descriptions (or `scripts/e2e_issue_99_proof.log`).
+4. Paste E2E step 12 output into **both** PR descriptions (written locally to `/tmp/chargeback_e2e_issue_99_proof.log` by `release_chargeback.sh`; do not commit).
 
 ---
 

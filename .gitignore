@@ -1,6 +1,7 @@
 sync_data_locally.sh
 .DS_Store
-.cscripts/evidence_lookup_indices.txt
+scripts/evidence_lookup_indices.txt
+scripts/e2e_issue_99_proof.log
 
 # Agent/IDE guidance — not part of shipped integration
 integration/AGENTS.md

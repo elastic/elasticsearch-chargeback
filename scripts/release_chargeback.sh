@@ -79,7 +79,7 @@ fi
 
 echo ""
 echo "========== Done =========="
-PROOF_LOG="${CHARGEBACK_REPO}/scripts/e2e_issue_99_proof.log"
+PROOF_LOG="${CHARGEBACK_E2E_PROOF:-/tmp/chargeback_e2e_issue_99_proof.log}"
 E2E_LOG="${CHARGEBACK_E2E_LOG:-/tmp/chargeback_e2e_pass.log}"
 if [[ -f "$E2E_LOG" ]]; then
   {
@@ -95,10 +95,10 @@ if [[ -f "$E2E_LOG" ]]; then
       fi
     fi
   } > "$PROOF_LOG" 2>/dev/null || true
-  echo "E2E proof excerpt: $PROOF_LOG"
+  echo "E2E proof excerpt (local only, not for git): $PROOF_LOG"
 fi
-echo "Companion PR (elasticsearch-chargeback): commit zip + scripts, link to integrations PR."
-echo "  git add integration/assets/ scripts/"
+echo "Companion PR (elasticsearch-chargeback): commit zip + doc/script changes; paste E2E output into the PR comment."
+echo "  git add integration/assets/ integration/docs/ README.md CHANGELOG.md integration/README.md integration/Instructions.md scripts/"
 echo "  git commit -m \"chargeback 0.3.2: zip and E2E proof for ES|QL dual-write (#99)\""
 echo "Integrations PR should be merged first (or same day); zip is built from that branch head."
 echo "See scripts/PR_AND_RELEASE_CHECKLIST.md"
