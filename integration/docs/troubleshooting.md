@@ -51,7 +51,7 @@ Chargeback does **not** collect billing or usage by itself. If upstream integrat
 | **< 0.2.8** | Chargeback transforms may not auto-start (`start: true` added in 0.2.8). |
 | **< 0.2.10** | `chargeback_conf_lookup` may be missing unless created manually. |
 | **0.3.0 → 0.3.1** | Output fields renamed to `conf_chargeable_unit_rate`, `total_chargeable_units`; see [Unknown column errors (0.3.1)](#unknown-column-total_ecu-or-conf_ecu_rate-031). |
-| **0.3.1 → 0.3.2** | Fixes unknown-column dashboard errors by dual-writing legacy ECU field names on lookups; restart `billing_cluster_cost` and `chargeback_conf_lookup` after upgrade. |
+| **0.3.1 → 0.3.2** | Fixes unknown-column dashboard errors by dual-writing legacy ECU field names on lookups; update lookup index mappings or reset transforms (restart alone is not enough). |
 | **< 0.3.2** | Usage transforms read index `monitoring-indices` only; **0.3.2+** uses `monitoring-indices*` (and `*:monitoring-indices*` for CCS). Custom `index_pivot` destinations must match that pattern. |
 
 ## Step 1 — Verify upstream source data
@@ -238,8 +238,8 @@ The bundled dashboard is **Fleet/Kibana managed**—you cannot fix this by editi
 **0.3.2** dual-writes legacy ECU field names in transforms, mappings, and ingest pipelines so bundled dashboard `COALESCE` queries validate. After upgrade:
 
 1. Install **chargeback 0.3.2** (from this repo’s `integration/assets/0.3.2/chargeback-0.3.2.zip` or the integrations package build).
-2. Restart **`billing_cluster_cost`** and **`chargeback_conf_lookup`** transforms (or reinstall the package so Fleet recreates them).
-3. Wait for at least one transform cycle, or call `POST _transform/<transform_id>/_schedule_now` during testing.
+2. **Update lookup mappings or recreate indices.** Restarting transforms does **not** add new fields to existing destination index mappings. For `billing_cluster_cost_lookup` and `chargeback_conf_lookup`, either add mappings for `total_ecu`, `conf_ecu_rate`, and `conf_ecu_rate_unit` (`PUT <index>/_mapping`, same types as 0.3.2 field definitions), or delete each lookup index and **reset** the corresponding transform so it is recreated with 0.3.2 mappings (reprocesses history; plan for load).
+3. Start or schedule **`billing_cluster_cost`** and **`chargeback_conf_lookup`** (`POST _transform/<transform_id>/_schedule_now` during testing) so new documents receive dual-written fields.
 4. If the dashboard was not replaced on upgrade, delete the Chargeback dashboard and `chargeback_integration` data view saved objects, then reinstall so Kibana re-imports the managed dashboard.
 
 There is no supported workaround on **0.3.1** other than upgrading the package.
@@ -253,7 +253,7 @@ There is no supported workaround on **0.3.1** other than upgrading the package.
 | `billing_cluster_cost_lookup` has docs; cost panels empty | `chargeback_conf_lookup` date range does not cover billing `@timestamp` |
 | Cost panels OK; tier / data stream / blended panels empty | `cluster_*_contribution_lookup` empty or `composite_key` mismatch between billing and usage |
 | Deployment group filter always empty | ESS Billing **< 1.7.0** or **Add deployment tags** disabled on the billing Fleet policy |
-| `Unknown column [total_ecu]` / `[conf_ecu_rate]` on managed dashboard | **0.3.1** mapping/query mismatch; upgrade to **0.3.2** and restart billing/config transforms |
+| `Unknown column [total_ecu]` / `[conf_ecu_rate]` on managed dashboard | **0.3.1** mapping/query mismatch; upgrade to **0.3.2**, add legacy field mappings or reset billing/config transforms |
 | Worked on legacy “module”, fails on integration | Module targeted **8.17.1+**; integration requires **9.2.0+** — different install path and stack requirement |
 
 ## Related dashboards and alerts

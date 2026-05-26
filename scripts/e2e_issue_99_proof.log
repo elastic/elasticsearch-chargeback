@@ -1,6 +1,5 @@
-E2E proof for elasticsearch-chargeback#99 / elastic/integrations#19196
-Run: REPLACE_CHARGEBACK_DASHBOARD=1 ./scripts/release_chargeback.sh --replace-dashboard
-Stack: elastic-package 9.2.2 | Package: chargeback 0.3.2 (built from integrations fix/chargeback-99-esql-dual-write)
+E2E proof for elasticsearch-chargeback#99
+Run: REPLACE_CHARGEBACK_DASHBOARD=1 ./scripts/release_chargeback.sh
 
 --- 12. Issue #99 proof: legacy ECU fields + dashboard indexing ES|QL ---
   chargeback_conf_lookup: PASS (1 docs)
@@ -13,4 +12,4 @@ Stack: elastic-package 9.2.2 | Package: chargeback 0.3.2 (built from integration
   dashboard indexing ES|QL (COALESCE legacy + new names): PASS (5 row batch returned)
   Issue #99 proof: PASS (0.3.2 dual-write + dashboard ES|QL validates)
 
-ZIP SHA-256: 02c1e32f28c69b5ca0fc3edb78e32c64c1660f75121f2b7a45f00e45db144508
+ZIP SHA-256: 97fb58a606a7cf2eb23b424ff0b0cee631ccf46d7aad828825b1dd99c21874a4
