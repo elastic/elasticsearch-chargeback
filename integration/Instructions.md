@@ -29,7 +29,7 @@ See [Requirements](README.md#requirements) for details.
 
 Starting from version 0.2.8, all Chargeback transforms are configured to auto-start upon installation. You no longer need to manually start the transforms.
 
-**Starting from version 0.2.10**, the `chargeback_conf_lookup` index is automatically created via a bootstrap transform during installation. No manual setup is required! The transform creates the index with default configuration:
+**Starting from version 0.2.10** (current: **v0.3.2**), the `chargeback_conf_lookup` index is automatically created via a bootstrap transform during installation. No manual setup is required! The transform creates the index with default configuration:
 - **Chargeable unit rate:** 0.85 EUR
 - **Weights:** indexing=20, query=20, storage=40
 - **Date range:** 2010-01-01 to 2046-12-31
@@ -55,12 +55,9 @@ To upgrade the integration, do the following:
 - Upload the new asset (ZIP) file to Kibana.
 - Transforms will auto-start (from version 0.2.8 onwards).
 
-**Upgrading from 0.2.9 to 0.2.10:**
+**Upgrading from 0.3.0 to 0.3.1:**
 - No manual steps required for the `chargeback_conf_lookup` index - the bootstrap transform will automatically create it if it doesn't exist.
 - If you previously manually created the `chargeback_conf_lookup` index, it will continue to work with the new version.
-
-**Upgrading from 0.3.0 to 0.3.1:**
-- Upload the new ZIP. Transforms will reset and restart automatically. No manual steps required.
 
 **Upgrading from 0.3.1 to 0.3.2:**
 - Contribution transforms read usage data from `monitoring-indices*` and cross-cluster `*:monitoring-indices*` so a customized Elasticsearch integration index-pivot destination still matches when its name uses the `monitoring-indices*` prefix (default remains `monitoring-indices`).
@@ -69,9 +66,13 @@ To upgrade the integration, do the following:
 **Upgrading from 0.2.x to 0.3.0/0.3.1 (breaking change):**
 - Field names have changed from ECU to chargeable units: `total_ecu` → `total_chargeable_units`, `conf_ecu_rate` → `conf_chargeable_unit_rate`, `conf_ecu_rate_unit` → `conf_chargeable_unit_rate_unit`. Existing lookup indices and config documents use the old schema; new data from the updated transforms will use the new schema. See [CHANGELOG](../CHANGELOG.md) and upgrade documentation for migration steps.
 
+## Troubleshooting
+
+If the dashboard is empty after install, see **[docs/troubleshooting.md](docs/troubleshooting.md)**.
+
 ## Configuration
 
-Configuration values are stored in the `chargeback_conf_lookup` index, which is automatically created by version 0.2.10+. The dashboard automatically applies the correct configuration based on the billing date falling within the `conf_start_date` and `conf_end_date` range.
+Configuration values are stored in the `chargeback_conf_lookup` index, which is automatically created by version 0.2.10+ (current: **v0.3.2**). The dashboard automatically applies the correct configuration based on the billing date falling within the `conf_start_date` and `conf_end_date` range.
 
 ### Update the default configuration:
 

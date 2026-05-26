@@ -2,7 +2,7 @@
 
 ## Version
 
-Chargeback integration: 0.3.1
+Chargeback integration: 0.3.2
 
 ## Dependencies
 
@@ -32,6 +32,10 @@ This integration must be installed on the **Monitoring cluster** where the above
 ## Setup instructions
 
 Please see [Integration `Instructions.md`](Instructions.md) to install the integration.
+
+## Troubleshooting
+
+See [Instructions.md — Troubleshooting](Instructions.md#troubleshooting) and [docs/troubleshooting.md](docs/troubleshooting.md).
 
 ## Data flow
 
