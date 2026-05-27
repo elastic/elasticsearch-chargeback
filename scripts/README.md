@@ -11,6 +11,21 @@ Scripts for running Chargeback integration tests locally. **Use the automated E2
 
 ---
 
+## Release automation (integrations → zip → E2E)
+
+After editing `packages/chargeback` in **elastic/integrations**:
+
+```bash
+# From elasticsearch-chargeback repo root
+./scripts/release_chargeback.sh --cleanup-first --replace-dashboard
+```
+
+This runs: **build** (`elastic-package build`) → **copy zip** to `integration/assets/<version>/` → **E2E** (including step 12 proof for [issue #99](https://github.com/elastic/elasticsearch-chargeback/issues/99)).
+
+Options: `--skip-e2e`, `--skip-build`, `--skip-sync`, `--cleanup-first`, `--replace-dashboard`. See [PR_AND_RELEASE_CHECKLIST.md](PR_AND_RELEASE_CHECKLIST.md) for which integrations PR to use (#18269 merged; new PR for #99; close #18102).
+
+---
+
 ## Primary: Automated E2E script
 
 From the **elasticsearch-chargeback** repo root, with the stack already running:
@@ -33,6 +48,12 @@ go run github.com/elastic/elastic-package stack status   # or stack up
 ```bash
 cd /path/to/integrations/packages/chargeback
 go run github.com/elastic/elastic-package test
+```
+
+**Step 12 (0.3.2 / issue #99):** After lookup indices are populated, the script checks legacy-to-canonical alias mappings (`total_ecu` -> `total_chargeable_units`, `conf_ecu_rate` -> `conf_chargeable_unit_rate`, `conf_ecu_rate_unit` -> `conf_chargeable_unit_rate_unit`) and runs the same **Indexing details** dashboard ES|QL (with `COALESCE`) via `POST _query`. The script **exits non-zero** if verification fails—use this output in PRs as proof for [elasticsearch-chargeback#99](https://github.com/elastic/elasticsearch-chargeback/issues/99).
+
+```bash
+REPLACE_CHARGEBACK_DASHBOARD=1 ./scripts/run_e2e_tests.sh
 ```
 
 **Env (optional):** `INTEGRATIONS_REPO`, `KIBANA_HOST`, `ES_HOST`, `ELASTIC_USER`, `ELASTIC_PASSWORD` (defaults: `https://127.0.0.1:5601`, `https://127.0.0.1:9200`, `elastic`, `changeme`).

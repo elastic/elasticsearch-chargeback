@@ -10,12 +10,13 @@
 #   so the install creates them from the local package. Use when the dashboard in Kibana still shows
 #   "Unknown column [total_ecu]" (e.g. because a previous install came from the registry).
 #
-# Tested with: Elasticsearch/Kibana 9.2.2, Chargeback integration 0.3.1.
+# Tested with: Elasticsearch/Kibana 9.2.2, Chargeback integration 0.3.2.
+# Step 12 verifies elasticsearch-chargeback#99 (legacy ECU field aliases for dashboard COALESCE).
 set -e
 
 # Versions this E2E is intended for (for documentation and optional checks)
 STACK_VERSION="${STACK_VERSION:-9.2.2}"
-CHARGEBACK_VERSION="${CHARGEBACK_VERSION:-0.3.1}"
+CHARGEBACK_VERSION="${CHARGEBACK_VERSION:-0.3.2}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPLACE_CHARGEBACK_DASHBOARD="${REPLACE_CHARGEBACK_DASHBOARD:-0}"
@@ -373,6 +374,21 @@ if [[ -n "$BILLING_CLUSTER_TID" ]]; then
   fi
 fi
 
+# 8g2. chargeback_conf_lookup reads metrics-ess_billing.billing-*; re-run after billing seed (8f)
+CONF_TID=$(get_transform_id 'logs-chargeback\.chargeback_conf_lookup-[^"]+')
+if [[ -n "$CONF_TID" ]]; then
+  echo "Reset/start chargeback_conf_lookup after billing seed..."
+  curl_es -X POST "$ES_HOST/_transform/$CONF_TID/_stop?wait_for_completion=true&timeout=30s" >/dev/null 2>&1 || true
+  sleep 2
+  curl_es -X POST "$ES_HOST/_transform/$CONF_TID/_reset" >/dev/null 2>&1 || true
+  sleep 2
+  curl_es -X POST "$ES_HOST/_transform/$CONF_TID/_start" >/dev/null 2>&1 || true
+  curl_es -X POST "$ES_HOST/_transform/$CONF_TID/_schedule_now" >/dev/null 2>&1 || true
+  sleep 10
+  CONF_LOOKUP_COUNT=$(curl_es "$ES_HOST/chargeback_conf_lookup/_count" 2>/dev/null | grep -oE '"count":[0-9]+' | sed 's/"count"://')
+  echo "  chargeback_conf_lookup has ${CONF_LOOKUP_COUNT:-0} doc(s) after re-run."
+fi
+
 # 8h. Ensure billing_cluster_cost_lookup has deployment_group set (transform runtime_mapping can leave it empty; patch by deployment_id)
 LOOKUP_INDEX="billing_cluster_cost_lookup"
 for dep_id in dev prod monitoring; do
@@ -496,6 +512,81 @@ else
 fi
 echo ""
 echo "--- Evidence complete: tables above prove data consistency across all *lookup indices. ---"
+
+# 12. Proof for elasticsearch-chargeback#99: legacy aliases + dashboard indexing ES|QL (COALESCE)
+echo ""
+echo "--- 12. Issue #99 proof: legacy ECU fields + dashboard indexing ES|QL ---"
+if ! command -v jq >/dev/null 2>&1; then
+  echo "  Step 12 requires jq (e.g. brew install jq). Install jq and re-run." >&2
+  exit 1
+fi
+ESQL_PROOF_OK=1
+CONF_COUNT=$(curl_es "$ES_HOST/chargeback_conf_lookup/_count" 2>/dev/null | jq -r '.count // 0' 2>/dev/null || echo 0)
+if [[ "${CONF_COUNT:-0}" -eq 0 ]]; then
+  echo "  chargeback_conf_lookup: FAIL (index empty; bootstrap transform must run after billing source has docs)"
+  ESQL_PROOF_OK=0
+else
+  echo "  chargeback_conf_lookup: PASS (${CONF_COUNT} docs)"
+fi
+for pair in "billing_cluster_cost_lookup:total_chargeable_units" "billing_cluster_cost_lookup:total_ecu" "chargeback_conf_lookup:conf_chargeable_unit_rate" "chargeback_conf_lookup:conf_ecu_rate"; do
+  idx="${pair%%:*}"
+  field="${pair##*:}"
+  if curl_es "$ES_HOST/$idx/_mapping" 2>/dev/null | grep -q "\"$field\""; then
+    echo "  mapping $idx.$field: PASS"
+  else
+    echo "  mapping $idx.$field: FAIL (missing from index mapping)"
+    ESQL_PROOF_OK=0
+  fi
+done
+BILLING_MAP=$(curl_es "$ES_HOST/billing_cluster_cost_lookup/_mapping" 2>/dev/null)
+if echo "$BILLING_MAP" | jq -e 'to_entries[0].value.mappings.properties.total_ecu.type == "alias" and to_entries[0].value.mappings.properties.total_ecu.path == "total_chargeable_units"' >/dev/null 2>&1; then
+  echo "  billing_cluster_cost_lookup total_ecu alias: PASS (-> total_chargeable_units)"
+else
+  echo "  billing_cluster_cost_lookup total_ecu alias: FAIL (expected alias -> total_chargeable_units)"
+  ESQL_PROOF_OK=0
+fi
+CONF_MAP=$(curl_es "$ES_HOST/chargeback_conf_lookup/_mapping" 2>/dev/null)
+if echo "$CONF_MAP" | jq -e 'to_entries[0].value.mappings.properties.conf_ecu_rate.type == "alias" and to_entries[0].value.mappings.properties.conf_ecu_rate.path == "conf_chargeable_unit_rate"' >/dev/null 2>&1; then
+  echo "  chargeback_conf_lookup conf_ecu_rate alias: PASS (-> conf_chargeable_unit_rate)"
+else
+  echo "  chargeback_conf_lookup conf_ecu_rate alias: FAIL (expected alias -> conf_chargeable_unit_rate)"
+  ESQL_PROOF_OK=0
+fi
+if echo "$CONF_MAP" | jq -e 'to_entries[0].value.mappings.properties.conf_ecu_rate_unit.type == "alias" and to_entries[0].value.mappings.properties.conf_ecu_rate_unit.path == "conf_chargeable_unit_rate_unit"' >/dev/null 2>&1; then
+  echo "  chargeback_conf_lookup conf_ecu_rate_unit alias: PASS (-> conf_chargeable_unit_rate_unit)"
+else
+  echo "  chargeback_conf_lookup conf_ecu_rate_unit alias: FAIL (expected alias -> conf_chargeable_unit_rate_unit)"
+  ESQL_PROOF_OK=0
+fi
+ESQL_INDEXING='FROM billing_cluster_cost_lookup
+| LOOKUP JOIN chargeback_conf_lookup ON @timestamp >= conf_start_date AND @timestamp <= conf_end_date
+| LOOKUP JOIN cluster_deployment_contribution_lookup ON composite_key
+| LOOKUP JOIN cluster_datastream_contribution_lookup ON composite_key
+| EVAL indexing = CASE (deployment_sum_indexing_time > 0, TO_DOUBLE(datastream_sum_indexing_time) / deployment_sum_indexing_time * COALESCE(total_chargeable_units, total_ecu)) * COALESCE(conf_chargeable_unit_rate, conf_ecu_rate)
+| STATS agg_indexing = SUM(indexing) BY @timestamp, datastream
+| WHERE agg_indexing > 0
+| LIMIT 5'
+ESQL_BODY=$(printf '%s' "$ESQL_INDEXING" | jq -Rs '{query: .}')
+ESQL_RESP=$(curl_es -X POST "$ES_HOST/_query" -d "$ESQL_BODY" 2>/dev/null)
+if echo "$ESQL_RESP" | grep -qi 'verification_exception\|"type"[[:space:]]*:[[:space:]]*"verification_exception"'; then
+  echo "  dashboard indexing ES|QL (COALESCE legacy + new names): FAIL"
+  echo "$ESQL_RESP" | head -c 2000
+  ESQL_PROOF_OK=0
+elif echo "$ESQL_RESP" | grep -qi '"error"'; then
+  echo "  dashboard indexing ES|QL: FAIL (query error)"
+  echo "$ESQL_RESP" | head -c 2000
+  ESQL_PROOF_OK=0
+else
+  rows=$(echo "$ESQL_RESP" | jq -r '.values | length // 0' 2>/dev/null || echo 0)
+  echo "  dashboard indexing ES|QL (COALESCE legacy + new names): PASS (${rows:-0} row batch returned)"
+fi
+if [[ "$ESQL_PROOF_OK" -ne 1 ]]; then
+  echo ""
+  echo "Issue #99 proof FAILED. Expected Chargeback 0.3.2 legacy aliases on lookup mappings."
+  echo "See https://github.com/elastic/elasticsearch-chargeback/issues/99"
+  exit 1
+fi
+echo "  Issue #99 proof: PASS (0.3.2 aliases + dashboard ES|QL validates)"
 
 echo ""
 echo "--- Done. Run 'go run github.com/elastic/elastic-package test' from $INTEGRATIONS_REPO/packages/chargeback for asset tests. ---"

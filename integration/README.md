@@ -2,7 +2,7 @@
 
 ## Version
 
-Chargeback integration: 0.3.1
+Chargeback integration: 0.3.2
 
 ## Dependencies
 
@@ -32,6 +32,10 @@ This integration must be installed on the **Monitoring cluster** where the above
 ## Setup instructions
 
 Please see [Integration `Instructions.md`](Instructions.md) to install the integration.
+
+## Troubleshooting
+
+See [Instructions.md — Troubleshooting](Instructions.md#troubleshooting) and [docs/troubleshooting.md](docs/troubleshooting.md).
 
 ## Data flow
 
@@ -85,6 +89,20 @@ Version 0.2.8 includes three pre-configured Kibana alerting rule templates to he
 These alerting templates are automatically installed with the integration and can be configured through **Stack Management → Rules** in Kibana.
 
 **Important:** For alert rules 2 and 3, ensure that the Chargeback transforms are running before setting them up. These alerting rules query the lookup indices created by the transforms (`billing_cluster_cost_lookup`, `cluster_deployment_contribution_lookup`, etc.). If the transforms are not started, the alerts will not function correctly.
+
+## Version 0.3.2 Release Notes
+
+### Fixed
+
+- **Dashboard ES|QL (#99):** Adds legacy ECU field aliases (`total_ecu`, `conf_ecu_rate`, `conf_ecu_rate_unit`) that point to chargeable-unit fields on lookup mappings so bundled dashboard `COALESCE` queries validate. See [troubleshooting](docs/troubleshooting.md) for upgrade steps (recreate + reset transforms on existing 0.3.1 lookup indices).
+
+### Added
+
+- Repository and integration troubleshooting guide; README support model (Field, non-GA) — [#93](https://github.com/elastic/elasticsearch-chargeback/issues/93).
+
+### Changed
+
+- Usage transforms source indices: `monitoring-indices*` and `*:monitoring-indices*` for custom Elasticsearch integration index-pivot destinations.
 
 ## Version 0.3.1 Release Notes
 
