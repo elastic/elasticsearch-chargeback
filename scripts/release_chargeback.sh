@@ -101,6 +101,6 @@ if [[ -f "$E2E_LOG" ]]; then
 fi
 echo "Companion PR (elasticsearch-chargeback): commit zip + doc/script changes; paste E2E output into the PR comment."
 echo "  git add integration/assets/ integration/docs/ README.md CHANGELOG.md integration/README.md integration/Instructions.md scripts/"
-echo "  git commit -m \"chargeback 0.3.2: zip and E2E proof for ES|QL dual-write (#99)\""
+echo "  git commit -m \"chargeback 0.3.2: zip and E2E proof for ES|QL alias fix (#99)\""
 echo "Integrations PR should be merged first (or same day); zip is built from that branch head."
 echo "See scripts/PR_AND_RELEASE_CHECKLIST.md"

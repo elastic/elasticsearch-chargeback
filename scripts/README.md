@@ -50,7 +50,7 @@ cd /path/to/integrations/packages/chargeback
 go run github.com/elastic/elastic-package test
 ```
 
-**Step 12 (0.3.2 / issue #99):** After lookup indices are populated, the script checks that `total_ecu`, `total_chargeable_units`, `conf_ecu_rate`, and `conf_chargeable_unit_rate` exist in index mappings and runs the same **Indexing details** dashboard ES|QL (with `COALESCE`) via `POST _query`. The script **exits non-zero** if verification fails—use this output in PRs as proof for [elasticsearch-chargeback#99](https://github.com/elastic/elasticsearch-chargeback/issues/99).
+**Step 12 (0.3.2 / issue #99):** After lookup indices are populated, the script checks legacy-to-canonical alias mappings (`total_ecu` -> `total_chargeable_units`, `conf_ecu_rate` -> `conf_chargeable_unit_rate`, `conf_ecu_rate_unit` -> `conf_chargeable_unit_rate_unit`) and runs the same **Indexing details** dashboard ES|QL (with `COALESCE`) via `POST _query`. The script **exits non-zero** if verification fails—use this output in PRs as proof for [elasticsearch-chargeback#99](https://github.com/elastic/elasticsearch-chargeback/issues/99).
 
 ```bash
 REPLACE_CHARGEBACK_DASHBOARD=1 ./scripts/run_e2e_tests.sh

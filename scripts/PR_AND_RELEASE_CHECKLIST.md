@@ -12,7 +12,7 @@ Use this when cutting a release across **elastic/integrations** and **elastic/el
 |----|--------|------------|------------|
 | [integrations#18102](https://github.com/elastic/integrations/pull/18102) | Open, **CONFLICTING** | 0.3.1 chargeable-unit rename (old branch `wip-johannes-chargeback-chargable-units`) | **Close** — 0.3.1 is already on `wip-johannes-chargeback`; branch is stale after #18269 merged |
 | [integrations#18269](https://github.com/elastic/integrations/pull/18269) | **Merged** | 0.3.2 `monitoring-indices*` for usage transforms | Done — this is the correct integrations PR for 0.3.2 |
-| **New PR** (you) | — | 0.3.2 bugfix: dual-write ECU fields for dashboard ES|QL ([#99](https://github.com/elastic/elasticsearch-chargeback/issues/99)) | Open **one** PR: `fix/chargeback-99-esql-dual-write` → `wip-johannes-chargeback` |
+| **New PR** (you) | — | 0.3.2 bugfix: legacy ECU **field aliases** for dashboard ES|QL ([#99](https://github.com/elastic/elasticsearch-chargeback/issues/99)) | Open **one** PR: `fix/chargeback-99-esql-dual-write` → `wip-johannes-chargeback` |
 
 Do **not** reopen or stack more commits on #18269’s merged branch name. Do **not** try to merge #18102; resolve by closing with a short comment.
 
@@ -23,13 +23,13 @@ cd /path/to/integrations
 git fetch origin wip-johannes-chargeback
 git checkout -b fix/chargeback-99-esql-dual-write origin/wip-johannes-chargeback
 
-# Apply package changes (dual-write fields, ingest pipelines, changelog → links to elasticsearch-chargeback#99)
+# Apply package changes (legacy field aliases in lookup mappings, changelog → links to elasticsearch-chargeback#99)
 # Do not reference integrations#18102 in new changelog lines.
 
 git add packages/chargeback/
-git commit -m "fix(chargeback): dual-write legacy ECU fields for dashboard ES|QL (0.3.2)"
+git commit -m "fix(chargeback): add legacy ECU aliases for dashboard ES|QL (0.3.2)"
 git push -u origin fix/chargeback-99-esql-dual-write
-gh pr create --base wip-johannes-chargeback --title "Chargeback 0.3.2: dual-write ECU fields for dashboard ES|QL" --body "Fixes elastic/elasticsearch-chargeback#99. Follow-up to #18269 (merged). Closes dashboard Unknown column [total_ecu] / [conf_ecu_rate] on 0.3.1 lookups."
+gh pr create --base wip-johannes-chargeback --title "Chargeback 0.3.2: legacy ECU aliases for dashboard ES|QL" --body "Fixes elastic/elasticsearch-chargeback#99. Follow-up to #18269 (merged). Closes dashboard Unknown column [total_ecu] / [conf_ecu_rate] on 0.3.1 lookups."
 ```
 
 Keep **one changelog bugfix** under `0.3.2` if that version is not published yet; use `0.3.3` only if 0.3.2 is already shipped externally.
@@ -71,7 +71,7 @@ From **elasticsearch-chargeback** repo root:
 Steps performed:
 
 1. `scripts/sync_chargeback_from_integrations.sh` — `elastic-package build` in `integrations/packages/chargeback`, copy to `integration/assets/<version>/chargeback-<version>.zip`, print SHA-256.
-2. `scripts/run_e2e_tests.sh` — install integrations + E2E; **step 12** = proof for [#99](https://github.com/elastic/elasticsearch-chargeback/issues/99) (dual-write + dashboard COALESCE ES|QL).
+2. `scripts/run_e2e_tests.sh` — install integrations + E2E; **step 12** = proof for [#99](https://github.com/elastic/elasticsearch-chargeback/issues/99) (legacy aliases + dashboard COALESCE ES|QL).
 
 Prerequisites: [scripts/README.md](README.md) (Docker, `elastic-package`, stack `9.2.2`).
 
@@ -111,5 +111,5 @@ REPLACE_CHARGEBACK_DASHBOARD=1 ./scripts/run_e2e_tests.sh
 
 | Repo | Branch | Action |
 |------|--------|--------|
-| **integrations** | `fix/chargeback-99-…` → `wip-johannes-chargeback` | New PR for dual-write (#99); close #18102; #18269 already merged |
+| **integrations** | `fix/chargeback-99-…` → `wip-johannes-chargeback` | New PR for alias fix (#99); close #18102; #18269 already merged |
 | **elasticsearch-chargeback** | your release branch → `main` | `./scripts/release_chargeback.sh`, commit zip + scripts + docs, PR |

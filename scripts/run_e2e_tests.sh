@@ -11,7 +11,7 @@
 #   "Unknown column [total_ecu]" (e.g. because a previous install came from the registry).
 #
 # Tested with: Elasticsearch/Kibana 9.2.2, Chargeback integration 0.3.2.
-# Step 12 verifies elasticsearch-chargeback#99 (dual-write legacy ECU fields for dashboard COALESCE).
+# Step 12 verifies elasticsearch-chargeback#99 (legacy ECU field aliases for dashboard COALESCE).
 set -e
 
 # Versions this E2E is intended for (for documentation and optional checks)
@@ -513,7 +513,7 @@ fi
 echo ""
 echo "--- Evidence complete: tables above prove data consistency across all *lookup indices. ---"
 
-# 12. Proof for elasticsearch-chargeback#99: dual-write fields + dashboard indexing ES|QL (COALESCE)
+# 12. Proof for elasticsearch-chargeback#99: legacy aliases + dashboard indexing ES|QL (COALESCE)
 echo ""
 echo "--- 12. Issue #99 proof: legacy ECU fields + dashboard indexing ES|QL ---"
 if ! command -v jq >/dev/null 2>&1; then
@@ -538,19 +538,24 @@ for pair in "billing_cluster_cost_lookup:total_chargeable_units" "billing_cluste
     ESQL_PROOF_OK=0
   fi
 done
-# Sample doc: both legacy and chargeable-unit names populated (0.3.2 dual-write)
-BILLING_SAMPLE=$(curl_es "$ES_HOST/billing_cluster_cost_lookup/_search?size=1" -d '{"_source":["total_chargeable_units","total_ecu"]}' 2>/dev/null)
-if echo "$BILLING_SAMPLE" | jq -e '.hits.hits[0]._source.total_chargeable_units != null and .hits.hits[0]._source.total_ecu != null' >/dev/null 2>&1; then
-  echo "  billing_cluster_cost_lookup dual-write sample: PASS"
+BILLING_MAP=$(curl_es "$ES_HOST/billing_cluster_cost_lookup/_mapping" 2>/dev/null)
+if echo "$BILLING_MAP" | jq -e 'to_entries[0].value.mappings.properties.total_ecu.type == "alias" and to_entries[0].value.mappings.properties.total_ecu.path == "total_chargeable_units"' >/dev/null 2>&1; then
+  echo "  billing_cluster_cost_lookup total_ecu alias: PASS (-> total_chargeable_units)"
 else
-  echo "  billing_cluster_cost_lookup dual-write sample: FAIL (expected both total_chargeable_units and total_ecu on a document)"
+  echo "  billing_cluster_cost_lookup total_ecu alias: FAIL (expected alias -> total_chargeable_units)"
   ESQL_PROOF_OK=0
 fi
-CONF_SAMPLE=$(curl_es "$ES_HOST/chargeback_conf_lookup/_search?size=1" -d '{"_source":["conf_chargeable_unit_rate","conf_ecu_rate"]}' 2>/dev/null)
-if echo "$CONF_SAMPLE" | jq -e '.hits.hits[0]._source.conf_chargeable_unit_rate != null and .hits.hits[0]._source.conf_ecu_rate != null' >/dev/null 2>&1; then
-  echo "  chargeback_conf_lookup dual-write sample: PASS"
+CONF_MAP=$(curl_es "$ES_HOST/chargeback_conf_lookup/_mapping" 2>/dev/null)
+if echo "$CONF_MAP" | jq -e 'to_entries[0].value.mappings.properties.conf_ecu_rate.type == "alias" and to_entries[0].value.mappings.properties.conf_ecu_rate.path == "conf_chargeable_unit_rate"' >/dev/null 2>&1; then
+  echo "  chargeback_conf_lookup conf_ecu_rate alias: PASS (-> conf_chargeable_unit_rate)"
 else
-  echo "  chargeback_conf_lookup dual-write sample: FAIL (expected both conf_chargeable_unit_rate and conf_ecu_rate on a document)"
+  echo "  chargeback_conf_lookup conf_ecu_rate alias: FAIL (expected alias -> conf_chargeable_unit_rate)"
+  ESQL_PROOF_OK=0
+fi
+if echo "$CONF_MAP" | jq -e 'to_entries[0].value.mappings.properties.conf_ecu_rate_unit.type == "alias" and to_entries[0].value.mappings.properties.conf_ecu_rate_unit.path == "conf_chargeable_unit_rate_unit"' >/dev/null 2>&1; then
+  echo "  chargeback_conf_lookup conf_ecu_rate_unit alias: PASS (-> conf_chargeable_unit_rate_unit)"
+else
+  echo "  chargeback_conf_lookup conf_ecu_rate_unit alias: FAIL (expected alias -> conf_chargeable_unit_rate_unit)"
   ESQL_PROOF_OK=0
 fi
 ESQL_INDEXING='FROM billing_cluster_cost_lookup
@@ -577,11 +582,11 @@ else
 fi
 if [[ "$ESQL_PROOF_OK" -ne 1 ]]; then
   echo ""
-  echo "Issue #99 proof FAILED. Expected Chargeback 0.3.2 dual-write on lookup indices."
+  echo "Issue #99 proof FAILED. Expected Chargeback 0.3.2 legacy aliases on lookup mappings."
   echo "See https://github.com/elastic/elasticsearch-chargeback/issues/99"
   exit 1
 fi
-echo "  Issue #99 proof: PASS (0.3.2 dual-write + dashboard ES|QL validates)"
+echo "  Issue #99 proof: PASS (0.3.2 aliases + dashboard ES|QL validates)"
 
 echo ""
 echo "--- Done. Run 'go run github.com/elastic/elastic-package test' from $INTEGRATIONS_REPO/packages/chargeback for asset tests. ---"

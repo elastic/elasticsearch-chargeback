@@ -19,7 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 #### Fixed
 
-- Dual-writes legacy ECU field names on lookup indices so bundled dashboard ES|QL `COALESCE` queries validate ([#99](https://github.com/elastic/elasticsearch-chargeback/issues/99)); package source: [elastic/integrations#19196](https://github.com/elastic/integrations/pull/19196).
+- Adds legacy ECU field aliases on lookup mappings so bundled dashboard ES|QL `COALESCE` queries validate without duplicating values ([#99](https://github.com/elastic/elasticsearch-chargeback/issues/99)); package source: [elastic/integrations#19196](https://github.com/elastic/integrations/pull/19196).
 
 #### Changed
 
