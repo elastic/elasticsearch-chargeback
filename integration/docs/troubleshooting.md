@@ -238,8 +238,8 @@ The bundled dashboard is **Fleet/Kibana managed**—you cannot fix this by editi
 **0.3.2** adds legacy ECU names as lookup **field aliases** so bundled dashboard `COALESCE` queries validate without duplicating values. After upgrade:
 
 1. Install **chargeback 0.3.2** (from this repo’s `integration/assets/0.3.2/chargeback-0.3.2.zip` or the integrations package build).
-2. **Update lookup mappings or recreate indices.** Restarting transforms does **not** add new fields to existing destination index mappings. For `billing_cluster_cost_lookup` and `chargeback_conf_lookup`, either add aliases with `PUT <index>/_mapping` (`total_ecu` -> `total_chargeable_units`, `conf_ecu_rate` -> `conf_chargeable_unit_rate`, `conf_ecu_rate_unit` -> `conf_chargeable_unit_rate_unit`), or delete each lookup index and **reset** the corresponding transform so it is recreated with 0.3.2 mappings (reprocesses history; plan for load).
-3. Start or schedule **`billing_cluster_cost`** and **`chargeback_conf_lookup`** (`POST _transform/<transform_id>/_schedule_now` during testing) so new documents are written after the mapping update/reset.
+2. **Recreate lookup indices to pick up 0.3.2 mappings.** Restarting transforms does **not** change existing destination index mappings. Delete `billing_cluster_cost_lookup` and `chargeback_conf_lookup`, then **reset** the corresponding transforms so those indices are recreated with 0.3.2 alias mappings (`total_ecu` -> `total_chargeable_units`, `conf_ecu_rate` -> `conf_chargeable_unit_rate`, `conf_ecu_rate_unit` -> `conf_chargeable_unit_rate_unit`).
+3. Start or schedule **`billing_cluster_cost`** and **`chargeback_conf_lookup`** (`POST _transform/<transform_id>/_schedule_now` during testing) so data is repopulated after the reset.
 4. If the dashboard was not replaced on upgrade, delete the Chargeback dashboard and `chargeback_integration` data view saved objects, then reinstall so Kibana re-imports the managed dashboard.
 
 There is no supported workaround on **0.3.1** other than upgrading the package.

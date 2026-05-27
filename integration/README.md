@@ -94,7 +94,7 @@ These alerting templates are automatically installed with the integration and ca
 
 ### Fixed
 
-- **Dashboard ES|QL (#99):** Adds legacy ECU field aliases (`total_ecu`, `conf_ecu_rate`, `conf_ecu_rate_unit`) that point to chargeable-unit fields on lookup mappings so bundled dashboard `COALESCE` queries validate. See [troubleshooting](docs/troubleshooting.md) for upgrade steps (mapping update or transform reset).
+- **Dashboard ES|QL (#99):** Adds legacy ECU field aliases (`total_ecu`, `conf_ecu_rate`, `conf_ecu_rate_unit`) that point to chargeable-unit fields on lookup mappings so bundled dashboard `COALESCE` queries validate. See [troubleshooting](docs/troubleshooting.md) for upgrade steps (recreate + reset transforms on existing 0.3.1 lookup indices).
 
 ### Added
 
