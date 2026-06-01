@@ -28,7 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **New configuration weights** in `chargeback_conf_lookup`:
   - `conf_utilization_memory_weight` (default 70) and `conf_utilization_storage_weight` (default 30).
   - `conf_utilization_floor` (default 0.10) — minimum utilization to prevent realized cost reaching zero for idle or unmonitored clusters.
-  - `conf_memory_cost_weight` / `conf_storage_cost_weight` (default 50/50) — illustrative memory vs storage split shown in datatiers panels.
+  - `conf_memory_cost_weight` / `conf_storage_cost_weight` (default 50/50) — illustrative memory vs storage split shown in data tiers panels.
 
 #### Changed
 
