@@ -87,7 +87,7 @@ The integration ships three focused dashboards with a navigation bar linking bet
 Answers: *what did we spend and where did it go?*
 
 - **Deployment group statistics** — total cost and trend per `chargeback_group` tag.
-- **Component statistics** — cost by billing component (`cost_type`: datahot/datacontent, datawarm, datacold, transfer, snapshot, …) and FinOps category (`cost_category`), normalised to your configured currency rate.
+- **Component statistics** — cost by billing component (`cost_type`: datahot/datacontent, datawarm, datacold, transfer, snapshot, …) and FinOps category (`cost_category`), normalized to your configured currency rate.
 
 ### [Chargeback] Usage & Cost Allocation
 
@@ -99,7 +99,7 @@ Answers: *which data streams and tiers drive cost, and how efficiently are we us
 
 ### [Chargeback] Configuration
 
-A standalone reference dashboard showing all active configuration values: conversion rate, date windows, blended cost weights, utilisation score weights, and memory/storage cost split — each visualised as a percentage-stacked bar chart.
+A standalone reference dashboard showing all active configuration values: conversion rate, date windows, blended cost weights, utilization score weights, and memory/storage cost split — each visualised as a percentage-stacked bar chart.
 
 ## Alerting Rules
 
