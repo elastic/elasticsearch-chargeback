@@ -93,7 +93,7 @@ Answers: *what did we spend and where did it go?*
 
 Answers: *which data streams and tiers drive cost, and how efficiently are we using capacity?*
 
-- **Data tiers / utilization** — provisioned capacity vs. realized pool (`chargeable_pool = provisioned × util_score`), p95 heap and disk utilization.
+- **Data tiers / utilization** — provisioned capacity versus realized pool (`chargeable_pool = provisioned × util_score`), p95 heap and disk utilization.
 - **Data tier and data stream overview** — top-20 data streams by indexing / query / storage cost, blended cost totals, workload mix by tier.
 - **Data tier and data stream per day** — time-series cost breakdown (indexing, querying, storage, blended) by data stream and tier, including percentage share panels.
 
