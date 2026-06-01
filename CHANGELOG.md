@@ -34,14 +34,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `billing_cluster_cost` transform: `sku` field now stored and mapped in the lookup index.
 - All transform `fleet_transform_version` and ingest pipeline references bumped to `0.4.0`.
 - Dashboard ES|QL panels updated to use `chargeable_pool` for tier and data-stream allocation.
-- Integration source: [elastic/integrations#19296](https://github.com/elastic/integrations/pull/19296).
+- Integration source: [elastic/integrations#19309](https://github.com/elastic/integrations/pull/19309).
 
 #### Upgrade notes
 
 When upgrading from 0.3.x:
 1. The two new transforms (`billing_realized_pool`, `cluster_capacity_utilization`) are created automatically. They require `node_stats` data in `metrics-elasticsearch.stack_monitoring.node_stats-*`; if absent, utilization defaults to 100%.
 2. Reset and restart the `billing_cluster_cost` transform to backfill `cost_type`/`cost_category`/`is_allocatable` fields.
-3. The old `[Chargeback] Cost and Consumption breakdown` dashboard is removed and replaced by the two new dashboards.
+3. The old `[Chargeback] Cost and Consumption breakdown` dashboard is removed and replaced by three new dashboards.
 
 ---
 

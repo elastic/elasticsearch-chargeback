@@ -80,28 +80,26 @@ This means that storage will contribute the most to the blended cost calculation
 
 ## Dashboards
 
-The integration ships two focused dashboards with a navigation bar linking between them:
+The integration ships three focused dashboards with a navigation bar linking between them:
 
-### [Chargeback] Overview
+### [Chargeback] Billing Components Overview
 
 Answers: *what did we spend and where did it go?*
 
-- **Cost by component (SKU)** — cost by `cost_type` (datahot/datacontent, datawarm, datacold, transfer, snapshot, …) and `cost_category`, normalised to your configured currency rate.
 - **Deployment group statistics** — total cost and trend per `chargeback_group` tag.
-- **Deployment statistics** — normalised cost per deployment and tier, cost-share breakdown.
-- **Configuration** — conversion rate, blending weights, and date-window reference.
+- **Component statistics** — cost by billing component (`cost_type`: datahot/datacontent, datawarm, datacold, transfer, snapshot, …) and FinOps category (`cost_category`), normalised to your configured currency rate.
 
-### [Chargeback] Data Tiers
+### [Chargeback] Usage & Cost Allocation
 
 Answers: *which data streams and tiers drive cost, and how efficiently are we using capacity?*
 
-- **Datatiers / utilization** — provisioned capacity vs. realized pool (`chargeable_pool = provisioned × util_score`), p95 heap and disk utilization.
+- **Data tiers / utilization** — provisioned capacity vs. realized pool (`chargeable_pool = provisioned × util_score`), p95 heap and disk utilization.
 - **Data tier and data stream overview** — top-20 data streams by indexing / query / storage cost, blended cost totals, workload mix by tier.
 - **Data tier and data stream per day** — time-series cost breakdown (indexing, querying, storage, blended) by data stream and tier, including percentage share panels.
 
-## Sample dashboard
+### [Chargeback] Configuration
 
-![Chargeback](<assets/img/[Chargeback] Cost and Consumption breakdown.png>)
+A standalone reference dashboard showing all active configuration values: conversion rate, date windows, blended cost weights, utilisation score weights, and memory/storage cost split — each visualised as a percentage-stacked bar chart.
 
 ## Alerting Rules
 
@@ -121,7 +119,7 @@ These alerting templates are automatically installed with the integration and ca
 
 - **Realized cost model**: two new transforms (`billing_realized_pool`, `cluster_capacity_utilization`) compute a utilization-discounted `chargeable_pool` per deployment per day. Configurable via `conf_utilization_memory_weight` (default 70), `conf_utilization_storage_weight` (default 30), and `conf_utilization_floor` (default 0.10).
 - **SKU cost classification**: `cost_type`, `cost_category`, and `is_allocatable` fields stored in `billing_cluster_cost_lookup` via the billing ingest pipeline, covering all major SKU families.
-- **Two focused dashboards**: `[Chargeback] Overview` and `[Chargeback] Data Tiers` with cross-dashboard navigation bar. Replace the previous monolithic dashboard.
+- **Three focused dashboards**: `[Chargeback] Billing Components Overview`, `[Chargeback] Usage & Cost Allocation`, and `[Chargeback] Configuration` with cross-dashboard navigation bar. Replace the previous monolithic dashboard.
 
 ### Changed
 
