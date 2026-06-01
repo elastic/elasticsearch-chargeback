@@ -57,7 +57,7 @@ To upgrade the integration, do the following:
 
 **Upgrading from 0.3.x to 0.4.0:**
 - Upload `chargeback-0.4.0.zip`. Two new transforms (`billing_realized_pool`, `cluster_capacity_utilization`) are created and auto-started.
-- The old `[Chargeback] Cost and Consumption breakdown` dashboard is replaced by two new dashboards (`[Chargeback] Overview` and `[Chargeback] Data Tiers`). If Kibana does not replace the old dashboard automatically, delete it and re-import from **Saved Objects**.
+- The old `[Chargeback] Cost and Consumption breakdown` dashboard is replaced by three new dashboards (`[Chargeback] Billing Components Overview`, `[Chargeback] Usage & Cost Allocation`, and `[Chargeback] Configuration`). If Kibana does not replace the old dashboard automatically, delete it and re-import from **Saved Objects**.
 - Reset and restart the `billing_cluster_cost` transform to backfill `cost_type`, `cost_category`, and `is_allocatable` into existing lookup documents. Until the backfill completes, "Cost by component (SKU)" panels will show no data.
 - Ensure `node_stats` data is flowing into `metrics-elasticsearch.stack_monitoring.node_stats-*` for the utilization transform. Without this, `cluster_capacity_utilization_lookup` will be empty and utilization defaults to 100% (full provisioned cost charged to all tiers).
 - New configuration fields are added to `chargeback_conf_lookup` with sensible defaults (utilization weights, floor, memory/storage cost split). Update via `POST chargeback_conf_lookup/_update/config` if you wish to customise them.

@@ -28,7 +28,7 @@ This integration must be installed on the **Monitoring cluster** where the above
 | 0.2.10 - 0.2.x | 9.2.0+ | 1.7.0+ | Requires ESS Billing 1.7.0 features |
 | 0.3.0 | 9.2.0+ | 1.7.0+ | Chargeable units schema (breaking change from 0.2.x) |
 | 0.3.1 - 0.3.2 | 9.2.0+ | 1.7.0+ | Field renames, deployment_tags fix, explicit lookup mappings |
-| 0.4.0+ | 9.2.0+ | 1.7.0+ | Realized cost model, SKU classification, two-dashboard split |
+| 0.4.0+ | 9.2.0+ | 1.7.0+ | Realized cost model, SKU classification, three-dashboard split |
 
 ## Setup instructions
 
@@ -130,7 +130,7 @@ These alerting templates are automatically installed with the integration and ca
 
 1. Reset and restart `billing_cluster_cost` to backfill `cost_type`/`cost_category`/`is_allocatable`.
 2. Ensure `node_stats` data is flowing into `metrics-elasticsearch.stack_monitoring.node_stats-*` for utilization. Without it, utilization defaults to 100% (full provisioned cost).
-3. The old `[Chargeback] Cost and Consumption breakdown` dashboard is removed. Re-import the integration to install the two replacement dashboards.
+3. The old `[Chargeback] Cost and Consumption breakdown` dashboard is removed. Re-import the integration to install the three replacement dashboards.
 
 ## Version 0.3.2 Release Notes
 

@@ -20,10 +20,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Utilization formula: `util_score = GREATEST((mem_w × heap_p95 + disk_w × disk_p95) / (mem_w + disk_w), floor)`, `chargeable_pool = provisioned_ecu × util_score`.
   - Defaults: memory weight 70, disk weight 30, floor 0.10. All configurable in `chargeback_conf_lookup`.
 - **SKU cost classification** — `cost_type`, `cost_category`, and `is_allocatable` fields added to `billing_cluster_cost_lookup` via the `billing.yml` ingest pipeline. Covers data tiers (datahot/datacontent, datawarm, datacold, datafrozen), data transfer, snapshots, inference, and on-premises SKUs ([#8](https://github.com/elastic/elasticsearch-chargeback/issues/8)).
-- **Two focused dashboards** replacing the previous single monolithic dashboard ([#8](https://github.com/elastic/elasticsearch-chargeback/issues/8)):
-  - **`[Chargeback] Overview`** — total billing over time, cost by SKU type/category, deployment group and deployment statistics, configuration reference.
-  - **`[Chargeback] Data Tiers`** — realized pool vs provisioned capacity, chargeable pool by tier, top-20 data streams by cost, time-series cost breakdown by data stream and tier (indexing / querying / storage / blended).
-  - Both dashboards carry a horizontal navigation bar linking to each other, preserving the active time range and filters.
+- **Three focused dashboards** replacing the previous single monolithic dashboard ([#8](https://github.com/elastic/elasticsearch-chargeback/issues/8)):
+  - **`[Chargeback] Billing Components Overview`** — full invoice by deployment group and billing component (SKU-based).
+  - **`[Chargeback] Usage & Cost Allocation`** — realized pool vs provisioned capacity, chargeable pool by tier, top-20 data streams by cost, time-series cost breakdown by data stream and tier (indexing / querying / storage / blended).
+  - **`[Chargeback] Configuration`** — rate, weights, and date-window reference with visualised weight bar charts.
+  - All dashboards carry a horizontal navigation bar with the exact dashboard titles as labels, preserving the active time range and filters.
 - **New configuration weights** in `chargeback_conf_lookup`:
   - `conf_utilization_memory_weight` (default 70) and `conf_utilization_storage_weight` (default 30).
   - `conf_utilization_floor` (default 0.10) — minimum utilization to prevent realized cost reaching zero for idle or unmonitored clusters.
