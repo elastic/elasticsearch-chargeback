@@ -14,8 +14,9 @@ To use this integration, the following prerequisites must be met:
 
 - The monitoring cluster, where this integration is installed, must be on version 9.2.0+ due to its use of (smart) [ES|QL LOOKUP JOIN](https://www.elastic.co/docs/reference/query-languages/esql/esql-lookup-join).
 - The [**Elasticsearch Service Billing**](https://www.elastic.co/docs/reference/integrations/ess_billing/) integration (v1.7.0+) must be installed and running.
-- The [**Elasticsearch**](https://www.elastic.co/docs/reference/integrations/elasticsearch/) integration (v1.16.0+) must be installed, but needs not to be added to an agent. 
-- The Transform named `logs-elasticsearch.index_pivot-default-{VERSION}` must be running, which is an asset of the **Elasticsearch** integration. This is the only required asset of the **Elasticsearch** integration.
+- The [**Elasticsearch**](https://www.elastic.co/docs/reference/integrations/elasticsearch/) integration (v1.16.0+) must be **installed and actively running** on all monitored deployments, with the following datasets enabled:
+  - **Index stats** — required for tier and data stream cost allocation. The `logs-elasticsearch.index_pivot-default-{VERSION}` transform must be running to aggregate these into `monitoring-indices`.
+  - **Node stats** from data nodes — required for the realized cost utilization score. Node stats are read from `metrics-elasticsearch.stack_monitoring.node_stats-*`, `.monitoring-es-*`, or `metricbeat-*` depending on your deployment type. Without node stats, utilization defaults to 100% and no discount is applied.
 
 This integration must be installed on the **Monitoring cluster** where the above mentioned relevant usage and billing data is collected.
 

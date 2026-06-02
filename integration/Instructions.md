@@ -14,6 +14,8 @@ To install the Chargeback integration, please follow these steps:
 
 See [Requirements](README.md#requirements) for details.
 
+**Key prerequisite for 0.4.0:** The [Elasticsearch integration](https://www.elastic.co/docs/reference/integrations/elasticsearch/) must be **actively running** on all monitored deployments with both **index stats** and **node stats** datasets enabled. Node stats are required for the realized cost utilization score. Without them, utilization defaults to 100% and no discount is applied.
+
 ### 2. Upload ZIP File: 
 
 - Asset: [`chargeback-0.4.0.zip`](assets/0.4.0/chargeback-0.4.0.zip)
