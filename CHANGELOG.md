@@ -10,6 +10,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Integration Releases
 
+### [0.4.0] - 2026-06-01
+
+#### Added
+
+- **Realized cost model** — allocatable data-tier capacity pool (ECU/ERU) discounted by a p95 utilization score, giving a `chargeable_pool` that reflects actual resource consumption rather than raw provisioned capacity ([#8](https://github.com/elastic/elasticsearch-chargeback/issues/8)).
+  - New transform: `billing_realized_pool` — aggregates daily allocatable data-tier ECU per deployment from `is_allocatable` SKUs.
+  - New transform: `cluster_capacity_utilization` — computes p95 heap and disk utilization across data-role nodes per deployment/day from `node_stats`.
+  - Utilization formula: `util_score = GREATEST((mem_w × heap_p95 + disk_w × disk_p95) / (mem_w + disk_w), floor)`, `chargeable_pool = provisioned_ecu × util_score`.
+  - Defaults: memory weight 70, disk weight 30, floor 0.10. All configurable in `chargeback_conf_lookup`.
+- **SKU cost classification** — `cost_type`, `cost_category`, and `is_allocatable` fields added to `billing_cluster_cost_lookup` via the `billing.yml` ingest pipeline. Covers data tiers (datahot/datacontent, datawarm, datacold, datafrozen), data transfer, snapshots, inference, and on-premises SKUs ([#8](https://github.com/elastic/elasticsearch-chargeback/issues/8)).
+- **Three focused dashboards** replacing the previous single monolithic dashboard ([#8](https://github.com/elastic/elasticsearch-chargeback/issues/8)):
+  - **`[Chargeback] Billing Components Overview`** — full invoice by deployment group and billing component (SKU-based).
+  - **`[Chargeback] Usage & Cost Allocation`** — realized pool vs provisioned capacity, chargeable pool by tier, top-20 data streams by cost, time-series cost breakdown by data stream and tier (indexing / querying / storage / blended).
+  - **`[Chargeback] Configuration`** — rate, weights, and date-window reference with visualised weight bar charts.
+  - All dashboards carry a horizontal navigation bar with the exact dashboard titles as labels, preserving the active time range and filters.
+- **New configuration weights** in `chargeback_conf_lookup`:
+  - `conf_utilization_memory_weight` (default 70) and `conf_utilization_storage_weight` (default 30).
+  - `conf_utilization_floor` (default 0.10) — minimum utilization to prevent realized cost reaching zero for idle or unmonitored clusters.
+  - `conf_memory_cost_weight` / `conf_storage_cost_weight` (default 50/50) — illustrative memory vs storage split shown in data tiers panels.
+
+#### Changed
+
+- `billing_cluster_cost` transform: `sku` field now stored and mapped in the lookup index.
+- All transform `fleet_transform_version` and ingest pipeline references bumped to `0.4.0`.
+- Dashboard ES|QL panels updated to use `chargeable_pool` for tier and data-stream allocation.
+- Integration source: [elastic/integrations#19309](https://github.com/elastic/integrations/pull/19309).
+
+#### Upgrade notes
+
+When upgrading from 0.3.x:
+1. The two new transforms (`billing_realized_pool`, `cluster_capacity_utilization`) are created automatically. They require `node_stats` data in `metrics-elasticsearch.stack_monitoring.node_stats-*`; if absent, utilization defaults to 100%.
+2. Reset and restart the `billing_cluster_cost` transform to backfill `cost_type`/`cost_category`/`is_allocatable` fields.
+3. The old `[Chargeback] Cost and Consumption breakdown` dashboard is removed and replaced by three new dashboards.
+
+---
+
 ### [0.3.2] - 2026-05-26
 
 #### Added

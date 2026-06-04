@@ -2,7 +2,7 @@
 
 ## Version
 
-Chargeback integration: 0.3.2
+Chargeback integration: 0.4.0
 
 ## Dependencies
 
@@ -14,8 +14,9 @@ To use this integration, the following prerequisites must be met:
 
 - The monitoring cluster, where this integration is installed, must be on version 9.2.0+ due to its use of (smart) [ES|QL LOOKUP JOIN](https://www.elastic.co/docs/reference/query-languages/esql/esql-lookup-join).
 - The [**Elasticsearch Service Billing**](https://www.elastic.co/docs/reference/integrations/ess_billing/) integration (v1.7.0+) must be installed and running.
-- The [**Elasticsearch**](https://www.elastic.co/docs/reference/integrations/elasticsearch/) integration (v1.16.0+) must be installed, but needs not to be added to an agent. 
-- The Transform named `logs-elasticsearch.index_pivot-default-{VERSION}` must be running, which is an asset of the **Elasticsearch** integration. This is the only required asset of the **Elasticsearch** integration.
+- The [**Elasticsearch**](https://www.elastic.co/docs/reference/integrations/elasticsearch/) integration (v1.16.0+) must be **installed and actively running** on all monitored deployments, with the following datasets enabled:
+  - **Index stats** — required for tier and data stream cost allocation. The `logs-elasticsearch.index_pivot-default-{VERSION}` transform must be running to aggregate these into `monitoring-indices`.
+  - **Node stats** from data nodes — required for the realized cost utilization score. Node stats are read from `metrics-elasticsearch.stack_monitoring.node_stats-*`, `.monitoring-es-*`, or `metricbeat-*` depending on your deployment type. Without node stats, utilization defaults to 100% and no discount is applied.
 
 This integration must be installed on the **Monitoring cluster** where the above mentioned relevant usage and billing data is collected.
 
@@ -27,7 +28,8 @@ This integration must be installed on the **Monitoring cluster** where the above
 | 0.2.2 - 0.2.9 | 9.2.0+ | 1.4.1+ | Requires smart lookup join (conditional joins) |
 | 0.2.10 - 0.2.x | 9.2.0+ | 1.7.0+ | Requires ESS Billing 1.7.0 features |
 | 0.3.0 | 9.2.0+ | 1.7.0+ | Chargeable units schema (breaking change from 0.2.x) |
-| 0.3.1+ | 9.2.0+ | 1.7.0+ | Field renames, deployment_tags fix, explicit lookup mappings |
+| 0.3.1 - 0.3.2 | 9.2.0+ | 1.7.0+ | Field renames, deployment_tags fix, explicit lookup mappings |
+| 0.4.0+ | 9.2.0+ | 1.7.0+ | Realized cost model, SKU classification, three-dashboard split |
 
 ## Setup instructions
 
@@ -43,14 +45,21 @@ The Chargeback Module is building on two distinct data sets:
 - The output of the Elasticsearch Service Billing integration, i.e. `metrics-ess_billing.billing-default` index.
 - The output of the Elasticsearch integration usage data, specifically that of the `logs-elasticsearch.index_pivot-default-{VERSION}` transform, ie. `monitoring-indices` index.
 
-The first layer of processing that we do, is five transforms: 
+The first layer of processing that we do, is eight transforms:
 
-- From the billing data, we get one value, namely the total chargeable units (cost), per deployment per day.
-- From the usage data, we get values for indexing, querying and storage:
-    - per deployment per day.
-    - per tier per day.
-    - per deployment, per datastream per day.
-    - per tier, per datastream per day.
+**Billing transforms:**
+- `billing_cluster_cost` — total chargeable units (ECU/ERU) per deployment, per SKU, per day. Includes `cost_type`, `cost_category`, and `is_allocatable` classification.
+- `billing_realized_pool` — allocatable data-tier capacity pool per deployment per day (the provisioned ECU ceiling for data nodes only).
+- `chargeback_conf_lookup` — configuration bootstrap (rate, weights, date windows).
+
+**Utilization transforms:**
+- `cluster_capacity_utilization` — p95 heap and disk utilization across data-role nodes per deployment per day.
+
+**Usage transforms** (from monitoring indices):
+- `cluster_deployment_contribution` — indexing, querying, and storage metrics per deployment per day.
+- `cluster_tier_contribution` — same metrics split by data tier.
+- `cluster_datastream_contribution` — same metrics split by data stream.
+- `cluster_tier_and_ds_contribution` — same metrics split by both tier and data stream.
 
 ![Transforms](assets/img/Transforms.png)
 
@@ -72,11 +81,26 @@ This means that storage will contribute the most to the blended cost calculation
 
 ## Dashboards
 
-Once you have uploaded the integration, you can navigate to the `[Chargeback] Cost and Consumption breakdown` dashboard that provides the Chargeback insight into deployments, data streams and data tiers.
+The integration ships three focused dashboards with a navigation bar linking between them:
 
-## Sample dashboard
+### [Chargeback] Billing Components Overview
 
-![Chargeback](<assets/img/[Chargeback] Cost and Consumption breakdown.png>)
+Answers: *what did we spend and where did it go?*
+
+- **Deployment group statistics** — total cost and trend per `chargeback_group` tag.
+- **Component statistics** — cost by billing component (`cost_type`: datahot/datacontent, datawarm, datacold, transfer, snapshot, …) and FinOps category (`cost_category`), normalized to your configured currency rate.
+
+### [Chargeback] Usage & Cost Allocation
+
+Answers: *which data streams and tiers drive cost, and how efficiently are we using capacity?*
+
+- **Data tiers / utilization** — provisioned capacity versus realized pool (`chargeable_pool = provisioned × util_score`), p95 heap and disk utilization.
+- **Data tier and data stream overview** — top-20 data streams by indexing / query / storage cost, blended cost totals, workload mix by tier.
+- **Data tier and data stream per day** — time-series cost breakdown (indexing, querying, storage, blended) by data stream and tier, including percentage share panels.
+
+### [Chargeback] Configuration
+
+A standalone reference dashboard showing all active configuration values: conversion rate, date windows, blended cost weights, utilization score weights, and memory/storage cost split — each visualised as a percentage-stacked bar chart.
 
 ## Alerting Rules
 
@@ -89,6 +113,25 @@ Version 0.2.8 includes three pre-configured Kibana alerting rule templates to he
 These alerting templates are automatically installed with the integration and can be configured through **Stack Management → Rules** in Kibana.
 
 **Important:** For alert rules 2 and 3, ensure that the Chargeback transforms are running before setting them up. These alerting rules query the lookup indices created by the transforms (`billing_cluster_cost_lookup`, `cluster_deployment_contribution_lookup`, etc.). If the transforms are not started, the alerts will not function correctly.
+
+## Version 0.4.0 Release Notes
+
+### Added
+
+- **Realized cost model**: two new transforms (`billing_realized_pool`, `cluster_capacity_utilization`) compute a utilization-discounted `chargeable_pool` per deployment per day. Configurable via `conf_utilization_memory_weight` (default 70), `conf_utilization_storage_weight` (default 30), and `conf_utilization_floor` (default 0.10).
+- **SKU cost classification**: `cost_type`, `cost_category`, and `is_allocatable` fields stored in `billing_cluster_cost_lookup` via the billing ingest pipeline, covering all major SKU families.
+- **Three focused dashboards**: `[Chargeback] Billing Components Overview`, `[Chargeback] Usage & Cost Allocation`, and `[Chargeback] Configuration` with cross-dashboard navigation bar. Replace the previous monolithic dashboard.
+
+### Changed
+
+- All transforms bumped to `fleet_transform_version: 0.4.0`.
+- Dashboard ES|QL uses `chargeable_pool` for tier and data-stream cost allocation.
+
+### Upgrade from 0.3.x
+
+1. Reset and restart `billing_cluster_cost` to backfill `cost_type`/`cost_category`/`is_allocatable`.
+2. Ensure `node_stats` data is flowing into `metrics-elasticsearch.stack_monitoring.node_stats-*` for utilization. Without it, utilization defaults to 100% (full provisioned cost).
+3. The old `[Chargeback] Cost and Consumption breakdown` dashboard is removed. Re-import the integration to install the three replacement dashboards.
 
 ## Version 0.3.2 Release Notes
 
