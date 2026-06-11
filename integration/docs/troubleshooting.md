@@ -244,10 +244,89 @@ The bundled dashboard is **Fleet/Kibana managed**—you cannot fix this by editi
 
 There is no supported workaround on **0.3.1** other than upgrading the package.
 
+## `x_content_parse_exception`: empty lists in ES|QL `params` (0.5.0 on Elasticsearch 9.4+)
+
+### Symptom
+
+Billing or Usage dashboard panels fail with:
+
+`Unexpected error from Elasticsearch: x_content_parse_exception - [esql/async_query] failed to parse field [params]`
+
+and messages like:
+
+`Empty lists are not allowed as named parameter values. Got parameter [dg_selected] with value [[]]`
+
+Kibana may also report **“N panels have been removed from the dashboard”** after a bad dashboard import or manual edit that strips ES|QL filter clauses or replaces ES|QL controls with legacy options-list controls.
+
+### Cause
+
+**0.5.0** Billing and Usage dashboards use chained **ES|QL multi-select variable controls** (`variable_type: multi_values`) with this filter pattern:
+
+```esql
+WHERE (?dg_selected IS NULL OR MV_CONTAINS(?dg_selected, deployment_group))
+```
+
+When no values are selected, Kibana sends **empty arrays** in the ES|QL request:
+
+```json
+"params": [{ "dg_selected": [] }, { "deployment_selected": [] }]
+```
+
+From **Elasticsearch 9.4** onward, **named ES|QL parameters cannot be `[]`**. Elasticsearch rejects the request at parse time ([elastic/elasticsearch#147448](https://github.com/elastic/elasticsearch/issues/147448), [PR #147748](https://github.com/elastic/elasticsearch/pull/147748)). The `?var IS NULL` branch never runs because the parameter value is `[]`, not SQL `NULL`.
+
+The Chargeback query pattern is correct. The bug is in **Kibana param serialization**: `esql_control_manager.ts` sets `value = selectedValues.map(...)` for multi-select (which is `[]` when nothing is selected), and `getNamedParams()` in `@kbn/esql-utils` forwards that value unchanged to Elasticsearch.
+
+**Do not “fix” this in the Chargeback package by:**
+
+- Removing `?variable` filters from panel ES|QL (breaks multi-select filtering; may drop panels on import)
+- Reverting to legacy `options_list_control` / `controlGroupInput` (removes chained tier / data stream / cost category / cost type filters)
+- Adding an `"All"` sentinel value (breaks multi-select UX)
+
+### Verified behaviour on Elasticsearch 9.4
+
+| Request param | Result with `?var IS NULL OR MV_CONTAINS(?var, field)` |
+|---------------|--------------------------------------------------------|
+| `[{"var": null}]` | Works — shows all rows (no filter) |
+| `[{"var": ["product"]}]` | Works — filters correctly |
+| `[{"var": []}]` | **400 parse error** (same error you see in Kibana) |
+| Param omitted entirely | **Unknown query parameter** error |
+
+### Workaround (until Kibana is patched)
+
+On each ES|QL control in the Billing / Usage dashboard, open the control and choose **Select all** so `selected_options` is populated with real values instead of `[]`. Save the dashboard if you want that state to persist.
+
+This is a UX workaround only. Fresh installs of **0.5.0** still ship with `"selected_options": []` on each control.
+
+### Upstream fix (Kibana)
+
+Kibana should send `null` (one param object per variable) when a `multi_values` control has no selection, matching the Agent Builder pattern in [kibana#256588](https://github.com/elastic/kibana/pull/256588). Minimal fix in `getNamedParams()` (`src/platform/packages/shared/kbn-esql-utils/src/utils/run_query.ts`):
+
+```typescript
+if (type === ESQLVariableType.MULTI_VALUES && Array.isArray(value) && value.length === 0) {
+  namedParams.push({ [key]: null });
+} else {
+  namedParams.push({ [key]: value });
+}
+```
+
+See also `scripts/DESIGN_ESQL_EMPTY_PARAMS.md` in this repository for full analysis.
+
+### If panels were removed from the dashboard
+
+Reinstall **0.5.0** dashboards from the integration package (do not hand-edit controls back to options-list). With `REPLACE_CHARGEBACK_DASHBOARD=1`:
+
+```bash
+REPLACE_CHARGEBACK_DASHBOARD=1 ./scripts/run_e2e_tests.sh
+```
+
+Or delete the Billing / Usage dashboard saved objects in **Stack Management → Saved Objects** and reinstall the Chargeback integration zip.
+
 ## Symptom → likely cause
 
 | Symptom | Likely cause |
 |---------|----------------|
+| `Empty lists are not allowed as named parameter values` on Billing/Usage (0.5.0, ES 9.4+) | Kibana sends `[]` for empty multi-select ES|QL controls; needs Kibana fix or **Select all** workaround |
+| “N panels have been removed from the dashboard” after upgrade | Corrupt dashboard import (stripped ES|QL filters or wrong control type); reinstall 0.5.0 dashboards from package |
 | All panels empty; Chargeback transforms “started” | `logs-elasticsearch.index_pivot-default-*` not started, or `monitoring-indices*` empty |
 | ESS Billing dashboard has data; Chargeback empty | `billing_cluster_cost` not finished first run (60m + 1h delay), transform failed, or `total_ecu` not > 0 |
 | `billing_cluster_cost_lookup` has docs; cost panels empty | `chargeback_conf_lookup` date range does not cover billing `@timestamp` |
