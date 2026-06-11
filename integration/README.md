@@ -2,7 +2,7 @@
 
 ## Version
 
-Chargeback integration: 0.4.0
+Chargeback integration: 0.5.0
 
 ## Dependencies
 
@@ -12,7 +12,8 @@ This process must be set up on the **Monitoring cluster**, where all monitoring 
 
 To use this integration, the following prerequisites must be met:
 
-- The monitoring cluster, where this integration is installed, must be on version 9.2.0+ due to its use of (smart) [ES|QL LOOKUP JOIN](https://www.elastic.co/docs/reference/query-languages/esql/esql-lookup-join).
+- The monitoring cluster, where this integration is installed, must be on Elasticsearch version 9.2.0+ due to its use of (smart) [ES|QL LOOKUP JOIN](https://www.elastic.co/docs/reference/query-languages/esql/esql-lookup-join).
+- Kibana version **9.4.0+** is required for integration **0.5.0** and later. **Kibana 9.3 is not supported** — Billing and Usage dashboards fail to render (`No embeddable factory found for type: vis`) and lack GA support for ES|QL multi-select variable controls.
 - The [**Elasticsearch Service Billing**](https://www.elastic.co/docs/reference/integrations/ess_billing/) integration (v1.7.0+) must be installed and running.
 - The [**Elasticsearch**](https://www.elastic.co/docs/reference/integrations/elasticsearch/) integration (v1.16.0+) must be **installed and actively running** on all monitored deployments, with the following datasets enabled:
   - **Index stats** — required for tier and data stream cost allocation. The `logs-elasticsearch.index_pivot-default-{VERSION}` transform must be running to aggregate these into `monitoring-indices`.
@@ -29,7 +30,8 @@ This integration must be installed on the **Monitoring cluster** where the above
 | 0.2.10 - 0.2.x | 9.2.0+ | 1.7.0+ | Requires ESS Billing 1.7.0 features |
 | 0.3.0 | 9.2.0+ | 1.7.0+ | Chargeable units schema (breaking change from 0.2.x) |
 | 0.3.1 - 0.3.2 | 9.2.0+ | 1.7.0+ | Field renames, deployment_tags fix, explicit lookup mappings |
-| 0.4.0+ | 9.2.0+ | 1.7.0+ | Realized cost model, SKU classification, three-dashboard split |
+| 0.4.0 | 9.2.0+ | 1.7.0+ | Realized cost model, SKU classification, three-dashboard split |
+| 0.5.0+ | 9.4.0+ (Kibana), 9.2.0+ (ES). **Not 9.3** | 1.7.0+ | ES|QL multi-select variable controls; Kibana 9.3 fails with `No embeddable factory found for type: vis` |
 
 ## Setup instructions
 
@@ -113,6 +115,18 @@ Version 0.2.8 includes three pre-configured Kibana alerting rule templates to he
 These alerting templates are automatically installed with the integration and can be configured through **Stack Management → Rules** in Kibana.
 
 **Important:** For alert rules 2 and 3, ensure that the Chargeback transforms are running before setting them up. These alerting rules query the lookup indices created by the transforms (`billing_cluster_cost_lookup`, `cluster_deployment_contribution_lookup`, etc.). If the transforms are not started, the alerts will not function correctly.
+
+## Version 0.5.0 Release Notes
+
+### Changed
+
+- **Billing and Usage dashboards** use chained ES|QL multi-select variable controls instead of legacy options-list controls. Panel queries filter with `MV_CONTAINS` (`?control IS NULL OR MV_CONTAINS(?control, field)`).
+- Package `kibana.version` constraint raised to `^9.4.0`. **Kibana 9.3 is not supported** — dashboards fail with `No embeddable factory found for type: vis`. Transform `fleet_transform_version` and pipeline references bumped to `0.5.0` (pipeline logic unchanged).
+
+### Upgrade from 0.4.x
+
+1. Upgrade Kibana to **9.4.0+**, then upgrade the Fleet package to **0.5.0**. Do not install 0.5.0 on Kibana 9.3.
+2. Re-import or replace the Billing and Usage dashboard saved objects if duplicates appear after upgrade.
 
 ## Version 0.4.0 Release Notes
 
