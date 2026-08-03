@@ -32,13 +32,14 @@ E2E_ONPREM_DEPLOYMENTS=(
 )
 
 # Data streams: name|index_weight|query_weight|store_weight (relative 1-20)
+# Prefer type-dataset-namespace names; include one non-conforming name → ds_* = other
 E2E_DATASTREAMS=(
-  "logs-app|12|8|10"
-  "logs-security|10|6|9"
-  "metrics-system|8|5|7"
-  "metrics-infra|7|4|8"
-  "traces-apm|14|12|6"
-  "synthetics-browser|5|9|4"
+  "logs-app-team_a|12|8|10"
+  "logs-security-team_b|10|6|9"
+  "metrics-system-team_a|8|5|7"
+  "metrics-infra-team_b|7|4|8"
+  "traces-apm-team_a|14|12|6"
+  "custom_index|5|9|4"
 )
 
 # Tiers: preference|index_mult|query_mult|store_mult
@@ -116,21 +117,21 @@ e2e_profile_ds_multiplier() {
       balanced:query) echo "$qw" ;;
       balanced:store) echo "$sw" ;;
       logs_heavy:index)
-        case "$ds" in logs-app|logs-security) echo $(( iw * 15 / 10 )) ;; *) echo $(( iw * 7 / 10 )) ;; esac ;;
+        case "$ds" in logs-app-team_a|logs-security-team_b) echo $(( iw * 15 / 10 )) ;; *) echo $(( iw * 7 / 10 )) ;; esac ;;
       logs_heavy:query)
-        case "$ds" in logs-app|logs-security) echo $(( qw * 12 / 10 )) ;; *) echo $(( qw * 8 / 10 )) ;; esac ;;
+        case "$ds" in logs-app-team_a|logs-security-team_b) echo $(( qw * 12 / 10 )) ;; *) echo $(( qw * 8 / 10 )) ;; esac ;;
       logs_heavy:store)
-        case "$ds" in logs-app|logs-security) echo $(( sw * 14 / 10 )) ;; *) echo $(( sw * 6 / 10 )) ;; esac ;;
+        case "$ds" in logs-app-team_a|logs-security-team_b) echo $(( sw * 14 / 10 )) ;; *) echo $(( sw * 6 / 10 )) ;; esac ;;
       query_heavy:index) echo $(( iw * 8 / 10 )) ;;
       query_heavy:query)
-        case "$ds" in traces-apm|synthetics-browser) echo $(( qw * 18 / 10 )) ;; *) echo $(( qw * 9 / 10 )) ;; esac ;;
+        case "$ds" in traces-apm-team_a|custom_index) echo $(( qw * 18 / 10 )) ;; *) echo $(( qw * 9 / 10 )) ;; esac ;;
       query_heavy:store) echo $(( sw * 7 / 10 )) ;;
       metrics_heavy:index)
-        case "$ds" in metrics-system|metrics-infra) echo $(( iw * 16 / 10 )) ;; *) echo $(( iw * 6 / 10 )) ;; esac ;;
+        case "$ds" in metrics-system-team_a|metrics-infra-team_b) echo $(( iw * 16 / 10 )) ;; *) echo $(( iw * 6 / 10 )) ;; esac ;;
       metrics_heavy:query)
-        case "$ds" in metrics-system|metrics-infra) echo $(( qw * 14 / 10 )) ;; *) echo $(( qw * 7 / 10 )) ;; esac ;;
+        case "$ds" in metrics-system-team_a|metrics-infra-team_b) echo $(( qw * 14 / 10 )) ;; *) echo $(( qw * 7 / 10 )) ;; esac ;;
       metrics_heavy:store)
-        case "$ds" in metrics-system|metrics-infra) echo $(( sw * 12 / 10 )) ;; *) echo $(( sw * 8 / 10 )) ;; esac ;;
+        case "$ds" in metrics-system-team_a|metrics-infra-team_b) echo $(( sw * 12 / 10 )) ;; *) echo $(( sw * 8 / 10 )) ;; esac ;;
       *) echo 10 ;;
     esac
     return 0

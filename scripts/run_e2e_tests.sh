@@ -153,11 +153,11 @@ if [[ "${MONITORING_COUNT_EARLY:-0}" -lt 810 ]]; then
         prod)       b_idx=10000; b_qry=5000; b_store=53687091200  ;;
         monitoring) b_idx=2000;  b_qry=800;  b_store=5368709120   ;;
       esac
-      for ds in "logs-app" "metrics-system" "traces-apm"; do
+      for ds in "logs-app-team_a" "metrics-system-team_b" "custom_index"; do
         case "$ds" in
-          logs-app)       dsf=10 ;;
-          metrics-system) dsf=6  ;;
-          traces-apm)     dsf=14 ;;
+          logs-app-team_a)       dsf=10 ;;
+          metrics-system-team_b) dsf=6  ;;
+          custom_index)          dsf=14 ;;
         esac
         for tier_pref in "data_hot,data_content" "data_warm" "data_cold"; do
           case "$tier_pref" in
@@ -271,7 +271,7 @@ if [[ "$REPLACE_CHARGEBACK_DASHBOARD" == "1" ]]; then
   done
   curl_kibana -X DELETE "$KIBANA_HOST/api/saved_objects/index-pattern/chargeback_integration" >/dev/null 2>&1 && echo "  Deleted Chargeback index pattern." || true
 fi
-CHARGEBACK_INSTALL_ZIP="${CHARGEBACK_INSTALL_ZIP:-$CHARGEBACK_REPO/integration/assets/0.5.0/chargeback-0.5.0.zip}"
+CHARGEBACK_INSTALL_ZIP="${CHARGEBACK_INSTALL_ZIP:-$CHARGEBACK_REPO/integration/assets/0.5.1/chargeback-0.5.1.zip}"
 if [[ -f "$CHARGEBACK_INSTALL_ZIP" ]]; then
   echo "  Installing from chargeback repo zip: $CHARGEBACK_INSTALL_ZIP"
   (cd "$INTEGRATIONS_REPO" && $EP_CMD install --zip "$CHARGEBACK_INSTALL_ZIP" --skip-validation)
@@ -485,7 +485,7 @@ echo "--- 11. Cross-verification: data match across all *lookup indices ---"
 CROSS_OK=1
 if command -v jq >/dev/null 2>&1; then
   # Key fields to compare across indices (order for table). billing_cluster_cost_lookup uses total_chargeable_units (Chargeback 0.3.0).
-  KEY_FIELDS="deployment_id @timestamp deployment_name total_chargeable_units tier datastream composite_key cost_type"
+  KEY_FIELDS="deployment_id @timestamp deployment_name total_chargeable_units tier datastream ds_type ds_namespace composite_key cost_type"
   # Build table: rows = field names, columns = lookup indices (same row = same field across indices)
   PASTE_TMP=$(mktemp)
   trap 'rm -f "$PASTE_TMP"' EXIT

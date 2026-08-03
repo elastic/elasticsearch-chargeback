@@ -36,11 +36,22 @@ def sentinel_clause(var: str, field: str) -> str:
     )
 
 
+ALL_SENTINEL = re.compile(
+    r'MV_INTERSECTS\(\?(?P<var>\w+), \["All"\]\)'
+)
+
+
 def rewrite_esql(text: str) -> str:
-    return OLD_FILTER.sub(
+    text = OLD_FILTER.sub(
         lambda m: sentinel_clause(m.group("var"), m.group("field")),
         text,
     )
+    # Legacy "All" sentinel in CASE clauses → portable unfiltered token
+    text = ALL_SENTINEL.sub(
+        lambda m: f'MV_INTERSECTS(?{m.group("var")}, ["{SENTINEL}"])',
+        text,
+    )
+    return text
 
 
 def set_control_selected_options(obj: dict) -> None:

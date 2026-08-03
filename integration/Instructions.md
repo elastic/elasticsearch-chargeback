@@ -16,12 +16,12 @@ See [Requirements](README.md#requirements) for details.
 
 **Key prerequisite for 0.4.0+:** The [Elasticsearch integration](https://www.elastic.co/docs/reference/integrations/elasticsearch/) must be **actively running** on all monitored deployments with both **index stats** and **node stats** datasets enabled. Node stats are required for the realized cost utilization score. Without them, utilization defaults to 100% and no discount is applied.
 
-**Key prerequisite for 0.5.0:** Kibana **9.4.0+**. **Kibana 9.3 is not supported** — Billing and Usage dashboards fail to render with `No embeddable factory found for type: vis` and do not support GA ES|QL multi-select variable controls.
+**Key prerequisite for 0.5.0+:** Kibana **9.4.0+**. **Kibana 9.3 is not supported** — Billing and Usage dashboards fail to render with `No embeddable factory found for type: vis` and do not support GA ES|QL multi-select variable controls.
 
 ### 2. Upload ZIP File: 
 
-- Asset: [`chargeback-0.5.0.zip`](assets/0.5.0/chargeback-0.5.0.zip)
-- Browse to Integrations, and click on `+ Create new integration`
+- Asset: [`chargeback-0.5.1.zip`](assets/0.5.1/chargeback-0.5.1.zip)
+- Browse to Integrations, and select **+ Create new integration**
 
 ![alt text](assets/img/CreateNewIntegration.png)
 
@@ -33,7 +33,7 @@ See [Requirements](README.md#requirements) for details.
 
 Starting from version 0.2.8, all Chargeback transforms are configured to auto-start upon installation. You no longer need to manually start the transforms.
 
-**Starting from version 0.2.10** (current: **v0.5.0**), the `chargeback_conf_lookup` index is automatically created via a bootstrap transform during installation. No manual setup is required! The transform creates the index with default configuration:
+**Starting from version 0.2.10** (current: **v0.5.1**), the `chargeback_conf_lookup` index is automatically created via a bootstrap transform during installation. No manual setup is required! The transform creates the index with default configuration:
 - **Chargeable unit rate:** 0.85 EUR
 - **Weights:** indexing=20, query=20, storage=40
 - **Date range:** 2010-01-01 to 2046-12-31
@@ -58,6 +58,11 @@ These rules can be configured in **Stack Management → Rules** after installati
 To upgrade the integration, do the following:
 - Upload the new asset (ZIP) file to Kibana.
 - Transforms will auto-start (from version 0.2.8 onwards).
+
+**Upgrading from 0.5.0 to 0.5.1:**
+- Upload `chargeback-0.5.1.zip` (Kibana **9.4.0+**).
+- Usage transforms reinstall with `fleet_transform_version: 0.5.1` and add `ds_type` / `ds_namespace`. Reset those transforms if existing lookup docs lack the new fields.
+- Usage & Cost Allocation gains data stream type and namespace controls. Delete duplicate dashboard saved objects if they appear after upgrade.
 
 **Upgrading from 0.4.x to 0.5.0:**
 - Upgrade Kibana to **9.4.0+**, then upload `chargeback-0.5.0.zip`. Do not install on Kibana 9.3.
