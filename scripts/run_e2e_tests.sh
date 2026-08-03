@@ -302,12 +302,16 @@ fi
 
 # 8b. (Billing doc updates run after 8e so we patch docs written by the On-Prem billing transform.)
 
-# 8c. Use short sync delay and frequency for billing_cluster_cost (partial update only)
-BILLING_TID=$(get_transform_id 'logs-chargeback\.billing_cluster_cost-[^"]+')
-if [[ -n "$BILLING_TID" ]]; then
-  curl_es -X POST "$ES_HOST/_transform/$BILLING_TID/_stop" >/dev/null 2>&1 || true
-  curl_es -X POST "$ES_HOST/_transform/$BILLING_TID/_update" -d '{"frequency":"1m","sync":{"time":{"field":"@timestamp","delay":"1m"}}}' >/dev/null 2>&1 || true
-fi
+# 8c. Use short sync delay and frequency for billing transforms (partial update only).
+#     Must include billing_realized_pool — Usage dashboard ES|QL starts FROM that lookup.
+for BILLING_TID_PATTERN in 'logs-chargeback\.billing_cluster_cost-[^"]+' 'logs-chargeback\.billing_realized_pool-[^"]+'; do
+  BILLING_TID=$(get_transform_id "$BILLING_TID_PATTERN")
+  if [[ -n "$BILLING_TID" ]]; then
+    curl_es -X POST "$ES_HOST/_transform/$BILLING_TID/_stop" >/dev/null 2>&1 || true
+    curl_es -X POST "$ES_HOST/_transform/$BILLING_TID/_update" -d '{"frequency":"1m","sync":{"time":{"field":"@timestamp","delay":"1m"}}}' >/dev/null 2>&1 || true
+    echo "  Updated $BILLING_TID (frequency 1m, sync @timestamp, delay 1m)."
+  fi
+done
 
 # 8d. Reset and start all Chargeback transforms so they process source data and populate lookups
 for TID in $(curl_es "$ES_HOST/_transform?size=100" 2>/dev/null | grep -oE '"id":"logs-chargeback\.[^"]+"' | sed 's/"id":"//;s/"//'); do
@@ -353,25 +357,33 @@ curl -sS -k -u "$USER:$PASS" -H "Content-Type: application/x-ndjson" -X POST "$E
 rm -f "$BULK_BILLING"
 echo "Seeded $BILLING_INDEX (30 days × 3 deployments, event.ingested set on all docs)."
 
-# 8g. Re-run Chargeback billing_cluster_cost transform so billing_cluster_cost_lookup gets deployment_group from patched deployment_tags
-#     Transform reads from metrics-ess_billing.billing-* (our 8f dummy data) and writes to billing_cluster_cost_lookup.
-BILLING_CLUSTER_TID=$(get_transform_id 'logs-chargeback\.billing_cluster_cost-[^"]+')
-if [[ -n "$BILLING_CLUSTER_TID" ]]; then
-  echo "Reset/start billing_cluster_cost so lookup gets deployment_group (product/monitoring)..."
-  curl_es -X POST "$ES_HOST/_transform/$BILLING_CLUSTER_TID/_stop?wait_for_completion=true&timeout=30s" >/dev/null 2>&1 || true
-  sleep 2
-  curl_es -X POST "$ES_HOST/_transform/$BILLING_CLUSTER_TID/_reset" >/dev/null 2>&1 || true
-  sleep 2
-  curl_es -X POST "$ES_HOST/_transform/$BILLING_CLUSTER_TID/_start" >/dev/null 2>&1 || true
-  curl_es -X POST "$ES_HOST/_transform/$BILLING_CLUSTER_TID/_schedule_now" >/dev/null 2>&1 || true
-  sleep "$SLEEP_BILLING_AFTER_PATCH"
-  # Verify transform produced lookup docs from our dummy billing data (dev, prod, monitoring)
-  BILLING_LOOKUP_COUNT=$(curl_es "$ES_HOST/billing_cluster_cost_lookup/_count" 2>/dev/null | grep -oE '"count":[0-9]+' | sed 's/"count"://')
-  if [[ -n "$BILLING_LOOKUP_COUNT" && "${BILLING_LOOKUP_COUNT:-0}" -gt 0 ]]; then
-    echo "  billing_cluster_cost_lookup has $BILLING_LOOKUP_COUNT doc(s) from billing source (dummy data or On-Prem)."
-  else
-    echo "  WARN: billing_cluster_cost_lookup is empty; transform may not have picked up $BILLING_INDEX data (check sync delay and source query ess.billing.total_ecu > 0)."
+# 8g. Re-run Chargeback billing transforms after seed so cost + realized-pool lookups populate.
+#     Usage dashboard requires billing_realized_pool_lookup (FROM … LOOKUP JOIN …).
+for BILLING_TID_PATTERN in 'logs-chargeback\.billing_cluster_cost-[^"]+' 'logs-chargeback\.billing_realized_pool-[^"]+'; do
+  BILLING_CLUSTER_TID=$(get_transform_id "$BILLING_TID_PATTERN")
+  if [[ -n "$BILLING_CLUSTER_TID" ]]; then
+    echo "Reset/start $BILLING_CLUSTER_TID after billing seed..."
+    curl_es -X POST "$ES_HOST/_transform/$BILLING_CLUSTER_TID/_stop?wait_for_completion=true&timeout=30s" >/dev/null 2>&1 || true
+    sleep 2
+    curl_es -X POST "$ES_HOST/_transform/$BILLING_CLUSTER_TID/_reset" >/dev/null 2>&1 || true
+    sleep 2
+    curl_es -X POST "$ES_HOST/_transform/$BILLING_CLUSTER_TID/_start" >/dev/null 2>&1 || true
+    curl_es -X POST "$ES_HOST/_transform/$BILLING_CLUSTER_TID/_schedule_now" >/dev/null 2>&1 || true
   fi
+done
+sleep "$SLEEP_BILLING_AFTER_PATCH"
+BILLING_LOOKUP_COUNT=$(curl_es "$ES_HOST/billing_cluster_cost_lookup/_count" 2>/dev/null | grep -oE '"count":[0-9]+' | sed 's/"count"://')
+REALIZED_LOOKUP_COUNT=$(curl_es "$ES_HOST/billing_realized_pool_lookup/_count" 2>/dev/null | grep -oE '"count":[0-9]+' | sed 's/"count"://')
+if [[ -n "$BILLING_LOOKUP_COUNT" && "${BILLING_LOOKUP_COUNT:-0}" -gt 0 ]]; then
+  echo "  billing_cluster_cost_lookup has $BILLING_LOOKUP_COUNT doc(s) from billing source (dummy data or On-Prem)."
+else
+  echo "  WARN: billing_cluster_cost_lookup is empty; transform may not have picked up $BILLING_INDEX data (check sync delay and source query ess.billing.total_ecu > 0)."
+fi
+if [[ -n "$REALIZED_LOOKUP_COUNT" && "${REALIZED_LOOKUP_COUNT:-0}" -gt 0 ]]; then
+  echo "  billing_realized_pool_lookup has $REALIZED_LOOKUP_COUNT doc(s) (required for Usage dashboard)."
+else
+  echo "  ERROR: billing_realized_pool_lookup is empty — Usage & Cost Allocation panels will show no data." >&2
+  exit 1
 fi
 
 # 8g2. chargeback_conf_lookup reads metrics-ess_billing.billing-*; re-run after billing seed (8f)
@@ -410,10 +422,24 @@ echo "--- 9. Verification ---"
 echo "Transforms (chargeback):"
 curl_es "$ES_HOST/_transform?size=50" 2>/dev/null | grep -o '"id":"[^"]*chargeback[^"]*"' || true
 echo "Lookup indices (chargeback) — document counts:"
-for idx in billing_cluster_cost_lookup chargeback_conf_lookup cluster_datastream_contribution_lookup cluster_deployment_contribution_lookup cluster_tier_and_datastream_contribution_lookup cluster_tier_contribution_lookup; do
+for idx in billing_cluster_cost_lookup billing_realized_pool_lookup chargeback_conf_lookup cluster_datastream_contribution_lookup cluster_deployment_contribution_lookup cluster_tier_and_datastream_contribution_lookup cluster_tier_contribution_lookup; do
   count=$(curl_es "$ES_HOST/$idx/_count" 2>/dev/null | grep -oE '"count":[0-9]+' | sed 's/"count"://')
   echo "  $idx: ${count:-0} docs"
 done
+# Usage dashboard smoke: blended cost by ds_namespace must return rows
+USAGE_SMOKE=$(curl_es "$ES_HOST/_query" -d '{"query":"FROM billing_realized_pool_lookup | LOOKUP JOIN cluster_deployment_contribution_lookup ON composite_key | LOOKUP JOIN cluster_tier_and_datastream_contribution_lookup ON composite_key | LOOKUP JOIN chargeback_conf_lookup ON @timestamp >= conf_start_date AND @timestamp <= conf_end_date | EVAL chargeable_pool = data_tier_capacity_ecu | EVAL blended = TO_DOUBLE(tier_and_datastream_sum_store_size) / deployment_sum_store_size * chargeable_pool * COALESCE(conf_chargeable_unit_rate, 1.0) | STATS agg = SUM(blended) BY ds_namespace | WHERE agg > 0 | LIMIT 3"}' 2>/dev/null || true)
+if echo "$USAGE_SMOKE" | grep -q '"values"'; then
+  if echo "$USAGE_SMOKE" | grep -qE '"values"[[:space:]]*:[[:space:]]*\[\['; then
+    echo "  Usage ES|QL smoke (ds_namespace): PASS"
+  elif echo "$USAGE_SMOKE" | grep -qE '"values"[[:space:]]*:[[:space:]]*\[\]'; then
+    echo "  ERROR: Usage ES|QL smoke returned zero rows." >&2
+    exit 1
+  else
+    echo "  Usage ES|QL smoke (ds_namespace): PASS (values present)"
+  fi
+else
+  echo "  WARN: Usage ES|QL smoke could not parse response (continuing)."
+fi
 
 # 10. Evidence: GET all *lookup indices — full content so you can visually verify success
 echo ""
