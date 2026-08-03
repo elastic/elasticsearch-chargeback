@@ -574,7 +574,7 @@ echo "--- 11. Cross-verification: data match across all *lookup indices ---"
 CROSS_OK=1
 if command -v jq >/dev/null 2>&1; then
   # Key fields to compare across indices (order for table). billing_cluster_cost_lookup uses total_chargeable_units (Chargeback 0.3.0).
-  KEY_FIELDS="deployment_id @timestamp deployment_name total_chargeable_units tier datastream composite_key cost_type"
+  KEY_FIELDS="deployment_id @timestamp deployment_name total_chargeable_units tier datastream ds_type ds_namespace composite_key cost_type"
   # Build table: rows = field names, columns = lookup indices (same row = same field across indices)
   PASTE_TMP=$(mktemp)
   trap 'rm -f "$PASTE_TMP"' EXIT

@@ -63,6 +63,20 @@ CONTROL_QUERIES = {
         "| KEEP datastream\n"
         "| SORT datastream"
     ),
+    "ds_type_selected": (
+        "FROM cluster_tier_and_datastream_contribution_lookup\n"
+        "| WHERE ds_type IS NOT NULL\n"
+        "| STATS COUNT(*) BY ds_type\n"
+        "| KEEP ds_type\n"
+        "| SORT ds_type"
+    ),
+    "ds_namespace_selected": (
+        "FROM cluster_tier_and_datastream_contribution_lookup\n"
+        "| WHERE ds_namespace IS NOT NULL\n"
+        "| STATS COUNT(*) BY ds_namespace\n"
+        "| KEEP ds_namespace\n"
+        "| SORT ds_namespace"
+    ),
 }
 
 BILLING_INDEX = "billing_cluster_cost_lookup"

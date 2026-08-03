@@ -134,6 +134,32 @@ USAGE_CONTROLS = [
             "| SORT datastream"
         ),
     },
+    {
+        "panel_id": "a1c8e2f4-6b3d-4e9a-9c5f-1d2e3f4a5b6c",
+        "order": 4,
+        "variable_name": "ds_type_selected",
+        "title": "Data stream type",
+        "esql_query": (
+            "FROM cluster_tier_and_datastream_contribution_lookup\n"
+            "| WHERE ds_type IS NOT NULL\n"
+            "| STATS COUNT(*) BY ds_type\n"
+            "| KEEP ds_type\n"
+            "| SORT ds_type"
+        ),
+    },
+    {
+        "panel_id": "b2d9f3e5-7c4e-5f0b-0d6a-2e3f4a5b6c7d",
+        "order": 5,
+        "variable_name": "ds_namespace_selected",
+        "title": "Data stream namespace",
+        "esql_query": (
+            "FROM cluster_tier_and_datastream_contribution_lookup\n"
+            "| WHERE ds_namespace IS NOT NULL\n"
+            "| STATS COUNT(*) BY ds_namespace\n"
+            "| KEEP ds_namespace\n"
+            "| SORT ds_namespace"
+        ),
+    },
 ]
 
 

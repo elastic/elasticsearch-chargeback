@@ -2,7 +2,7 @@
 
 ## Version
 
-Chargeback integration: 0.5.0
+Chargeback integration: 0.5.1
 
 ## Dependencies
 
@@ -39,7 +39,8 @@ This integration must be installed on the **Monitoring cluster** where the above
 | 0.4.5 | 9.2.0+ | 1.7.0+ | Map `composite_key` as keyword; dashboard LOOKUP JOIN uses `composite_key` (not `.keyword`) |
 | 0.4.6 | 9.2.0+ | 1.7.0+ | Usage tier-cost panels: JOIN left side from `cluster_tier_contribution_lookup` for pre-0.4.5 text mappings |
 | 0.4.7 | 9.2.0+ | 1.7.0+ | Fleet pipeline layout (`data_stream/lookup`); capacity utilization runtime keyword for TEXT cluster names |
-| 0.5.0 | 9.2.0+ | 1.7.0+ | Serverless billing pool SKUs; `.monitoring-es-*` usage source (index metricset); fielddata runtime fields |
+| 0.5.0 | 9.4.0+ (Kibana), 9.2.0+ (ES). **Not 9.3** | 1.7.0+ | Serverless billing pool; ES\|QL multi-select controls; canonical `monitoring-indices*` usage source |
+| 0.5.1 | 9.4.0+ (Kibana), 9.2.0+ (ES). **Not 9.3** | 1.7.0+ | Usage dashboard `ds_type` / `ds_namespace` controls; tighter usage parse |
 
 ## Setup instructions
 
@@ -108,11 +109,15 @@ Answers: *what did we spend and where did it go?*
 
 Answers: *which data streams and tiers drive cost, and how efficiently are we using capacity?*
 
+Controls include deployment group, deployment name, data tier, full data stream name, **data stream type** (`ds_type`), and **data stream namespace** (`ds_namespace`).
+
 - **Data tiers / utilization** — provisioned capacity versus realized pool (`chargeable_pool = provisioned × util_score`), p95 heap and disk utilization.
 - **Data tier and data stream overview** — top-20 data streams by indexing / query / storage cost, blended cost totals, and Workload Breakdown table columns for data stream type, namespace, data stream, and tier.
 - **Data tier and data stream per day** — time-series cost breakdown (indexing, querying, storage, blended) by data stream and tier, including percentage share panels.
 
-For shared deployments, assign each team a unique Fleet namespace so streams follow `<type>-<dataset>-<namespace>`. Chargeback parses those segments into the Workload Breakdown table. Interactive control-bar filters on `ds_*` are deferred to a later 0.5.x line.
+### Shared deployments and namespaces
+
+On a shared deployment, assign each team a unique [Fleet data stream namespace](https://www.elastic.co/docs/reference/fleet/data-streams) (`type-dataset-namespace`). Chargeback parses `datastream` into `ds_type` (first segment) and `ds_namespace` (last segment), with `other` when the name has fewer than three hyphen-separated segments. Use the Usage dashboard type and namespace controls for team-level FinOps. A dataset control is not included in 0.5.1.
 
 ![Usage and Cost Allocation](assets/img/chargeback-usage-allocation.png)
 
@@ -134,6 +139,20 @@ These alerting templates are automatically installed with the integration and ca
 
 **Important:** For alert rules 2 and 3, ensure that the Chargeback transforms are running before setting them up. These alerting rules query the lookup indices created by the transforms (`billing_cluster_cost_lookup`, `cluster_deployment_contribution_lookup`, etc.). If the transforms are not started, the alerts will not function correctly.
 
+## Version 0.5.1 Release Notes
+
+### Added
+
+- Usage ingest pipeline materializes `ds_type` and `ds_namespace` from each `datastream` name (Fleet `type-dataset-namespace` scheme; `other` fallback).
+- Usage & Cost Allocation dashboard: **Data stream type** and **Data stream namespace** ES|QL multi-select controls.
+- Docs for namespace-based ownership on shared deployments.
+
+### Upgrade from 0.5.0
+
+1. Upload `chargeback-0.5.1.zip` (Kibana **9.4.0+**).
+2. Reset usage transforms that write through the usage pipeline if existing lookup docs lack `ds_type` / `ds_namespace`.
+3. Replace Usage dashboard saved objects if duplicates appear after upgrade.
+
 ## Version 0.5.0 Release Notes
 
 ### What's new
@@ -146,7 +165,7 @@ These alerting templates are automatically installed with the integration and ca
 
 ### Upgrade notes
 
-- Upload [`chargeback-0.5.0.zip`](assets/0.5.0/chargeback-0.5.0.zip). Package version **0.5.0**; Kibana remains `^9.2.0`.
+- Upload [`chargeback-0.5.0.zip`](assets/0.5.0/chargeback-0.5.0.zip). Package version **0.5.0**; Kibana **`^9.4.0`** (9.3 not supported).
 - Integration source: [elastic/integrations#22057](https://github.com/elastic/integrations/pull/22057).
 
 ## Version 0.4.7 Release Notes
