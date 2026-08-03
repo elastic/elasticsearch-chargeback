@@ -32,8 +32,6 @@ INTEGRATIONS_ROOT = Path(
     )
 )
 DASHBOARD_DIR = INTEGRATIONS_ROOT / "packages/chargeback/kibana/dashboard"
-LINKS_DIR = INTEGRATIONS_ROOT / "packages/chargeback/kibana/links"
-NAV_LINKS_ID = "chargeback-e97bc218-1acc-474f-b47c-58d09ce83daf"
 
 KIBANA_HOST = os.environ.get("KIBANA_HOST", "https://127.0.0.1:5601").rstrip("/")
 KIBANA_USER = os.environ.get("KIBANA_USER", "elastic")
@@ -113,37 +111,6 @@ def verify_dashboard_api(dashboard_id: str) -> None:
             raise SystemExit(f"{dashboard_id}: /api/dashboards returned {resp.status}")
 
 
-def deploy_links_asset() -> None:
-    path = LINKS_DIR / f"{NAV_LINKS_ID}.json"
-    if not path.is_file():
-        raise SystemExit(f"Missing navigation links asset: {path}")
-    pkg = json.loads(path.read_text())
-    body = {
-        "attributes": pkg["attributes"],
-        "references": pkg.get("references", []),
-    }
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-    headers = {
-        "kbn-xsrf": "true",
-        "Content-Type": "application/json",
-        "Authorization": "Basic "
-        + base64.b64encode(f"{KIBANA_USER}:{KIBANA_PASSWORD}".encode()).decode(),
-    }
-    data = json.dumps(body).encode()
-    req = urllib.request.Request(
-        f"{KIBANA_HOST}/api/saved_objects/links/{NAV_LINKS_ID}?overwrite=true",
-        data=data,
-        method="POST",
-        headers=headers,
-    )
-    with urllib.request.urlopen(req, context=ctx) as resp:
-        if resp.status not in (200, 201):
-            raise SystemExit(f"{NAV_LINKS_ID}: links asset deploy returned {resp.status}")
-    print(f"  {NAV_LINKS_ID}: [Chargeback] Navigation links asset deployed")
-
-
 def deploy_dashboard(dashboard_id: str) -> None:
     path = DASHBOARD_DIR / f"{dashboard_id}.json"
     if not path.is_file():
@@ -194,9 +161,8 @@ def main() -> int:
     else:
         ids = list(ALL_DASHBOARDS)
 
-    print(f"Deploying navigation links + {len(ids)} dashboard(s) to {KIBANA_HOST}")
+    print(f"Deploying {len(ids)} dashboard(s) with inline links nav to {KIBANA_HOST}")
     try:
-        deploy_links_asset()
         for dashboard_id in ids:
             deploy_dashboard(dashboard_id)
     except urllib.error.HTTPError as exc:
