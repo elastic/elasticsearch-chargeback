@@ -10,6 +10,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Integration Releases
 
+### [0.5.0] - 2026-06-05
+
+#### Changed
+
+- Billing Components Overview and Usage & Cost Allocation dashboards: legacy options-list controls replaced with chained ES|QL multi-select variable controls (`MV_CONTAINS` filtering).
+- Kibana minimum version: **9.4.0+** (Elasticsearch remains **9.2.0+**). **Kibana 9.3 is not supported** — Billing and Usage dashboards fail with `No embeddable factory found for type: vis`. Transform `fleet_transform_version` and pipeline references bumped to `0.5.0` (pipeline logic unchanged).
+
+#### Upgrade notes
+
+When upgrading from 0.4.x:
+1. Upgrade Kibana to **9.4.0+** before installing 0.5.0 (9.3 is unsupported).
+2. Upgrade the Fleet package to **0.5.0**; replace duplicate Billing/Usage dashboard saved objects if needed.
+
+---
+
 ### [0.4.0] - 2026-06-01
 
 #### Added

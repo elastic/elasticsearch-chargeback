@@ -153,11 +153,11 @@ if [[ "${MONITORING_COUNT_EARLY:-0}" -lt 810 ]]; then
         prod)       b_idx=10000; b_qry=5000; b_store=53687091200  ;;
         monitoring) b_idx=2000;  b_qry=800;  b_store=5368709120   ;;
       esac
-      for ds in "logs-app" "metrics-system" "traces-apm"; do
+      for ds in "logs-app-team_a" "metrics-system-team_b" "custom_index"; do
         case "$ds" in
-          logs-app)       dsf=10 ;;
-          metrics-system) dsf=6  ;;
-          traces-apm)     dsf=14 ;;
+          logs-app-team_a)       dsf=10 ;;
+          metrics-system-team_b) dsf=6  ;;
+          custom_index)          dsf=14 ;;
         esac
         for tier_pref in "data_hot,data_content" "data_warm" "data_cold"; do
           case "$tier_pref" in
@@ -262,11 +262,29 @@ fi
 # 7. Build and install Chargeback
 echo "--- 7. Build and install Chargeback ---"
 if [[ "$REPLACE_CHARGEBACK_DASHBOARD" == "1" ]]; then
-  echo "Replacing Chargeback dashboard/index pattern from local package (REPLACE_CHARGEBACK_DASHBOARD=1)."
-  curl_kibana -X DELETE "$KIBANA_HOST/api/saved_objects/dashboard/chargeback-39a39857-746c-4a29-adca-3c2fcb6bcfb6" >/dev/null 2>&1 && echo "  Deleted Chargeback dashboard." || true
+  echo "Replacing Chargeback dashboards/index pattern from local package (REPLACE_CHARGEBACK_DASHBOARD=1)."
+  for DASH_ID in \
+    chargeback-39a39857-746c-4a29-adca-3c2fcb6bcfb6 \
+    chargeback-b6cecac0-ebe7-43de-bfc6-1ff287ad860a \
+    chargeback-21588d0e-fb6a-4f76-ad2f-cd7b3d7a3d7c; do
+    curl_kibana -X DELETE "$KIBANA_HOST/api/saved_objects/dashboard/$DASH_ID" >/dev/null 2>&1 && echo "  Deleted dashboard $DASH_ID." || true
+  done
   curl_kibana -X DELETE "$KIBANA_HOST/api/saved_objects/index-pattern/chargeback_integration" >/dev/null 2>&1 && echo "  Deleted Chargeback index pattern." || true
 fi
-(cd "$INTEGRATIONS_REPO/packages/chargeback" && $EP_CMD build --skip-validation && $EP_CMD install --skip-validation)
+CHARGEBACK_INSTALL_ZIP="${CHARGEBACK_INSTALL_ZIP:-$CHARGEBACK_REPO/integration/assets/0.5.1/chargeback-0.5.1.zip}"
+if [[ -f "$CHARGEBACK_INSTALL_ZIP" ]]; then
+  echo "  Installing from chargeback repo zip: $CHARGEBACK_INSTALL_ZIP"
+  (cd "$INTEGRATIONS_REPO" && $EP_CMD install --zip "$CHARGEBACK_INSTALL_ZIP" --skip-validation)
+else
+  echo "  No zip at $CHARGEBACK_INSTALL_ZIP; building from integrations packages/chargeback"
+  (cd "$INTEGRATIONS_REPO/packages/chargeback" && $EP_CMD build --skip-validation && $EP_CMD install --skip-validation)
+fi
+
+# 7a. Ensure Billing/Usage ES|QL control queries match package source (pinned_panels)
+if [[ -x "$CHARGEBACK_REPO/scripts/reset_chargeback_esql_dashboards.py" ]]; then
+  echo "--- 7a. Sync Billing/Usage ES|QL control queries from package ---"
+  INTEGRATIONS_REPO="$INTEGRATIONS_REPO" python3 "$CHARGEBACK_REPO/scripts/reset_chargeback_esql_dashboards.py" || exit 1
+fi
 
 # 7b. Start Chargeback transforms (package has start: true but installer may not start them)
 echo "--- 7b. Start Chargeback transforms ---"
@@ -467,7 +485,7 @@ echo "--- 11. Cross-verification: data match across all *lookup indices ---"
 CROSS_OK=1
 if command -v jq >/dev/null 2>&1; then
   # Key fields to compare across indices (order for table). billing_cluster_cost_lookup uses total_chargeable_units (Chargeback 0.3.0).
-  KEY_FIELDS="deployment_id @timestamp deployment_name total_chargeable_units tier datastream composite_key cost_type"
+  KEY_FIELDS="deployment_id @timestamp deployment_name total_chargeable_units tier datastream ds_type ds_namespace composite_key cost_type"
   # Build table: rows = field names, columns = lookup indices (same row = same field across indices)
   PASTE_TMP=$(mktemp)
   trap 'rm -f "$PASTE_TMP"' EXIT

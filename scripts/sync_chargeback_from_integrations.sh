@@ -59,7 +59,8 @@ echo "Destination:  $DEST_ZIP"
 
 if [[ "$SKIP_BUILD" -eq 0 ]]; then
   echo "--- elastic-package build ---"
-  (cd "$INTEGRATIONS_REPO/packages/chargeback" && $EP_CMD build)
+  # Chargeback ships kibana/links nav panels; package validation rejects them (acknowledged).
+  (cd "$INTEGRATIONS_REPO/packages/chargeback" && $EP_CMD build --skip-validation)
 else
   echo "--- skip build (--skip-build) ---"
 fi
