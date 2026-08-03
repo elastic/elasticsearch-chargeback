@@ -10,6 +10,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Integration Releases
 
+### [0.4.1] - 2026-08-03
+
+#### Added
+
+- Parse data stream names into `ds_type` / `ds_namespace` on the usage path; Usage dashboard blended-cost breakdown panels by namespace and by type (no control-bar filters) ([#23](https://github.com/elastic/elasticsearch-chargeback/issues/23)).
+- ECS `event.ingested` on all Chargeback transform destination pipelines ([#97](https://github.com/elastic/elasticsearch-chargeback/issues/97)).
+- Docs for `chargeback_conf_lookup` install-order prerequisite ([#96](https://github.com/elastic/elasticsearch-chargeback/issues/96)) and ESS Billing day-bucket reconciliation notes ([#66](https://github.com/elastic/elasticsearch-chargeback/issues/66)).
+
+#### Changed
+
+- Package **0.4.1** keeps Kibana `^9.2.0`. Asset: [`integration/assets/0.4.1/chargeback-0.4.1.zip`](integration/assets/0.4.1/chargeback-0.4.1.zip). Source: [elastic/integrations#20479](https://github.com/elastic/integrations/pull/20479).
+
 ### [0.4.0] - 2026-06-01
 
 #### Added

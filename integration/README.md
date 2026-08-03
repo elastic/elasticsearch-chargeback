@@ -2,7 +2,7 @@
 
 ## Version
 
-Chargeback integration: 0.4.0
+Chargeback integration: 0.4.1
 
 ## Dependencies
 
@@ -13,12 +13,14 @@ This process must be set up on the **Monitoring cluster**, where all monitoring 
 To use this integration, the following prerequisites must be met:
 
 - The monitoring cluster, where this integration is installed, must be on version 9.2.0+ due to its use of (smart) [ES|QL LOOKUP JOIN](https://www.elastic.co/docs/reference/query-languages/esql/esql-lookup-join).
-- The [**Elasticsearch Service Billing**](https://www.elastic.co/docs/reference/integrations/ess_billing/) integration (v1.7.0+) must be installed and running.
+- The [**Elasticsearch Service Billing**](https://www.elastic.co/docs/reference/integrations/ess_billing/) integration (v1.7.0+) must be installed and running so that at least one concrete backing index matches `metrics-ess_billing.billing-*` before Chargeback starts (the `chargeback_conf_lookup` bootstrap transform uses that pattern as its source trigger).
 - The [**Elasticsearch**](https://www.elastic.co/docs/reference/integrations/elasticsearch/) integration (v1.16.0+) must be **installed and actively running** on all monitored deployments, with the following datasets enabled:
   - **Index stats** — required for tier and data stream cost allocation. The `logs-elasticsearch.index_pivot-default-{VERSION}` transform must be running to aggregate these into `monitoring-indices`.
   - **Node stats** from data nodes — required for the realized cost utilization score. Node stats are read from `metrics-elasticsearch.stack_monitoring.node_stats-*`, `.monitoring-es-*`, or `metricbeat-*` depending on your deployment type. Without node stats, utilization defaults to 100% and no discount is applied.
 
 This integration must be installed on the **Monitoring cluster** where the above mentioned relevant usage and billing data is collected.
+
+**Install order:** ESS Billing (or On-Premises Billing) with backing indices → Elasticsearch integration (index pivot + node stats) → Chargeback.
 
 ### Version compatibility
 
@@ -29,7 +31,8 @@ This integration must be installed on the **Monitoring cluster** where the above
 | 0.2.10 - 0.2.x | 9.2.0+ | 1.7.0+ | Requires ESS Billing 1.7.0 features |
 | 0.3.0 | 9.2.0+ | 1.7.0+ | Chargeable units schema (breaking change from 0.2.x) |
 | 0.3.1 - 0.3.2 | 9.2.0+ | 1.7.0+ | Field renames, deployment_tags fix, explicit lookup mappings |
-| 0.4.0+ | 9.2.0+ | 1.7.0+ | Realized cost model, SKU classification, three-dashboard split |
+| 0.4.0 | 9.2.0+ | 1.7.0+ | Realized cost model, SKU classification, three-dashboard split |
+| 0.4.1 | 9.2.0+ | 1.7.0+ | `ds_type` / `ds_namespace` parse + breakdown panels; `event.ingested` on lookups |
 
 ## Setup instructions
 
@@ -58,8 +61,10 @@ The first layer of processing that we do, is eight transforms:
 **Usage transforms** (from monitoring indices):
 - `cluster_deployment_contribution` — indexing, querying, and storage metrics per deployment per day.
 - `cluster_tier_contribution` — same metrics split by data tier.
-- `cluster_datastream_contribution` — same metrics split by data stream.
-- `cluster_tier_and_ds_contribution` — same metrics split by both tier and data stream.
+- `cluster_datastream_contribution` — same metrics split by data stream; usage pipeline sets `ds_type` and `ds_namespace`.
+- `cluster_tier_and_ds_contribution` — same metrics split by both tier and data stream (includes `ds_type` and `ds_namespace`).
+
+All lookup destination documents include ECS `event.ingested` (when the row was written).
 
 ![Transforms](assets/img/Transforms.png)
 
@@ -95,8 +100,10 @@ Answers: *what did we spend and where did it go?*
 Answers: *which data streams and tiers drive cost, and how efficiently are we using capacity?*
 
 - **Data tiers / utilization** — provisioned capacity versus realized pool (`chargeable_pool = provisioned × util_score`), p95 heap and disk utilization.
-- **Data tier and data stream overview** — top-20 data streams by indexing / query / storage cost, blended cost totals, workload mix by tier.
+- **Data tier and data stream overview** — top-20 data streams by indexing / query / storage cost, blended cost by data stream **namespace** (`ds_namespace`) and **type** (`ds_type`), blended cost totals, workload mix by tier.
 - **Data tier and data stream per day** — time-series cost breakdown (indexing, querying, storage, blended) by data stream and tier, including percentage share panels.
+
+For shared deployments, assign each team a unique Fleet namespace so streams follow `<type>-<dataset>-<namespace>`. Chargeback parses those segments for breakdown panels. Interactive control-bar filters on `ds_*` are deferred to a later 0.5.x line.
 
 ### [Chargeback] Configuration
 
@@ -113,6 +120,19 @@ Version 0.2.8 includes three pre-configured Kibana alerting rule templates to he
 These alerting templates are automatically installed with the integration and can be configured through **Stack Management → Rules** in Kibana.
 
 **Important:** For alert rules 2 and 3, ensure that the Chargeback transforms are running before setting them up. These alerting rules query the lookup indices created by the transforms (`billing_cluster_cost_lookup`, `cluster_deployment_contribution_lookup`, etc.). If the transforms are not started, the alerts will not function correctly.
+
+## Version 0.4.1 Release Notes
+
+### Added
+
+- Parse `datastream` into `ds_type` / `ds_namespace` (fallback `other`) on the usage path; Usage dashboard breakdown panels for blended cost by namespace and by type ([#23](https://github.com/elastic/elasticsearch-chargeback/issues/23)). No control-bar filters in this release.
+- ECS `event.ingested` on all transform destination ingest pipelines ([#97](https://github.com/elastic/elasticsearch-chargeback/issues/97)).
+- Docs: bootstrap install order ([#96](https://github.com/elastic/elasticsearch-chargeback/issues/96)); expected small deltas vs ESS Billing for incomplete UTC days ([#66](https://github.com/elastic/elasticsearch-chargeback/issues/66)).
+
+### Changed
+
+- Package version **0.4.1**; Kibana remains `^9.2.0`. Transform pipeline refs and `fleet_transform_version` bumped to `0.4.1`.
+- Integration source: [elastic/integrations#20479](https://github.com/elastic/integrations/pull/20479).
 
 ## Version 0.4.0 Release Notes
 
