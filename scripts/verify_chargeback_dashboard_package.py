@@ -41,10 +41,11 @@ def verify_config(path: Path) -> None:
 
 
 def verify_source_tree() -> None:
-    nav_links = DASHBOARD_DIR.parent / "links" / f"chargeback-e97bc218-1acc-474f-b47c-58d09ce83daf.json"
-    assert nav_links.is_file(), f"Missing {nav_links}"
-    nav_obj = json.loads(nav_links.read_text())
-    assert nav_obj["attributes"]["title"] == "[Chargeback] Navigation", nav_links.name
+    # package-spec does not allow kibana/links/; nav must be inline on each dashboard
+    links_dir = DASHBOARD_DIR.parent / "links"
+    assert not links_dir.exists() or not any(links_dir.glob("*.json")), (
+        f"Unsupported packaged links asset present under {links_dir}"
+    )
 
     for dash_id in DASHBOARDS:
         path = DASHBOARD_DIR / f"{dash_id}.json"
