@@ -138,47 +138,64 @@ else
   echo "No Elasticsearch index_pivot transform found. List all: $ES_HOST/_transform"
 fi
 
-# 5b. Seed monitoring-indices: 30 days × 3 deployments × 3 datastreams × 3 tiers (810 docs)
-#     Used by Chargeback contribution transforms. Also ensures On-Prem config_bootstrap discovers all 3 deployments.
+# 5b. Seed monitoring-indices with Fleet-style data streams:
+#     <type>-<dataset>-<namespace> so ds_type / ds_namespace parse clearly on the Usage dashboard.
+#     30 days × 3 deployments × 5 datastreams × 3 tiers = 1350 docs.
+#     Also ensures On-Prem config_bootstrap discovers all 3 deployments.
 MONITORING_COUNT_EARLY=$(curl_es "$ES_HOST/monitoring-indices/_count" 2>/dev/null | grep -oE '"count":[0-9]+' | sed 's/"count"://')
-if [[ "${MONITORING_COUNT_EARLY:-0}" -lt 810 ]]; then
-  echo "Seeding monitoring-indices: 30 days × 3 deployments × 3 datastreams × 3 tiers (810 docs)."
-  [[ "${MONITORING_COUNT_EARLY:-0}" -gt 0 ]] && curl_es -X DELETE "$ES_HOST/monitoring-indices" >/dev/null 2>&1 || true
+# Reseed when empty/short, or when the legacy short names (logs-app) are still present.
+LEGACY_SEED=$(curl_es "$ES_HOST/monitoring-indices/_count" -d '{"query":{"term":{"elasticsearch.index.datastream":"logs-app"}}}' 2>/dev/null | grep -oE '"count":[0-9]+' | sed 's/"count"://')
+GOOD_SEED=$(curl_es "$ES_HOST/monitoring-indices/_count" -d '{"query":{"term":{"elasticsearch.index.datastream":"logs-nginx.access-finance"}}}' 2>/dev/null | grep -oE '"count":[0-9]+' | sed 's/"count"://')
+if [[ "${MONITORING_COUNT_EARLY:-0}" -lt 1350 || "${LEGACY_SEED:-0}" -gt 0 || "${GOOD_SEED:-0}" -eq 0 ]]; then
+  echo "Seeding monitoring-indices: 30 days × 3 deployments × 5 Fleet datastreams × 3 tiers (1350 docs)."
+  curl_es -X DELETE "$ES_HOST/monitoring-indices" >/dev/null 2>&1 || true
   BULK_MON=$(mktemp)
   for day in $(seq 1 30); do
     TS=$(date -u -v-${day}d 2>/dev/null +%Y-%m-%dT00:00:00.000Z || date -u -d "$day days ago" 2>/dev/null +%Y-%m-%dT00:00:00.000Z)
+    DAY_LABEL=$(date -u -v-${day}d 2>/dev/null +%Y.%m.%d || date -u -d "$day days ago" 2>/dev/null +%Y.%m.%d)
     for cluster in dev prod monitoring; do
       case "$cluster" in
         dev)        b_idx=3000;  b_qry=1500; b_store=10737418240  ;;
         prod)       b_idx=10000; b_qry=5000; b_store=53687091200  ;;
         monitoring) b_idx=2000;  b_qry=800;  b_store=5368709120   ;;
       esac
-      for ds in "logs-app" "metrics-system" "traces-apm"; do
+      # Realistic Fleet names: type-dataset-namespace (dataset may contain dots).
+      for ds in \
+        "logs-nginx.access-finance" \
+        "logs-nginx.access-platform" \
+        "logs-elastic_agent-default" \
+        "metrics-system.cpu-default" \
+        "traces-apm.traces-prod"
+      do
         case "$ds" in
-          logs-app)       dsf=10 ;;
-          metrics-system) dsf=6  ;;
-          traces-apm)     dsf=14 ;;
+          logs-nginx.access-finance)   dsf=12 ;;
+          logs-nginx.access-platform)  dsf=9  ;;
+          logs-elastic_agent-default)  dsf=4  ;;
+          metrics-system.cpu-default)  dsf=6  ;;
+          traces-apm.traces-prod)      dsf=14 ;;
         esac
         for tier_pref in "data_hot,data_content" "data_warm" "data_cold"; do
           case "$tier_pref" in
-            "data_hot,data_content") tif=10; tqf=10; tsf=1  ;;
-            data_warm)               tif=3;  tqf=2;  tsf=3  ;;
-            data_cold)               tif=1;  tqf=1;  tsf=10 ;;
+            "data_hot,data_content") tif=10; tqf=10; tsf=1;  tier_name="hot/content" ;;
+            data_warm)               tif=3;  tqf=2;  tsf=3;  tier_name="warm" ;;
+            data_cold)               tif=1;  tqf=1;  tsf=10; tier_name="cold" ;;
           esac
           v=$(( 95 + day % 10 ))
           idx=$(( b_idx * dsf / 10 * tif / 10 * v / 100 ))
           qry=$(( b_qry * dsf / 10 * tqf / 10 * v / 100 ))
           sto=$(( b_store * dsf / 10 * tsf / 10 ))
+          # Backing index name mirrors real .ds-<datastream>-<date>-000001 shape.
+          index_name=".ds-${ds}-${DAY_LABEL}-000001"
           printf '{"index":{"_index":"monitoring-indices"}}\n' >> "$BULK_MON"
-          printf '{"@timestamp":"%s","elasticsearch":{"cluster":{"name":"%s"},"index":{"datastream":"%s","tier_preference":"%s","total":{"indexing":{"index_time_in_millis":%d},"search":{"query_time_in_millis":%d},"store":{"size_in_bytes":%d}},"primaries":{"store":{"total_data_set_size_in_bytes":%d}}}}}\n' \
-            "$TS" "$cluster" "$ds" "$tier_pref" "$idx" "$qry" "$sto" "$sto" >> "$BULK_MON"
+          printf '{"@timestamp":"%s","elasticsearch":{"cluster":{"name":"%s"},"index":{"name":"%s","datastream":"%s","tier":"%s","tier_preference":"%s","total":{"indexing":{"index_time_in_millis":%d},"search":{"query_time_in_millis":%d},"store":{"size_in_bytes":%d}},"primaries":{"store":{"total_data_set_size_in_bytes":%d}}}}}\n' \
+            "$TS" "$cluster" "$index_name" "$ds" "$tier_name" "$tier_pref" "$idx" "$qry" "$sto" "$sto" >> "$BULK_MON"
         done
       done
     done
   done
-  curl -sS -k -u "$USER:$PASS" -H "Content-Type: application/x-ndjson" -X POST "$ES_HOST/_bulk" --data-binary @"$BULK_MON" >/dev/null 2>&1 || true
+  curl -sS -k -u "$USER:$PASS" -H "Content-Type: application/x-ndjson" -X POST "$ES_HOST/_bulk?refresh=true" --data-binary @"$BULK_MON" >/dev/null 2>&1 || true
   rm -f "$BULK_MON"
-  echo "Seeded monitoring-indices (30 days × 3 × 3 × 3 = 810 docs)."
+  echo "Seeded monitoring-indices (30 days × 3 × 5 × 3 = 1350 docs) with Fleet type-dataset-namespace names."
 fi
 
 # 6. On-Prem Billing: install (from integrations repo package or chargeback zip), then org + deployment config, enrich policies, pipeline, transform
