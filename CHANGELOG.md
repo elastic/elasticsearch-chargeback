@@ -14,7 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 #### Added
 
-- Parse data stream names into `ds_type` / `ds_namespace` on the usage path; Usage dashboard blended-cost breakdown panels by namespace and by type (no control-bar filters) ([#23](https://github.com/elastic/elasticsearch-chargeback/issues/23)).
+- Parse data stream names into `ds_type` / `ds_namespace` on the usage path; Usage dashboard Workload Breakdown table adds Data stream type and Namespace columns (no control-bar filters) ([#23](https://github.com/elastic/elasticsearch-chargeback/issues/23)).
 - ECS `event.ingested` on all Chargeback transform destination pipelines ([#97](https://github.com/elastic/elasticsearch-chargeback/issues/97)).
 - Docs for `chargeback_conf_lookup` install-order prerequisite ([#96](https://github.com/elastic/elasticsearch-chargeback/issues/96)) and ESS Billing day-bucket reconciliation notes ([#66](https://github.com/elastic/elasticsearch-chargeback/issues/66)).
 
