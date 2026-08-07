@@ -138,7 +138,7 @@ These alerting templates are automatically installed with the integration and ca
 ### Changed
 
 - Package version **0.4.1**; Kibana remains `^9.2.0`. Transform pipeline refs and `fleet_transform_version` bumped to `0.4.1`.
-- Integration source: [elastic/integrations#20479](https://github.com/elastic/integrations/pull/20479).
+- Integration source: [elastic/integrations#20602](https://github.com/elastic/integrations/pull/20602) (merged into `wip-johannes-chargeback`).
 
 ## Version 0.4.0 Release Notes
 
