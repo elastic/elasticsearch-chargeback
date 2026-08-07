@@ -95,6 +95,8 @@ Answers: *what did we spend and where did it go?*
 - **Deployment group statistics** — total cost and trend per `chargeback_group` tag.
 - **Component statistics** — cost by billing component (`cost_type`: datahot/datacontent, datawarm, datacold, transfer, snapshot, …) and FinOps category (`cost_category`), normalized to your configured currency rate.
 
+![Billing Components Overview](assets/img/chargeback-billing-overview.png)
+
 ### [Chargeback] Usage & Cost Allocation
 
 Answers: *which data streams and tiers drive cost, and how efficiently are we using capacity?*
@@ -105,9 +107,13 @@ Answers: *which data streams and tiers drive cost, and how efficiently are we us
 
 For shared deployments, assign each team a unique Fleet namespace so streams follow `<type>-<dataset>-<namespace>`. Chargeback parses those segments into the Workload Breakdown table. Interactive control-bar filters on `ds_*` are deferred to a later 0.5.x line.
 
+![Usage and Cost Allocation](assets/img/chargeback-usage-allocation.png)
+
 ### [Chargeback] Configuration
 
 A standalone reference dashboard showing all active configuration values: conversion rate, date windows, blended cost weights, utilization score weights, and memory/storage cost split — each visualised as a percentage-stacked bar chart.
+
+![Configuration](assets/img/chargeback-configuration.png)
 
 ## Alerting Rules
 

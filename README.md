@@ -30,6 +30,22 @@ The only reason you should choose the "module" in favour of the integration is i
 - For the [Chargeback Integration](integration/README.md): Follow the [`integration/Instructions.md`](integration/Instructions.md) to install the integration.
 - For the [Chargeback module](module/README.md): Follow the [`module/Instructions.md`](module/Instructions.md) to install the module.
 
+## Dashboards
+
+Chargeback ships three focused dashboards. Screenshots from local stack testing (0.4.1):
+
+### [Chargeback] Billing Components Overview
+
+![Billing Components Overview](integration/assets/img/chargeback-billing-overview.png)
+
+### [Chargeback] Usage and Cost Allocation
+
+![Usage and Cost Allocation](integration/assets/img/chargeback-usage-allocation.png)
+
+### [Chargeback] Configuration
+
+![Configuration](integration/assets/img/chargeback-configuration.png)
+
 ## Troubleshooting
 
 If the Chargeback dashboard is empty after install, see **[integration/docs/troubleshooting.md](integration/docs/troubleshooting.md)** (step-by-step checks for billing/usage data, transforms, lookup indices, and configuration).
