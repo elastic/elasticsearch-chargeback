@@ -20,7 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 #### Changed
 
-- Package **0.4.1** keeps Kibana `^9.2.0`. Asset: [`integration/assets/0.4.1/chargeback-0.4.1.zip`](integration/assets/0.4.1/chargeback-0.4.1.zip). Source: [elastic/integrations#20600](https://github.com/elastic/integrations/pull/20600).
+- Package **0.4.1** keeps Kibana `^9.2.0`. Asset: [`integration/assets/0.4.1/chargeback-0.4.1.zip`](integration/assets/0.4.1/chargeback-0.4.1.zip). Source: [elastic/integrations#20601](https://github.com/elastic/integrations/pull/20601).
 - Refresh Billing Components Overview, Usage and Cost Allocation, and Configuration dashboard screenshots in the repo README and `integration/README.md` (real PNG assets for Fleet).
 - **Bugfix:** `billing_cluster_cost` and `billing_realized_pool` sync on `@timestamp` instead of `event.ingested` so On-Prem Billing sources (often without a mapped `event.ingested`) still populate `billing_realized_pool_lookup` and the Usage & Cost Allocation dashboard.
 
