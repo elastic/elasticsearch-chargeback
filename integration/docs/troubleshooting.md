@@ -1,6 +1,6 @@
 # Chargeback troubleshooting
 
-This guide helps when the **[Chargeback] Cost and Consumption breakdown** dashboard is empty or incomplete, even though transforms appear to be running. It applies to the **Chargeback integration** installed from this repository (current release asset: **`chargeback-0.3.2.zip`** in [`integration/assets/0.3.2/`](../assets/0.3.2/)).
+This guide helps when Chargeback dashboards are empty or incomplete, even though transforms appear to be running. It applies to the **Chargeback integration** installed from this repository (current release asset: **`chargeback-0.4.1.zip`** in [`integration/assets/0.4.1/`](../assets/0.4.1/)).
 
 For prerequisites, installation, and configuration, see [integration README](../README.md) and [Instructions.md](../Instructions.md).
 
@@ -39,7 +39,7 @@ Chargeback does **not** collect billing or usage by itself. If upstream integrat
 | Component | Minimum (documented) | Notes |
 |-----------|----------------------|--------|
 | Monitoring cluster (Elasticsearch) | **9.2.0+** | See [Instructions.md](../Instructions.md) |
-| Chargeback integration | **0.3.2** | ZIP in `integration/assets/0.3.2/` |
+| Chargeback integration | **0.4.1** | ZIP in `integration/assets/0.4.1/` |
 | Elasticsearch Service Billing | **1.4.1+** | **1.7.0+** if using `chargeback_group` deployment tags |
 | Elasticsearch integration | **1.16.0+** | Usage / stack monitoring collection |
 | `logs-elasticsearch.index_pivot-default-{VERSION}` | Must be **started** | Not started by default in the Elasticsearch integration |
@@ -221,6 +221,14 @@ FROM billing_cluster_cost_lookup
 - Clear **Deployment name** and **Deployment group** controls (or set explicitly).
 - Panels with **`Unknown column [total_ecu]`** / **`[conf_ecu_rate]`** → see [Unknown column errors (0.3.1)](#unknown-column-total_ecu-or-conf_ecu_rate-031).
 
+## Small differences versus the ESS Billing dashboard
+
+Chargeback billing and usage transforms aggregate on a **calendar day** with a sync delay (typically about one hour). The ESS Billing dashboard can show near-real-time or partial-day totals for the current UTC day. Small differences for today or windows that cross midnight are expected. When reconciling, compare **completed UTC days** (or extend the billing time range across the day boundary).
+
+## `chargeback_conf_lookup` fails on first install
+
+The bootstrap transform sources `metrics-ess_billing.billing-*`. If Chargeback starts before any billing backing index exists, the transform can fail until billing data appears. Install ESS Billing (or On-Premises Billing) first, confirm a concrete index exists, then start or `_schedule_now` the `chargeback_conf_lookup` transform.
+
 ## Unknown column `total_ecu` or `conf_ecu_rate` (0.3.1)
 
 ### Symptom
@@ -249,7 +257,8 @@ There is no supported workaround on **0.3.1** other than upgrading the package.
 | Symptom | Likely cause |
 |---------|----------------|
 | All panels empty; Chargeback transforms “started” | `logs-elasticsearch.index_pivot-default-*` not started, or `monitoring-indices*` empty |
-| ESS Billing dashboard has data; Chargeback empty | `billing_cluster_cost` not finished first run (60m + 1h delay), transform failed, or `total_ecu` not > 0 |
+| ESS Billing dashboard has data; Chargeback empty | `billing_cluster_cost` not finished first run (60m + 1h delay), transform failed, or `total_ecu` / `total_chargeable_units` not > 0 |
+| ESS Billing total slightly differs from Chargeback for "today" | Expected: Chargeback uses **calendar-day** pivots with sync delay; compare **completed UTC days** (see below) |
 | `billing_cluster_cost_lookup` has docs; cost panels empty | `chargeback_conf_lookup` date range does not cover billing `@timestamp` |
 | Cost panels OK; tier / data stream / blended panels empty | `cluster_*_contribution_lookup` empty or `composite_key` mismatch between billing and usage |
 | Deployment group filter always empty | ESS Billing **< 1.7.0** or **Add deployment tags** disabled on the billing Fleet policy |

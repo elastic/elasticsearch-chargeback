@@ -138,47 +138,64 @@ else
   echo "No Elasticsearch index_pivot transform found. List all: $ES_HOST/_transform"
 fi
 
-# 5b. Seed monitoring-indices: 30 days × 3 deployments × 3 datastreams × 3 tiers (810 docs)
-#     Used by Chargeback contribution transforms. Also ensures On-Prem config_bootstrap discovers all 3 deployments.
+# 5b. Seed monitoring-indices with Fleet-style data streams:
+#     <type>-<dataset>-<namespace> so ds_type / ds_namespace parse clearly on the Usage dashboard.
+#     30 days × 3 deployments × 5 datastreams × 3 tiers = 1350 docs.
+#     Also ensures On-Prem config_bootstrap discovers all 3 deployments.
 MONITORING_COUNT_EARLY=$(curl_es "$ES_HOST/monitoring-indices/_count" 2>/dev/null | grep -oE '"count":[0-9]+' | sed 's/"count"://')
-if [[ "${MONITORING_COUNT_EARLY:-0}" -lt 810 ]]; then
-  echo "Seeding monitoring-indices: 30 days × 3 deployments × 3 datastreams × 3 tiers (810 docs)."
-  [[ "${MONITORING_COUNT_EARLY:-0}" -gt 0 ]] && curl_es -X DELETE "$ES_HOST/monitoring-indices" >/dev/null 2>&1 || true
+# Reseed when empty/short, or when the legacy short names (logs-app) are still present.
+LEGACY_SEED=$(curl_es "$ES_HOST/monitoring-indices/_count" -d '{"query":{"term":{"elasticsearch.index.datastream":"logs-app"}}}' 2>/dev/null | grep -oE '"count":[0-9]+' | sed 's/"count"://')
+GOOD_SEED=$(curl_es "$ES_HOST/monitoring-indices/_count" -d '{"query":{"term":{"elasticsearch.index.datastream":"logs-nginx.access-finance"}}}' 2>/dev/null | grep -oE '"count":[0-9]+' | sed 's/"count"://')
+if [[ "${MONITORING_COUNT_EARLY:-0}" -lt 1350 || "${LEGACY_SEED:-0}" -gt 0 || "${GOOD_SEED:-0}" -eq 0 ]]; then
+  echo "Seeding monitoring-indices: 30 days × 3 deployments × 5 Fleet datastreams × 3 tiers (1350 docs)."
+  curl_es -X DELETE "$ES_HOST/monitoring-indices" >/dev/null 2>&1 || true
   BULK_MON=$(mktemp)
   for day in $(seq 1 30); do
     TS=$(date -u -v-${day}d 2>/dev/null +%Y-%m-%dT00:00:00.000Z || date -u -d "$day days ago" 2>/dev/null +%Y-%m-%dT00:00:00.000Z)
+    DAY_LABEL=$(date -u -v-${day}d 2>/dev/null +%Y.%m.%d || date -u -d "$day days ago" 2>/dev/null +%Y.%m.%d)
     for cluster in dev prod monitoring; do
       case "$cluster" in
         dev)        b_idx=3000;  b_qry=1500; b_store=10737418240  ;;
         prod)       b_idx=10000; b_qry=5000; b_store=53687091200  ;;
         monitoring) b_idx=2000;  b_qry=800;  b_store=5368709120   ;;
       esac
-      for ds in "logs-app" "metrics-system" "traces-apm"; do
+      # Realistic Fleet names: type-dataset-namespace (dataset may contain dots).
+      for ds in \
+        "logs-nginx.access-finance" \
+        "logs-nginx.access-platform" \
+        "logs-elastic_agent-default" \
+        "metrics-system.cpu-default" \
+        "traces-apm.traces-prod"
+      do
         case "$ds" in
-          logs-app)       dsf=10 ;;
-          metrics-system) dsf=6  ;;
-          traces-apm)     dsf=14 ;;
+          logs-nginx.access-finance)   dsf=12 ;;
+          logs-nginx.access-platform)  dsf=9  ;;
+          logs-elastic_agent-default)  dsf=4  ;;
+          metrics-system.cpu-default)  dsf=6  ;;
+          traces-apm.traces-prod)      dsf=14 ;;
         esac
         for tier_pref in "data_hot,data_content" "data_warm" "data_cold"; do
           case "$tier_pref" in
-            "data_hot,data_content") tif=10; tqf=10; tsf=1  ;;
-            data_warm)               tif=3;  tqf=2;  tsf=3  ;;
-            data_cold)               tif=1;  tqf=1;  tsf=10 ;;
+            "data_hot,data_content") tif=10; tqf=10; tsf=1;  tier_name="hot/content" ;;
+            data_warm)               tif=3;  tqf=2;  tsf=3;  tier_name="warm" ;;
+            data_cold)               tif=1;  tqf=1;  tsf=10; tier_name="cold" ;;
           esac
           v=$(( 95 + day % 10 ))
           idx=$(( b_idx * dsf / 10 * tif / 10 * v / 100 ))
           qry=$(( b_qry * dsf / 10 * tqf / 10 * v / 100 ))
           sto=$(( b_store * dsf / 10 * tsf / 10 ))
+          # Backing index name mirrors real .ds-<datastream>-<date>-000001 shape.
+          index_name=".ds-${ds}-${DAY_LABEL}-000001"
           printf '{"index":{"_index":"monitoring-indices"}}\n' >> "$BULK_MON"
-          printf '{"@timestamp":"%s","elasticsearch":{"cluster":{"name":"%s"},"index":{"datastream":"%s","tier_preference":"%s","total":{"indexing":{"index_time_in_millis":%d},"search":{"query_time_in_millis":%d},"store":{"size_in_bytes":%d}},"primaries":{"store":{"total_data_set_size_in_bytes":%d}}}}}\n' \
-            "$TS" "$cluster" "$ds" "$tier_pref" "$idx" "$qry" "$sto" "$sto" >> "$BULK_MON"
+          printf '{"@timestamp":"%s","elasticsearch":{"cluster":{"name":"%s"},"index":{"name":"%s","datastream":"%s","tier":"%s","tier_preference":"%s","total":{"indexing":{"index_time_in_millis":%d},"search":{"query_time_in_millis":%d},"store":{"size_in_bytes":%d}},"primaries":{"store":{"total_data_set_size_in_bytes":%d}}}}}\n' \
+            "$TS" "$cluster" "$index_name" "$ds" "$tier_name" "$tier_pref" "$idx" "$qry" "$sto" "$sto" >> "$BULK_MON"
         done
       done
     done
   done
-  curl -sS -k -u "$USER:$PASS" -H "Content-Type: application/x-ndjson" -X POST "$ES_HOST/_bulk" --data-binary @"$BULK_MON" >/dev/null 2>&1 || true
+  curl -sS -k -u "$USER:$PASS" -H "Content-Type: application/x-ndjson" -X POST "$ES_HOST/_bulk?refresh=true" --data-binary @"$BULK_MON" >/dev/null 2>&1 || true
   rm -f "$BULK_MON"
-  echo "Seeded monitoring-indices (30 days × 3 × 3 × 3 = 810 docs)."
+  echo "Seeded monitoring-indices (30 days × 3 × 5 × 3 = 1350 docs) with Fleet type-dataset-namespace names."
 fi
 
 # 6. On-Prem Billing: install (from integrations repo package or chargeback zip), then org + deployment config, enrich policies, pipeline, transform
@@ -302,12 +319,16 @@ fi
 
 # 8b. (Billing doc updates run after 8e so we patch docs written by the On-Prem billing transform.)
 
-# 8c. Use short sync delay and frequency for billing_cluster_cost (partial update only)
-BILLING_TID=$(get_transform_id 'logs-chargeback\.billing_cluster_cost-[^"]+')
-if [[ -n "$BILLING_TID" ]]; then
-  curl_es -X POST "$ES_HOST/_transform/$BILLING_TID/_stop" >/dev/null 2>&1 || true
-  curl_es -X POST "$ES_HOST/_transform/$BILLING_TID/_update" -d '{"frequency":"1m","sync":{"time":{"field":"@timestamp","delay":"1m"}}}' >/dev/null 2>&1 || true
-fi
+# 8c. Use short sync delay and frequency for billing transforms (partial update only).
+#     Must include billing_realized_pool — Usage dashboard ES|QL starts FROM that lookup.
+for BILLING_TID_PATTERN in 'logs-chargeback\.billing_cluster_cost-[^"]+' 'logs-chargeback\.billing_realized_pool-[^"]+'; do
+  BILLING_TID=$(get_transform_id "$BILLING_TID_PATTERN")
+  if [[ -n "$BILLING_TID" ]]; then
+    curl_es -X POST "$ES_HOST/_transform/$BILLING_TID/_stop" >/dev/null 2>&1 || true
+    curl_es -X POST "$ES_HOST/_transform/$BILLING_TID/_update" -d '{"frequency":"1m","sync":{"time":{"field":"@timestamp","delay":"1m"}}}' >/dev/null 2>&1 || true
+    echo "  Updated $BILLING_TID (frequency 1m, sync @timestamp, delay 1m)."
+  fi
+done
 
 # 8d. Reset and start all Chargeback transforms so they process source data and populate lookups
 for TID in $(curl_es "$ES_HOST/_transform?size=100" 2>/dev/null | grep -oE '"id":"logs-chargeback\.[^"]+"' | sed 's/"id":"//;s/"//'); do
@@ -353,25 +374,33 @@ curl -sS -k -u "$USER:$PASS" -H "Content-Type: application/x-ndjson" -X POST "$E
 rm -f "$BULK_BILLING"
 echo "Seeded $BILLING_INDEX (30 days × 3 deployments, event.ingested set on all docs)."
 
-# 8g. Re-run Chargeback billing_cluster_cost transform so billing_cluster_cost_lookup gets deployment_group from patched deployment_tags
-#     Transform reads from metrics-ess_billing.billing-* (our 8f dummy data) and writes to billing_cluster_cost_lookup.
-BILLING_CLUSTER_TID=$(get_transform_id 'logs-chargeback\.billing_cluster_cost-[^"]+')
-if [[ -n "$BILLING_CLUSTER_TID" ]]; then
-  echo "Reset/start billing_cluster_cost so lookup gets deployment_group (product/monitoring)..."
-  curl_es -X POST "$ES_HOST/_transform/$BILLING_CLUSTER_TID/_stop?wait_for_completion=true&timeout=30s" >/dev/null 2>&1 || true
-  sleep 2
-  curl_es -X POST "$ES_HOST/_transform/$BILLING_CLUSTER_TID/_reset" >/dev/null 2>&1 || true
-  sleep 2
-  curl_es -X POST "$ES_HOST/_transform/$BILLING_CLUSTER_TID/_start" >/dev/null 2>&1 || true
-  curl_es -X POST "$ES_HOST/_transform/$BILLING_CLUSTER_TID/_schedule_now" >/dev/null 2>&1 || true
-  sleep "$SLEEP_BILLING_AFTER_PATCH"
-  # Verify transform produced lookup docs from our dummy billing data (dev, prod, monitoring)
-  BILLING_LOOKUP_COUNT=$(curl_es "$ES_HOST/billing_cluster_cost_lookup/_count" 2>/dev/null | grep -oE '"count":[0-9]+' | sed 's/"count"://')
-  if [[ -n "$BILLING_LOOKUP_COUNT" && "${BILLING_LOOKUP_COUNT:-0}" -gt 0 ]]; then
-    echo "  billing_cluster_cost_lookup has $BILLING_LOOKUP_COUNT doc(s) from billing source (dummy data or On-Prem)."
-  else
-    echo "  WARN: billing_cluster_cost_lookup is empty; transform may not have picked up $BILLING_INDEX data (check sync delay and source query ess.billing.total_ecu > 0)."
+# 8g. Re-run Chargeback billing transforms after seed so cost + realized-pool lookups populate.
+#     Usage dashboard requires billing_realized_pool_lookup (FROM … LOOKUP JOIN …).
+for BILLING_TID_PATTERN in 'logs-chargeback\.billing_cluster_cost-[^"]+' 'logs-chargeback\.billing_realized_pool-[^"]+'; do
+  BILLING_CLUSTER_TID=$(get_transform_id "$BILLING_TID_PATTERN")
+  if [[ -n "$BILLING_CLUSTER_TID" ]]; then
+    echo "Reset/start $BILLING_CLUSTER_TID after billing seed..."
+    curl_es -X POST "$ES_HOST/_transform/$BILLING_CLUSTER_TID/_stop?wait_for_completion=true&timeout=30s" >/dev/null 2>&1 || true
+    sleep 2
+    curl_es -X POST "$ES_HOST/_transform/$BILLING_CLUSTER_TID/_reset" >/dev/null 2>&1 || true
+    sleep 2
+    curl_es -X POST "$ES_HOST/_transform/$BILLING_CLUSTER_TID/_start" >/dev/null 2>&1 || true
+    curl_es -X POST "$ES_HOST/_transform/$BILLING_CLUSTER_TID/_schedule_now" >/dev/null 2>&1 || true
   fi
+done
+sleep "$SLEEP_BILLING_AFTER_PATCH"
+BILLING_LOOKUP_COUNT=$(curl_es "$ES_HOST/billing_cluster_cost_lookup/_count" 2>/dev/null | grep -oE '"count":[0-9]+' | sed 's/"count"://')
+REALIZED_LOOKUP_COUNT=$(curl_es "$ES_HOST/billing_realized_pool_lookup/_count" 2>/dev/null | grep -oE '"count":[0-9]+' | sed 's/"count"://')
+if [[ -n "$BILLING_LOOKUP_COUNT" && "${BILLING_LOOKUP_COUNT:-0}" -gt 0 ]]; then
+  echo "  billing_cluster_cost_lookup has $BILLING_LOOKUP_COUNT doc(s) from billing source (dummy data or On-Prem)."
+else
+  echo "  WARN: billing_cluster_cost_lookup is empty; transform may not have picked up $BILLING_INDEX data (check sync delay and source query ess.billing.total_ecu > 0)."
+fi
+if [[ -n "$REALIZED_LOOKUP_COUNT" && "${REALIZED_LOOKUP_COUNT:-0}" -gt 0 ]]; then
+  echo "  billing_realized_pool_lookup has $REALIZED_LOOKUP_COUNT doc(s) (required for Usage dashboard)."
+else
+  echo "  ERROR: billing_realized_pool_lookup is empty — Usage & Cost Allocation panels will show no data." >&2
+  exit 1
 fi
 
 # 8g2. chargeback_conf_lookup reads metrics-ess_billing.billing-*; re-run after billing seed (8f)
@@ -410,10 +439,24 @@ echo "--- 9. Verification ---"
 echo "Transforms (chargeback):"
 curl_es "$ES_HOST/_transform?size=50" 2>/dev/null | grep -o '"id":"[^"]*chargeback[^"]*"' || true
 echo "Lookup indices (chargeback) — document counts:"
-for idx in billing_cluster_cost_lookup chargeback_conf_lookup cluster_datastream_contribution_lookup cluster_deployment_contribution_lookup cluster_tier_and_datastream_contribution_lookup cluster_tier_contribution_lookup; do
+for idx in billing_cluster_cost_lookup billing_realized_pool_lookup chargeback_conf_lookup cluster_datastream_contribution_lookup cluster_deployment_contribution_lookup cluster_tier_and_datastream_contribution_lookup cluster_tier_contribution_lookup; do
   count=$(curl_es "$ES_HOST/$idx/_count" 2>/dev/null | grep -oE '"count":[0-9]+' | sed 's/"count"://')
   echo "  $idx: ${count:-0} docs"
 done
+# Usage dashboard smoke: blended cost by ds_namespace must return rows
+USAGE_SMOKE=$(curl_es "$ES_HOST/_query" -d '{"query":"FROM billing_realized_pool_lookup | LOOKUP JOIN cluster_deployment_contribution_lookup ON composite_key | LOOKUP JOIN cluster_tier_and_datastream_contribution_lookup ON composite_key | LOOKUP JOIN chargeback_conf_lookup ON @timestamp >= conf_start_date AND @timestamp <= conf_end_date | EVAL chargeable_pool = data_tier_capacity_ecu | EVAL blended = TO_DOUBLE(tier_and_datastream_sum_store_size) / deployment_sum_store_size * chargeable_pool * COALESCE(conf_chargeable_unit_rate, 1.0) | STATS agg = SUM(blended) BY ds_namespace | WHERE agg > 0 | LIMIT 3"}' 2>/dev/null || true)
+if echo "$USAGE_SMOKE" | grep -q '"values"'; then
+  if echo "$USAGE_SMOKE" | grep -qE '"values"[[:space:]]*:[[:space:]]*\[\['; then
+    echo "  Usage ES|QL smoke (ds_namespace): PASS"
+  elif echo "$USAGE_SMOKE" | grep -qE '"values"[[:space:]]*:[[:space:]]*\[\]'; then
+    echo "  ERROR: Usage ES|QL smoke returned zero rows." >&2
+    exit 1
+  else
+    echo "  Usage ES|QL smoke (ds_namespace): PASS (values present)"
+  fi
+else
+  echo "  WARN: Usage ES|QL smoke could not parse response (continuing)."
+fi
 
 # 10. Evidence: GET all *lookup indices — full content so you can visually verify success
 echo ""
