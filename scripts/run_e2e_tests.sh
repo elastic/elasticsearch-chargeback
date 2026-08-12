@@ -444,7 +444,7 @@ for idx in billing_cluster_cost_lookup billing_realized_pool_lookup chargeback_c
   echo "  $idx: ${count:-0} docs"
 done
 # Usage dashboard smoke: blended cost by ds_namespace must return rows
-USAGE_SMOKE=$(curl_es "$ES_HOST/_query" -d '{"query":"FROM billing_realized_pool_lookup | LOOKUP JOIN cluster_deployment_contribution_lookup ON composite_key | LOOKUP JOIN cluster_tier_and_datastream_contribution_lookup ON composite_key | LOOKUP JOIN chargeback_conf_lookup ON @timestamp >= conf_start_date AND @timestamp <= conf_end_date | EVAL chargeable_pool = data_tier_capacity_ecu | EVAL blended = TO_DOUBLE(tier_and_datastream_sum_store_size) / deployment_sum_store_size * chargeable_pool * COALESCE(conf_chargeable_unit_rate, 1.0) | STATS agg = SUM(blended) BY ds_namespace | WHERE agg > 0 | LIMIT 3"}' 2>/dev/null || true)
+USAGE_SMOKE=$(curl_es "$ES_HOST/_query" -d '{"query":"FROM billing_realized_pool_lookup | EVAL ts = @timestamp | EVAL ck = composite_key::keyword | DROP composite_key, `composite_key.keyword` | LOOKUP JOIN cluster_deployment_contribution_lookup ON ck == composite_key.keyword | DROP composite_key, `composite_key.keyword` | LOOKUP JOIN cluster_tier_and_datastream_contribution_lookup ON ck == composite_key.keyword | DROP composite_key, `composite_key.keyword` | LOOKUP JOIN chargeback_conf_lookup ON ts >= conf_start_date AND ts <= conf_end_date | EVAL chargeable_pool = data_tier_capacity_ecu | EVAL blended = TO_DOUBLE(tier_and_datastream_sum_store_size) / deployment_sum_store_size * chargeable_pool * COALESCE(conf_chargeable_unit_rate, 1.0) | STATS agg = SUM(blended) BY ds_namespace | WHERE agg > 0 | LIMIT 3"}' 2>/dev/null || true)
 if echo "$USAGE_SMOKE" | grep -q '"values"'; then
   if echo "$USAGE_SMOKE" | grep -qE '"values"[[:space:]]*:[[:space:]]*\[\['; then
     echo "  Usage ES|QL smoke (ds_namespace): PASS"
@@ -601,18 +601,27 @@ else
   echo "  chargeback_conf_lookup conf_ecu_rate_unit alias: FAIL (expected alias -> conf_chargeable_unit_rate_unit)"
   ESQL_PROOF_OK=0
 fi
-ESQL_INDEXING='FROM billing_cluster_cost_lookup
-| LOOKUP JOIN chargeback_conf_lookup ON @timestamp >= conf_start_date AND @timestamp <= conf_end_date
-| LOOKUP JOIN cluster_deployment_contribution_lookup ON composite_key
-| LOOKUP JOIN cluster_datastream_contribution_lookup ON composite_key
-| EVAL indexing = CASE (deployment_sum_indexing_time > 0, TO_DOUBLE(datastream_sum_indexing_time) / deployment_sum_indexing_time * COALESCE(total_chargeable_units, total_ecu)) * COALESCE(conf_chargeable_unit_rate, conf_ecu_rate)
-| STATS agg_indexing = SUM(indexing) BY @timestamp, datastream
+# Bundled dashboards (0.4.3+) use chargeable-unit field names only; ES|QL does not resolve mapping aliases.
+# Join on composite_key.keyword after casting ck — LOOKUP JOIN rejects text-typed right-side keys.
+ESQL_INDEXING='FROM billing_realized_pool_lookup
+| EVAL ts = @timestamp
+| EVAL ck = composite_key::keyword
+| DROP composite_key, `composite_key.keyword`
+| LOOKUP JOIN cluster_capacity_utilization_lookup ON ck == composite_key.keyword
+| DROP composite_key, `composite_key.keyword`
+| LOOKUP JOIN cluster_deployment_contribution_lookup ON ck == composite_key.keyword
+| DROP composite_key, `composite_key.keyword`
+| LOOKUP JOIN cluster_datastream_contribution_lookup ON ck == composite_key.keyword
+| DROP composite_key, `composite_key.keyword`
+| LOOKUP JOIN chargeback_conf_lookup ON ts >= conf_start_date AND ts <= conf_end_date
+| EVAL chargeable_pool = data_tier_capacity_ecu, indexing = CASE (deployment_sum_indexing_time > 0, TO_DOUBLE(datastream_sum_indexing_time) / deployment_sum_indexing_time * chargeable_pool) * COALESCE(conf_chargeable_unit_rate, 1.0)
+| STATS agg_indexing = SUM(indexing) BY datastream
 | WHERE agg_indexing > 0
 | LIMIT 5'
 ESQL_BODY=$(printf '%s' "$ESQL_INDEXING" | jq -Rs '{query: .}')
 ESQL_RESP=$(curl_es -X POST "$ES_HOST/_query" -d "$ESQL_BODY" 2>/dev/null)
 if echo "$ESQL_RESP" | grep -qi 'verification_exception\|"type"[[:space:]]*:[[:space:]]*"verification_exception"'; then
-  echo "  dashboard indexing ES|QL (COALESCE legacy + new names): FAIL"
+  echo "  dashboard indexing ES|QL (chargeable-unit fields): FAIL"
   echo "$ESQL_RESP" | head -c 2000
   ESQL_PROOF_OK=0
 elif echo "$ESQL_RESP" | grep -qi '"error"'; then
@@ -621,15 +630,15 @@ elif echo "$ESQL_RESP" | grep -qi '"error"'; then
   ESQL_PROOF_OK=0
 else
   rows=$(echo "$ESQL_RESP" | jq -r '.values | length // 0' 2>/dev/null || echo 0)
-  echo "  dashboard indexing ES|QL (COALESCE legacy + new names): PASS (${rows:-0} row batch returned)"
+  echo "  dashboard indexing ES|QL (chargeable-unit fields): PASS (${rows:-0} row batch returned)"
 fi
 if [[ "$ESQL_PROOF_OK" -ne 1 ]]; then
   echo ""
-  echo "Issue #99 proof FAILED. Expected Chargeback 0.3.2 legacy aliases on lookup mappings."
-  echo "See https://github.com/elastic/elasticsearch-chargeback/issues/99"
+  echo "Dashboard ES|QL proof FAILED. Expected 0.3.2+ legacy aliases on lookup mappings and chargeable-unit field names in dashboard queries."
+  echo "See https://github.com/elastic/elasticsearch-chargeback/issues/99 and https://github.com/elastic/elasticsearch-chargeback/issues/104"
   exit 1
 fi
-echo "  Issue #99 proof: PASS (0.3.2 aliases + dashboard ES|QL validates)"
+echo "  Issue #99/#104 proof: PASS (lookup aliases present; dashboard ES|QL uses chargeable-unit fields)"
 
 echo ""
 echo "--- Done. Run 'go run github.com/elastic/elastic-package test' from $INTEGRATIONS_REPO/packages/chargeback for asset tests. ---"

@@ -10,6 +10,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Integration Releases
 
+### [0.4.3] - 2026-08-12
+
+#### Fixed
+
+- Billing Components Overview and Usage and Cost Allocation dashboard ES|QL no longer references legacy `conf_ecu_rate` / `total_ecu` inside `COALESCE`. ES|QL does not resolve mapping aliases, so those fallbacks failed verification after the Configuration-only fix in 0.4.2 and cascaded into `Unknown column [storage]` / `[querying]` / `[indexing]` on blended-cost panels ([#104](https://github.com/elastic/elasticsearch-chargeback/issues/104)).
+
+#### Changed
+
+- Package **0.4.3** keeps Kibana `^9.2.0`. Asset: [`integration/assets/0.4.3/chargeback-0.4.3.zip`](integration/assets/0.4.3/chargeback-0.4.3.zip). Source: [elastic/integrations#20682](https://github.com/elastic/integrations/pull/20682).
+
+### [0.4.2] - 2026-08-12
+
+#### Fixed
+
+- Configuration dashboard panel **Configuration values by date window** no longer references legacy `conf_ecu_rate` / `conf_ecu_rate_unit` columns that fail ES|QL verification when only `conf_chargeable_unit_rate` fields exist ([#104](https://github.com/elastic/elasticsearch-chargeback/issues/104)).
+- Billing Components Overview and Usage and Cost Allocation panels that join `chargeback_conf_lookup` alias `@timestamp` as `ts` before `LOOKUP JOIN`, avoiding ambiguous `@timestamp` verification failures ([#105](https://github.com/elastic/elasticsearch-chargeback/issues/105)).
+
+#### Changed
+
+- Package **0.4.2** keeps Kibana `^9.2.0`. Asset: [`integration/assets/0.4.2/chargeback-0.4.2.zip`](integration/assets/0.4.2/chargeback-0.4.2.zip). Source: [elastic/integrations#20661](https://github.com/elastic/integrations/pull/20661) (merged into `wip-johannes-chargeback`).
+
 ### [0.4.1] - 2026-08-03
 
 #### Added
