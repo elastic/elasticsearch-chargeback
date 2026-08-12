@@ -444,7 +444,7 @@ for idx in billing_cluster_cost_lookup billing_realized_pool_lookup chargeback_c
   echo "  $idx: ${count:-0} docs"
 done
 # Usage dashboard smoke: blended cost by ds_namespace must return rows
-USAGE_SMOKE=$(curl_es "$ES_HOST/_query" -d '{"query":"FROM billing_realized_pool_lookup | LOOKUP JOIN cluster_deployment_contribution_lookup ON composite_key | LOOKUP JOIN cluster_tier_and_datastream_contribution_lookup ON composite_key | LOOKUP JOIN chargeback_conf_lookup ON @timestamp >= conf_start_date AND @timestamp <= conf_end_date | EVAL chargeable_pool = data_tier_capacity_ecu | EVAL blended = TO_DOUBLE(tier_and_datastream_sum_store_size) / deployment_sum_store_size * chargeable_pool * COALESCE(conf_chargeable_unit_rate, 1.0) | STATS agg = SUM(blended) BY ds_namespace | WHERE agg > 0 | LIMIT 3"}' 2>/dev/null || true)
+USAGE_SMOKE=$(curl_es "$ES_HOST/_query" -d '{"query":"FROM billing_realized_pool_lookup | EVAL ts = @timestamp | EVAL ck = composite_key::keyword | DROP composite_key, `composite_key.keyword` | LOOKUP JOIN cluster_deployment_contribution_lookup ON ck == composite_key.keyword | DROP composite_key, `composite_key.keyword` | LOOKUP JOIN cluster_tier_and_datastream_contribution_lookup ON ck == composite_key.keyword | DROP composite_key, `composite_key.keyword` | LOOKUP JOIN chargeback_conf_lookup ON ts >= conf_start_date AND ts <= conf_end_date | EVAL chargeable_pool = data_tier_capacity_ecu | EVAL blended = TO_DOUBLE(tier_and_datastream_sum_store_size) / deployment_sum_store_size * chargeable_pool * COALESCE(conf_chargeable_unit_rate, 1.0) | STATS agg = SUM(blended) BY ds_namespace | WHERE agg > 0 | LIMIT 3"}' 2>/dev/null || true)
 if echo "$USAGE_SMOKE" | grep -q '"values"'; then
   if echo "$USAGE_SMOKE" | grep -qE '"values"[[:space:]]*:[[:space:]]*\[\['; then
     echo "  Usage ES|QL smoke (ds_namespace): PASS"
@@ -602,11 +602,17 @@ else
   ESQL_PROOF_OK=0
 fi
 # Bundled dashboards (0.4.3+) use chargeable-unit field names only; ES|QL does not resolve mapping aliases.
+# Join on composite_key.keyword after casting ck — LOOKUP JOIN rejects text-typed right-side keys.
 ESQL_INDEXING='FROM billing_realized_pool_lookup
 | EVAL ts = @timestamp
-| LOOKUP JOIN cluster_capacity_utilization_lookup ON composite_key
-| LOOKUP JOIN cluster_deployment_contribution_lookup ON composite_key
-| LOOKUP JOIN cluster_datastream_contribution_lookup ON composite_key
+| EVAL ck = composite_key::keyword
+| DROP composite_key, `composite_key.keyword`
+| LOOKUP JOIN cluster_capacity_utilization_lookup ON ck == composite_key.keyword
+| DROP composite_key, `composite_key.keyword`
+| LOOKUP JOIN cluster_deployment_contribution_lookup ON ck == composite_key.keyword
+| DROP composite_key, `composite_key.keyword`
+| LOOKUP JOIN cluster_datastream_contribution_lookup ON ck == composite_key.keyword
+| DROP composite_key, `composite_key.keyword`
 | LOOKUP JOIN chargeback_conf_lookup ON ts >= conf_start_date AND ts <= conf_end_date
 | EVAL chargeable_pool = data_tier_capacity_ecu, indexing = CASE (deployment_sum_indexing_time > 0, TO_DOUBLE(datastream_sum_indexing_time) / deployment_sum_indexing_time * chargeable_pool) * COALESCE(conf_chargeable_unit_rate, 1.0)
 | STATS agg_indexing = SUM(indexing) BY datastream
