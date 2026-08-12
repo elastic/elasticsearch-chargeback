@@ -29,10 +29,12 @@ The only reason you should choose the "module" in favour of the integration is i
 
 - For the [Chargeback Integration](integration/README.md): Follow the [`integration/Instructions.md`](integration/Instructions.md) to install the integration.
 - For the [Chargeback module](module/README.md): Follow the [`module/Instructions.md`](module/Instructions.md) to install the module.
+- To additionally charge back **Elastic Cloud Serverless** projects: install the integration (0.5.0+), then follow [`serverless/Instructions.md`](serverless/Instructions.md).
+- To analyse and explain the collected cost data conversationally: install the [Elastic Cost Optimizer agent](agent/README.md) via [`agent/Instructions.md`](agent/Instructions.md).
 
 ## Dashboards
 
-Chargeback ships three focused dashboards. Screenshots from local stack testing (0.4.x):
+Chargeback ships three focused dashboards. Screenshots from local stack testing (0.4.1):
 
 ### [Chargeback] Billing Components Overview
 
