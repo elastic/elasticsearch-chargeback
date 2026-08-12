@@ -1,0 +1,20 @@
+{
+  "description": "Chargeback: reshape Serverless _cat/indices rows into .monitoring-es-* usage shape so the stock contribution transforms can aggregate them.",
+  "created_date_millis": 1786106245044,
+  "processors": [
+    {
+      "set": {
+        "override": false,
+        "field": "@timestamp",
+        "value": "{{{_ingest.timestamp}}}"
+      }
+    },
+    {
+      "script": {
+        "lang": "painless",
+        "source": "long toL(def v) { if (v == null) return 0L; String s = v.toString().trim(); if (s.length() == 0) return 0L; try { return Long.parseLong(s); } catch (Exception e) {} try { return (long)Double.parseDouble(s); } catch (Exception e) {} return 0L; }\ndef idx = ctx.remove('idx');\ndef project = ctx.remove('project');\nlong dsize = toL(ctx.remove('dsize'));\nlong docs = toL(ctx.remove('docs'));\nlong itime = toL(ctx.remove('itime'));\nlong itotal = toL(ctx.remove('itotal'));\nlong qtime = toL(ctx.remove('qtime'));\nlong qtotal = toL(ctx.remove('qtotal'));\nif (idx == null || project == null) { throw new IllegalArgumentException('idx and project are required'); }\nMap store = ['size_in_bytes': dsize, 'total_data_set_size_in_bytes': dsize];\nMap total = ['store': store, 'indexing': ['index_time_in_millis': itime, 'index_total': itotal], 'search': ['query_time_in_millis': qtime, 'query_total': qtotal], 'docs': ['count': docs]];\nMap primaries = ['store': ['size_in_bytes': dsize, 'total_data_set_size_in_bytes': dsize]];\nctx.elasticsearch = ['cluster': ['name': project], 'index': ['name': idx, 'tier': 'serverless', 'total': total, 'primaries': primaries]];\nctx.metricset = ['name': 'index'];\nctx.source_type = 'serverless_cat_indices';"
+      }
+    }
+  ],
+  "modified_date_millis": 1786106245044
+}

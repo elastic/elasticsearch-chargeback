@@ -1,0 +1,13 @@
+{
+  "id": "chargeback.configuration",
+  "type": "esql",
+  "description": "The active Chargeback configuration: currency rate and unit, blended cost weights (indexing, query, storage), utilization weights and floor, and the validity window. Read this before explaining or justifying any number, because every cost figure depends on these values and they are customer-configurable.",
+  "tags": [
+    "chargeback",
+    "configuration"
+  ],
+  "configuration": {
+    "query": "FROM chargeback_conf_lookup\n| KEEP conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_indexing_weight, conf_query_weight, conf_storage_weight, conf_utilization_memory_weight, conf_utilization_storage_weight, conf_utilization_floor, conf_start_date, conf_end_date\n| LIMIT 10",
+    "params": {}
+  }
+}
