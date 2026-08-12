@@ -1,6 +1,6 @@
 # Chargeback troubleshooting
 
-This guide helps when Chargeback dashboards are empty or incomplete, even though transforms appear to be running. It applies to the **Chargeback integration** installed from this repository (current release asset: **`chargeback-0.4.1.zip`** in [`integration/assets/0.4.1/`](../assets/0.4.1/)).
+This guide helps when Chargeback dashboards are empty or incomplete, even though transforms appear to be running. It applies to the **Chargeback integration** installed from this repository (current release asset: **`chargeback-0.4.2.zip`** in [`integration/assets/0.4.2/`](../assets/0.4.2/)).
 
 For prerequisites, installation, and configuration, see [integration README](../README.md) and [Instructions.md](../Instructions.md).
 
@@ -39,7 +39,7 @@ Chargeback does **not** collect billing or usage by itself. If upstream integrat
 | Component | Minimum (documented) | Notes |
 |-----------|----------------------|--------|
 | Monitoring cluster (Elasticsearch) | **9.2.0+** | See [Instructions.md](../Instructions.md) |
-| Chargeback integration | **0.4.1** | ZIP in `integration/assets/0.4.1/` |
+| Chargeback integration | **0.4.2** | ZIP in `integration/assets/0.4.2/` |
 | Elasticsearch Service Billing | **1.4.1+** | **1.7.0+** if using `chargeback_group` deployment tags |
 | Elasticsearch integration | **1.16.0+** | Usage / stack monitoring collection |
 | `logs-elasticsearch.index_pivot-default-{VERSION}` | Must be **started** | Not started by default in the Elasticsearch integration |

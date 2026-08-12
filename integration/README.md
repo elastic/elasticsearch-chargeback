@@ -2,7 +2,7 @@
 
 ## Version
 
-Chargeback integration: 0.4.1
+Chargeback integration: 0.4.2
 
 ## Dependencies
 
@@ -33,6 +33,7 @@ This integration must be installed on the **Monitoring cluster** where the above
 | 0.3.1 - 0.3.2 | 9.2.0+ | 1.7.0+ | Field renames, deployment_tags fix, explicit lookup mappings |
 | 0.4.0 | 9.2.0+ | 1.7.0+ | Realized cost model, SKU classification, three-dashboard split |
 | 0.4.1 | 9.2.0+ | 1.7.0+ | `ds_type` / `ds_namespace` parse + Workload Breakdown columns; `event.ingested` on lookups |
+| 0.4.2 | 9.2.0+ | 1.7.0+ | Dashboard ES\|QL fixes for legacy rate columns and ambiguous `@timestamp` LOOKUP JOIN |
 
 ## Setup instructions
 
@@ -126,6 +127,18 @@ Version 0.2.8 includes three pre-configured Kibana alerting rule templates to he
 These alerting templates are automatically installed with the integration and can be configured through **Stack Management → Rules** in Kibana.
 
 **Important:** For alert rules 2 and 3, ensure that the Chargeback transforms are running before setting them up. These alerting rules query the lookup indices created by the transforms (`billing_cluster_cost_lookup`, `cluster_deployment_contribution_lookup`, etc.). If the transforms are not started, the alerts will not function correctly.
+
+## Version 0.4.2 Release Notes
+
+### Fixed
+
+- Configuration dashboard: remove legacy `conf_ecu_rate` / `conf_ecu_rate_unit` from **Configuration values by date window** so ES|QL verifies when only `conf_chargeable_unit_rate` fields exist ([#104](https://github.com/elastic/elasticsearch-chargeback/issues/104)).
+- Billing Components Overview and Usage and Cost Allocation: alias `@timestamp` as `ts` before `LOOKUP JOIN` on `chargeback_conf_lookup` to avoid ambiguous `@timestamp` verification failures ([#105](https://github.com/elastic/elasticsearch-chargeback/issues/105)).
+
+### Changed
+
+- Package version **0.4.2**; Kibana remains `^9.2.0`. Dashboard-only fix; transform `fleet_transform_version` unchanged from 0.4.1.
+- Integration source: [elastic/integrations#20661](https://github.com/elastic/integrations/pull/20661) (merged into `wip-johannes-chargeback`).
 
 ## Version 0.4.1 Release Notes
 

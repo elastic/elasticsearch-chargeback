@@ -32,7 +32,7 @@ The only reason you should choose the "module" in favour of the integration is i
 
 ## Dashboards
 
-Chargeback ships three focused dashboards. Screenshots from local stack testing (0.4.1):
+Chargeback ships three focused dashboards. Screenshots from local stack testing (0.4.2):
 
 ### [Chargeback] Billing Components Overview
 

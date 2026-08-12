@@ -18,7 +18,7 @@ See [Requirements](README.md#requirements) for details.
 
 ### 2. Upload ZIP File: 
 
-- Asset: [`chargeback-0.4.1.zip`](assets/0.4.1/chargeback-0.4.1.zip)
+- Asset: [`chargeback-0.4.2.zip`](assets/0.4.2/chargeback-0.4.2.zip)
 - Browse to Integrations, and click on `+ Create new integration`
 
 ![alt text](assets/img/CreateNewIntegration.png)
@@ -31,7 +31,7 @@ See [Requirements](README.md#requirements) for details.
 
 Starting from version 0.2.8, all Chargeback transforms are configured to auto-start upon installation. You no longer need to manually start the transforms.
 
-**Starting from version 0.2.10** (current: **v0.4.1**), the `chargeback_conf_lookup` index is automatically created via a bootstrap transform during installation. No manual setup is required! The transform creates the index with default configuration:
+**Starting from version 0.2.10** (current: **v0.4.2**), the `chargeback_conf_lookup` index is automatically created via a bootstrap transform during installation. No manual setup is required! The transform creates the index with default configuration:
 - **Chargeable unit rate:** 0.85 EUR
 - **Weights:** indexing=20, query=20, storage=40
 - **Date range:** 2010-01-01 to 2046-12-31
@@ -57,11 +57,14 @@ To upgrade the integration, do the following:
 - Upload the new asset (ZIP) file to Kibana.
 - Transforms will auto-start (from version 0.2.8 onwards).
 
+**Upgrading to 0.4.2:**
+- Upload `chargeback-0.4.2.zip`. Replaces dashboard saved objects that still referenced legacy `conf_ecu_rate*` columns or used bare `@timestamp` in `LOOKUP JOIN` ON clauses ([#104](https://github.com/elastic/elasticsearch-chargeback/issues/104), [#105](https://github.com/elastic/elasticsearch-chargeback/issues/105)). No transform reset required. Kibana requirement remains 9.2.0+.
+
 **Upgrading to 0.4.1:**
 - Upload `chargeback-0.4.1.zip`. Usage transforms gain `ds_type` / `ds_namespace` and all lookups gain `event.ingested`. Reset usage transforms if you need historical rows enriched. Kibana requirement remains 9.2.0+.
 
 **Upgrading from 0.3.x to 0.4.0:**
-- Upload `chargeback-0.4.0.zip` (or go directly to `0.4.1`). Two new transforms (`billing_realized_pool`, `cluster_capacity_utilization`) are created and auto-started.
+- Upload `chargeback-0.4.0.zip` (or go directly to `0.4.2`). Two new transforms (`billing_realized_pool`, `cluster_capacity_utilization`) are created and auto-started.
 - The old `[Chargeback] Cost and Consumption breakdown` dashboard is replaced by three new dashboards (`[Chargeback] Billing Components Overview`, `[Chargeback] Usage & Cost Allocation`, and `[Chargeback] Configuration`). If Kibana does not replace the old dashboard automatically, delete it and re-import from **Saved Objects**.
 - Reset and restart the `billing_cluster_cost` transform to backfill `cost_type`, `cost_category`, and `is_allocatable` into existing lookup documents. Until the backfill completes, "Cost by component (SKU)" panels will show no data.
 - Ensure `node_stats` data is flowing into `metrics-elasticsearch.stack_monitoring.node_stats-*` for the utilization transform. Without this, `cluster_capacity_utilization_lookup` will be empty and utilization defaults to 100% (full provisioned cost charged to all tiers).
@@ -84,7 +87,7 @@ If the dashboard is empty after install, see **[docs/troubleshooting.md](docs/tr
 
 ## Configuration
 
-Configuration values are stored in the `chargeback_conf_lookup` index, which is automatically created by version 0.2.10+ (current: **v0.4.1**). The dashboard automatically applies the correct configuration based on the billing date falling within the `conf_start_date` and `conf_end_date` range.
+Configuration values are stored in the `chargeback_conf_lookup` index, which is automatically created by version 0.2.10+ (current: **v0.4.2**). The dashboard automatically applies the correct configuration based on the billing date falling within the `conf_start_date` and `conf_end_date` range.
 
 ### Update the default configuration:
 
