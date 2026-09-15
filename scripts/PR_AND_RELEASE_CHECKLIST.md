@@ -107,9 +107,36 @@ REPLACE_CHARGEBACK_DASHBOARD=1 ./scripts/run_e2e_tests.sh
 
 ---
 
+## GitHub tag and release
+
+Each package version needs a git tag and a GitHub Release so people can subscribe to releases and download the zip from the Releases page.
+
+Convention (matches existing releases):
+
+- Tag: `integration-<version>` (for example `integration-0.4.3`)
+- Title: `Chargeback Integration <version>`
+- Asset: `integration/assets/<version>/chargeback-<version>.zip`
+- Marked as a pre-release until Chargeback is generally available
+
+**Automatic:** after the chargeback PR merges to `main` with a new (or updated) zip, [`.github/workflows/release.yml`](../.github/workflows/release.yml) creates the tag and Release from `CHANGELOG.md`.
+
+**Manual / backfill** (from `main`, after merge):
+
+```bash
+./scripts/create_github_release.sh --dry-run --version 0.4.3
+./scripts/create_github_release.sh --version 0.4.3
+./scripts/create_github_release.sh --missing
+```
+
+You can also run **Actions → Release Chargeback package → Run workflow**. Leave **Version** empty to create Releases for every zip that does not have one yet (0.3.0 through current, skipping versions that already have a Release).
+
+Do not tag a feature branch. The script refuses to run off `main` unless you pass `--dry-run` or `--force`.
+
+---
+
 ## Summary
 
 | Repo | Branch | Action |
 |------|--------|--------|
 | **integrations** | `fix/chargeback-99-…` → `wip-johannes-chargeback` | New PR for alias fix (#99); close #18102; #18269 already merged |
-| **elasticsearch-chargeback** | your release branch → `main` | `./scripts/release_chargeback.sh`, commit zip + scripts + docs, PR |
+| **elasticsearch-chargeback** | your release branch → `main` | `./scripts/release_chargeback.sh`, commit zip + scripts + docs, PR. Tag and GitHub Release are created on merge. |
