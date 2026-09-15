@@ -182,7 +182,7 @@ POST chargeback_conf_lookup/_update/config
 }
 ```
 
-From **0.4.4**, the bootstrap transform writes `_id` `config`. On **0.2.10–0.4.3**, the bootstrap row may have a hashed `_id`; use `GET chargeback_conf_lookup/_search` to find it, then either `_update/<that-id>` or upgrade to 0.4.4 and clean up the hashed-ID document after the `config` row exists.
+From **0.4.4**, the bootstrap transform writes `_id` `config`. On **0.2.10–0.4.3**, the bootstrap row may have a hashed `_id`; use `GET chargeback_conf_lookup/_search` to find it and `POST chargeback_conf_lookup/_update/<that-id>` until you upgrade. After upgrading to 0.4.4, copy customized values with `_update/config`, then delete the hashed-ID document. Do not index a partial document to ID `config` with the index API (`_doc`); that replaces the whole document and can drop required bootstrap fields.
 
 On **0.3.0** or older lookup documents, use `conf_ecu_rate` / `conf_ecu_rate_unit` instead.
 

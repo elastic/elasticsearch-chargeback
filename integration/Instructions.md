@@ -59,7 +59,7 @@ To upgrade the integration, do the following:
 
 **Upgrading to 0.4.4:**
 - Upload `chargeback-0.4.4.zip`. The bootstrap transform writes the default configuration document with `_id` `config`, so `POST chargeback_conf_lookup/_update/config` works as documented ([#110](https://github.com/elastic/elasticsearch-chargeback/issues/110)). Kibana requirement remains 9.2.0+.
-- **If you upgraded from 0.2.10–0.4.3** and already have a hashed-ID bootstrap row: search `chargeback_conf_lookup`, copy any customized field values onto the document with ID `config`, then delete the hashed-ID document so LOOKUP JOIN does not match two overlapping date windows. Fresh 0.4.4 installs need no cleanup.
+- **If you upgraded from 0.2.10–0.4.3** and already have a hashed-ID bootstrap row: after upgrade creates the `_id` `config` document, copy any customized values with `POST chargeback_conf_lookup/_update/config`, then delete the hashed-ID document so LOOKUP JOIN does not match two overlapping date windows. Do not index a partial document to ID `config` with the index API (`_doc`); that replaces the whole document and can drop required bootstrap fields such as `config_join_key`. Fresh 0.4.4 installs need no cleanup.
 
 **Upgrading to 0.4.3:**
 - Upload `chargeback-0.4.3.zip` (or go directly to `0.4.4`). Replaces Billing and Usage dashboard saved objects that still used `COALESCE(..., conf_ecu_rate)` / `total_ecu` after 0.4.2 ([#104](https://github.com/elastic/elasticsearch-chargeback/issues/104)). No transform reset required. Kibana requirement remains 9.2.0+.
