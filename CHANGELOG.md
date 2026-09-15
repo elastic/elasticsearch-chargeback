@@ -10,6 +10,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Integration Releases
 
+### [0.4.4] - 2026-09-15
+
+#### Fixed
+
+- Bootstrap transform for `chargeback_conf_lookup` writes destination document ID `config`, so `POST chargeback_conf_lookup/_update/config` matches the documented configuration update path ([#110](https://github.com/elastic/elasticsearch-chargeback/issues/110)).
+
+#### Changed
+
+- Package **0.4.4** keeps Kibana `^9.2.0`. Asset: [`integration/assets/0.4.4/chargeback-0.4.4.zip`](integration/assets/0.4.4/chargeback-0.4.4.zip). Source: [elastic/integrations#21263](https://github.com/elastic/integrations/pull/21263).
+
 ### [0.4.3] - 2026-08-12
 
 #### Fixed
