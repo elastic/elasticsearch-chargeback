@@ -1,0 +1,12 @@
+{
+  "id": "chargeback-optimization",
+  "name": "chargeback-optimization",
+  "description": "Turning Elastic Chargeback data into ranked, quantified cost optimizations: provisioned-versus-realized capacity and rightsizing, identifying the data streams and tiers that drive spend, retention and tier-placement changes, index mode and replica choices, and which levers do not apply to Serverless projects. Load this whenever the user asks how to reduce cost, where money is being wasted, or whether a deployment is over-provisioned.",
+  "tool_ids": [
+    "chargeback.utilization_waste",
+    "chargeback.top_datastreams_by_cost",
+    "chargeback.cost_by_tier",
+    "chargeback.cost_trend_by_day"
+  ],
+  "content_file": "chargeback-optimization.md"
+}

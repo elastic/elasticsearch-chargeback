@@ -1,0 +1,96 @@
+version: "1"
+name: Chargeback - cost review
+description: >-
+  Deterministic cost review for the Elastic Cost Optimizer agent. Runs the four opening
+  queries in a fixed order and returns them as one payload: active configuration, deployment
+  classification (hosted versus serverless), cost per deployment, and provisioned-versus-
+  realized capacity over a fixed 30-day window. Exposed to the agent as the workflow tool `chargeback.cost_review` so
+  the ordering is guaranteed rather than left to the model's tool selection - in particular
+  the platform classification is always present, which stops the agent guessing that a
+  Hosted deployment with no node_stats is a Serverless project.
+enabled: true
+triggers:
+  - type: manual
+consts:
+  conf_join: "| LOOKUP JOIN chargeback_conf_lookup ON @timestamp >= conf_start_date AND @timestamp <= conf_end_date"
+steps:
+  - name: configuration
+    type: elasticsearch.request
+    with:
+      method: POST
+      path: /_query
+      body:
+        query: >-
+          FROM chargeback_conf_lookup | KEEP conf_chargeable_unit_rate,
+          conf_chargeable_unit_rate_unit, conf_indexing_weight, conf_query_weight,
+          conf_storage_weight, conf_utilization_memory_weight,
+          conf_utilization_storage_weight, conf_utilization_floor, conf_start_date,
+          conf_end_date | LIMIT 5
+
+  # Deliberately second, and always run: platform classification must be in front of the
+  # model before it can offer platform-specific advice.
+  - name: deployment_inventory
+    type: elasticsearch.request
+    with:
+      method: POST
+      path: /_query
+      body:
+        query: >-
+          FROM metrics-ess_billing.billing-* | WHERE DATE_DIFF("day", @timestamp, NOW()) <= 30 | EVAL platform = CASE(ess.billing.deployment_type == "deployment", "hosted",
+          "serverless") | STATS chargeable_units = SUM(ess.billing.total_ecu) BY deployment_id
+          = ess.billing.deployment_id, deployment_name = ess.billing.deployment_name,
+          deployment_type = ess.billing.deployment_type, platform, region = cloud.region |
+          SORT chargeable_units DESC | LIMIT 50
+
+  - name: cost_by_deployment
+    type: elasticsearch.request
+    with:
+      method: POST
+      path: /_query
+      body:
+        query: >-
+          FROM billing_cluster_cost_lookup {{consts.conf_join}} | WHERE DATE_DIFF("day", @timestamp, NOW()) <= 30 | EVAL cost = total_chargeable_units *
+          conf_chargeable_unit_rate | STATS cost = SUM(cost), days_covered =
+          COUNT_DISTINCT(@timestamp) BY deployment_id, deployment_name, deployment_group |
+          SORT cost DESC | LIMIT 50
+
+  - name: utilization_waste
+    type: elasticsearch.request
+    with:
+      method: POST
+      path: /_query
+      body:
+        query: >-
+          FROM billing_realized_pool_lookup | LOOKUP JOIN
+          cluster_capacity_utilization_lookup ON composite_key {{consts.conf_join}} | WHERE
+          DATE_DIFF("day", @timestamp, NOW()) <= 30 | EVAL heap_util =
+          COALESCE(heap_used_pct_p95, 100) / 100, disk_util = COALESCE(disk_used_pct_p95, 100)
+          / 100 | EVAL w_sum = conf_utilization_memory_weight +
+          conf_utilization_storage_weight | EVAL utilization_score = CASE(w_sum > 0,
+          (conf_utilization_memory_weight * heap_util + conf_utilization_storage_weight *
+          disk_util) / w_sum, 1.0) | EVAL rate = conf_chargeable_unit_rate | EVAL provisioned_cost = data_tier_capacity_ecu * rate,
+          realized_cost = data_tier_capacity_ecu * utilization_score * rate | EVAL
+          no_utilization_data = heap_used_pct_p95 IS NULL AND disk_used_pct_p95 IS NULL |
+          STATS provisioned_cost = SUM(provisioned_cost), realized_cost = SUM(realized_cost),
+          avg_heap_pct = AVG(heap_used_pct_p95), avg_disk_pct = AVG(disk_used_pct_p95),
+          no_utilization_data = MAX(no_utilization_data) BY deployment_id, deployment_name |
+          EVAL wasted_cost = provisioned_cost - realized_cost | SORT wasted_cost DESC | LIMIT 50
+
+  # A workflow tool receives only the LAST step's output, not the declared `outputs:`
+  # block, so the combined payload has to be assembled here as the final step.
+  - name: review
+    type: console
+    with:
+      message: >-
+        {"window_days": 30,
+        "configuration": {{ steps.configuration.output | json }},
+        "deployment_inventory": {{ steps.deployment_inventory.output | json }},
+        "cost_by_deployment": {{ steps.cost_by_deployment.output | json }},
+        "utilization_waste": {{ steps.utilization_waste.output | json }}}
+
+outputs:
+  window_days: 30
+  configuration: "${{steps.configuration.output}}"
+  deployment_inventory: "${{steps.deployment_inventory.output}}"
+  cost_by_deployment: "${{steps.cost_by_deployment.output}}"
+  utilization_waste: "${{steps.utilization_waste.output}}"

@@ -1,0 +1,24 @@
+{
+  "id": "chargeback.cost_by_tier",
+  "type": "esql",
+  "description": "Allocated cost per data tier (hot/content, warm, cold, frozen, or 'serverless' for Serverless projects) for one deployment. Use this to judge whether data is sitting on more expensive tiers than it needs to be, and to size the opportunity for ILM changes.",
+  "tags": [
+    "chargeback",
+    "cost",
+    "tier",
+    "allocation"
+  ],
+  "configuration": {
+    "query": "FROM billing_realized_pool_lookup\n| LOOKUP JOIN cluster_capacity_utilization_lookup ON composite_key\n| LOOKUP JOIN cluster_deployment_contribution_lookup ON composite_key\n| LOOKUP JOIN cluster_tier_contribution_lookup ON composite_key\n| LOOKUP JOIN chargeback_conf_lookup ON @timestamp >= conf_start_date AND @timestamp <= conf_end_date\n| WHERE DATE_DIFF(\"day\", @timestamp, NOW()) <= ?days AND deployment_id == ?deployment_id\n| EVAL heap_util = COALESCE(heap_used_pct_p95, 100) / 100, disk_util = COALESCE(disk_used_pct_p95, 100) / 100\n| EVAL w_sum = conf_utilization_memory_weight + conf_utilization_storage_weight\n| EVAL utilization_score = CASE(w_sum > 0, (conf_utilization_memory_weight * heap_util + conf_utilization_storage_weight * disk_util) / w_sum, 1.0)\n| EVAL chargeable_pool = data_tier_capacity_ecu * COALESCE(utilization_score, 1.0)\n| EVAL rate = conf_chargeable_unit_rate\n| EVAL sto_cost = CASE(deployment_sum_data_set_store_size > 0, TO_DOUBLE(tier_sum_data_set_store_size) / deployment_sum_data_set_store_size * chargeable_pool * rate, 0.0)\n| STATS storage_cost = SUM(sto_cost), storage_bytes = MAX(tier_sum_data_set_store_size)\n    BY tier\n| SORT storage_cost DESC\n| LIMIT 10",
+    "params": {
+      "deployment_id": {
+        "type": "string",
+        "description": "Deployment ID or Serverless project ID"
+      },
+      "days": {
+        "type": "integer",
+        "description": "Lookback window in days, e.g. 7"
+      }
+    }
+  }
+}

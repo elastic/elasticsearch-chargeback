@@ -1,0 +1,15 @@
+{
+  "id": "chargeback.cost_review",
+  "type": "workflow",
+  "description": "ALWAYS CALL THIS FIRST for any cost question. Runs a fixed, deterministic chain and returns one payload containing: the active Chargeback configuration (rate, currency, weights); the deployment inventory with each deployment classified as hosted or serverless; cost per deployment; and provisioned-versus-realized capacity with utilization. Because the chain is fixed, the platform classification is always present, so you never have to guess whether a deployment is Serverless. Use the narrower chargeback.* tools only to drill into a specific deployment afterwards. days = lookback window in days, default 30.",
+  "tags": [
+    "chargeback",
+    "cost",
+    "overview",
+    "deterministic"
+  ],
+  "configuration": {
+    "workflow_id": "chargeback-cost-review",
+    "wait_for_completion": true
+  }
+}
