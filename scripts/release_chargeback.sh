@@ -103,4 +103,5 @@ echo "Companion PR (elasticsearch-chargeback): commit zip + doc/script changes; 
 echo "  git add integration/assets/ integration/docs/ README.md CHANGELOG.md integration/README.md integration/Instructions.md scripts/"
 echo "  git commit -m \"chargeback 0.3.2: zip and E2E proof for ES|QL alias fix (#99)\""
 echo "Integrations PR should be merged first (or same day); zip is built from that branch head."
+echo "After merge to main, GitHub Actions creates tag integration-<version> and a GitHub Release."
 echo "See scripts/PR_AND_RELEASE_CHECKLIST.md"

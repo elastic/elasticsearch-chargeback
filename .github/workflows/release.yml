@@ -1,0 +1,41 @@
+name: Release Chargeback package
+
+# When a new package zip lands on main, create the matching git tag and GitHub
+# Release (integration-<version>), following the existing pre-release convention.
+# Manual run: Actions → Release Chargeback package → Run workflow.
+# Leave Version empty to backfill every zip that has no GitHub Release yet.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "integration/assets/**/chargeback-*.zip"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Package version to release (leave empty to backfill missing releases)"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create tag and GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+          RELEASE_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          chmod +x ./scripts/create_github_release.sh
+          ./scripts/create_github_release.sh

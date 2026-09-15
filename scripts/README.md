@@ -22,6 +22,13 @@ After editing `packages/chargeback` in **elastic/integrations**:
 
 This runs: **build** (`elastic-package build`) → **copy zip** to `integration/assets/<version>/` → **E2E** (including step 12 proof for [issue #99](https://github.com/elastic/elasticsearch-chargeback/issues/99)).
 
+After that PR merges to `main`, GitHub Actions creates the `integration-<version>` tag and a GitHub Release (zip attached, pre-release). To backfill versions that already have a zip but no release:
+
+```bash
+./scripts/create_github_release.sh --dry-run --missing
+./scripts/create_github_release.sh --missing          # from main after merge
+```
+
 Options: `--skip-e2e`, `--skip-build`, `--skip-sync`, `--cleanup-first`, `--replace-dashboard`. See [PR_AND_RELEASE_CHECKLIST.md](PR_AND_RELEASE_CHECKLIST.md) for which integrations PR to use (#18269 merged; new PR for #99; close #18102).
 
 ---
