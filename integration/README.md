@@ -2,7 +2,7 @@
 
 ## Version
 
-Chargeback integration: 0.4.3
+Chargeback integration: 0.4.4
 
 ## Dependencies
 
@@ -33,8 +33,9 @@ This integration must be installed on the **Monitoring cluster** where the above
 | 0.3.1 - 0.3.2 | 9.2.0+ | 1.7.0+ | Field renames, deployment_tags fix, explicit lookup mappings |
 | 0.4.0 | 9.2.0+ | 1.7.0+ | Realized cost model, SKU classification, three-dashboard split |
 | 0.4.1 | 9.2.0+ | 1.7.0+ | `ds_type` / `ds_namespace` parse + Workload Breakdown columns; `event.ingested` on lookups |
-| 0.4.3 | 9.2.0+ | 1.7.0+ | Dashboard ES\|QL: remove remaining `conf_ecu_rate` / `total_ecu` COALESCE fallbacks on Billing and Usage panels |
 | 0.4.2 | 9.2.0+ | 1.7.0+ | Dashboard ES\|QL fixes for Configuration legacy rate columns and ambiguous `@timestamp` LOOKUP JOIN |
+| 0.4.3 | 9.2.0+ | 1.7.0+ | Dashboard ES\|QL: remove remaining `conf_ecu_rate` / `total_ecu` COALESCE fallbacks on Billing and Usage panels |
+| 0.4.4 | 9.2.0+ | 1.7.0+ | Bootstrap transform writes `chargeback_conf_lookup` document ID `config` for `_update/config` |
 
 ## Setup instructions
 
@@ -128,6 +129,17 @@ Version 0.2.8 includes three pre-configured Kibana alerting rule templates to he
 These alerting templates are automatically installed with the integration and can be configured through **Stack Management → Rules** in Kibana.
 
 **Important:** For alert rules 2 and 3, ensure that the Chargeback transforms are running before setting them up. These alerting rules query the lookup indices created by the transforms (`billing_cluster_cost_lookup`, `cluster_deployment_contribution_lookup`, etc.). If the transforms are not started, the alerts will not function correctly.
+
+## Version 0.4.4 Release Notes
+
+### Fixed
+
+- Bootstrap transform for `chargeback_conf_lookup` writes destination document ID `config`, so `POST chargeback_conf_lookup/_update/config` matches the documented configuration update path ([#110](https://github.com/elastic/elasticsearch-chargeback/issues/110)).
+
+### Changed
+
+- Package version **0.4.4**; Kibana remains `^9.2.0`. Transform pipeline refs and `fleet_transform_version` bumped to `0.4.4`.
+- Integration source: [elastic/integrations#21263](https://github.com/elastic/integrations/pull/21263).
 
 ## Version 0.4.3 Release Notes
 

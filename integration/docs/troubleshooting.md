@@ -1,6 +1,6 @@
 # Chargeback troubleshooting
 
-This guide helps when Chargeback dashboards are empty or incomplete, even though transforms appear to be running. It applies to the **Chargeback integration** installed from this repository (current release asset: **`chargeback-0.4.3.zip`** in [`integration/assets/0.4.3/`](../assets/0.4.3/)).
+This guide helps when Chargeback dashboards are empty or incomplete, even though transforms appear to be running. It applies to the **Chargeback integration** installed from this repository (current release asset: **`chargeback-0.4.4.zip`** in [`integration/assets/0.4.4/`](../assets/0.4.4/)).
 
 For prerequisites, installation, and configuration, see [integration README](../README.md) and [Instructions.md](../Instructions.md).
 
@@ -39,7 +39,7 @@ Chargeback does **not** collect billing or usage by itself. If upstream integrat
 | Component | Minimum (documented) | Notes |
 |-----------|----------------------|--------|
 | Monitoring cluster (Elasticsearch) | **9.2.0+** | See [Instructions.md](../Instructions.md) |
-| Chargeback integration | **0.4.3** | ZIP in `integration/assets/0.4.3/` |
+| Chargeback integration | **0.4.4** | ZIP in `integration/assets/0.4.4/` |
 | Elasticsearch Service Billing | **1.4.1+** | **1.7.0+** if using `chargeback_group` deployment tags |
 | Elasticsearch integration | **1.16.0+** | Usage / stack monitoring collection |
 | `logs-elasticsearch.index_pivot-default-{VERSION}` | Must be **started** | Not started by default in the Elasticsearch integration |
@@ -181,6 +181,8 @@ POST chargeback_conf_lookup/_update/config
   }
 }
 ```
+
+From **0.4.4**, the bootstrap transform writes `_id` `config`. On **0.2.10–0.4.3**, the bootstrap row may have a hashed `_id`; use `GET chargeback_conf_lookup/_search` to find it and `POST chargeback_conf_lookup/_update/<that-id>` until you upgrade. After upgrading to 0.4.4, copy customized values with `_update/config`, then delete the hashed-ID document. Do not index a partial document to ID `config` with the index API (`_doc`); that replaces the whole document and can drop required bootstrap fields.
 
 On **0.3.0** or older lookup documents, use `conf_ecu_rate` / `conf_ecu_rate_unit` instead.
 

@@ -571,6 +571,13 @@ if [[ "${CONF_COUNT:-0}" -eq 0 ]]; then
 else
   echo "  chargeback_conf_lookup: PASS (${CONF_COUNT} docs)"
 fi
+# Issue #110: bootstrap must write fixed _id "config" for POST .../_update/config
+if curl_es "$ES_HOST/chargeback_conf_lookup/_doc/config" 2>/dev/null | jq -e '.found == true and ._id == "config"' >/dev/null 2>&1; then
+  echo "  chargeback_conf_lookup _id=config: PASS"
+else
+  echo "  chargeback_conf_lookup _id=config: FAIL (expected GET _doc/config with found=true)"
+  ESQL_PROOF_OK=0
+fi
 for pair in "billing_cluster_cost_lookup:total_chargeable_units" "billing_cluster_cost_lookup:total_ecu" "chargeback_conf_lookup:conf_chargeable_unit_rate" "chargeback_conf_lookup:conf_ecu_rate"; do
   idx="${pair%%:*}"
   field="${pair##*:}"
