@@ -10,6 +10,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Integration Releases
 
+### [0.4.6] - 2026-09-22
+
+#### Fixed
+
+- Five Usage and Cost Allocation dashboard panels (**Workload Mix by Data Tier**, **Indexing / Query / Storage / Blended Cost by Tier over Time**) failed with `verification_exception — JOIN with right field [composite_key] of type [TEXT] is not supported` on installations where `cluster_tier_contribution_lookup` retained a pre-0.4.5 `text` mapping. Queries restructured to start `FROM cluster_tier_contribution_lookup` (composite_key cast with `::keyword` on the source side) and join `billing_realized_pool`, `cluster_capacity_utilization`, and `cluster_deployment_contribution` as right-side lookups, all of which carry `keyword`-typed `composite_key` ([#114](https://github.com/elastic/elasticsearch-chargeback/pull/114)).
+
+#### Changed
+
+- Package **0.4.6** keeps Kibana `^9.2.0`. Asset: [`integration/assets/0.4.6/chargeback-0.4.6.zip`](integration/assets/0.4.6/chargeback-0.4.6.zip). Source: [elastic/integrations#21560](https://github.com/elastic/integrations/pull/21560).
+
+### [0.4.5] - 2026-09-22
+
+#### Fixed
+
+- `LOOKUP JOIN` on `composite_key` failed with `Unknown column [composite_key.keyword]` on clean installs because lookup indices created by Fleet with `deduce_mappings: false` use the declared `type: keyword` mapping — the `.keyword` multi-field therefore does not exist. All 7 transform `fields/fields.yml` changed from `type: text + keyword multi-field` to pure `type: keyword`; dashboard ES|QL updated from `composite_key.keyword → composite_key` in `LOOKUP JOIN` conditions and `DROP` clauses ([#113](https://github.com/elastic/elasticsearch-chargeback/pull/114)).
+
+#### Changed
+
+- Package **0.4.5** keeps Kibana `^9.2.0`. Asset: [`integration/assets/0.4.5/chargeback-0.4.5.zip`](integration/assets/0.4.5/chargeback-0.4.5.zip). Source: [elastic/integrations#21560](https://github.com/elastic/integrations/pull/21560).
+
 ### [0.4.4] - 2026-09-15
 
 #### Fixed
