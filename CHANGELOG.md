@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Chargeback 0.5.0 — pending [elastic/integrations#20688](https://github.com/elastic/integrations/pull/20688)
+
+The package source change lives in the integrations PR above, against `wip-johannes-chargeback`. The built zip is **not** committed here yet: per [scripts/PR_AND_RELEASE_CHECKLIST.md](scripts/PR_AND_RELEASE_CHECKLIST.md) the artifact must be an `elastic-package build` of that branch, produced by `./scripts/release_chargeback.sh`. This entry becomes a released version once that has run and the step-12 E2E proof is attached.
+
+#### Added (package, in integrations#20688)
+
+- **Elastic Cloud Serverless support.** `billing_realized_pool` also matches Serverless capacity SKUs (`elasticsearch.*-search-vcu_*`, `elasticsearch.*-ingest-vcu_*`, `elasticsearch.retained_*` where `deployment_type` is `elasticsearch`). Previously only ECH `*.es.data*.*` node SKUs matched, so every serverless cost row was `is_allocatable: false` and `billing_realized_pool_lookup` had no serverless rows — no serverless cost could be attributed to a tier or data stream. ML VCU is deliberately excluded, matching how ECH treats ML as `cost_category: platform`.
+- Usage transforms also source `.monitoring-es-*`, so Chargeback works with **Elastic Cloud Console → Logs and metrics** (Cloud-managed Metricbeat) instead of requiring the Agent-based Elasticsearch integration.
+
+#### Fixed (package, in integrations#20688)
+
+- **`Fielddata is disabled on [elasticsearch.cluster.name]`, retrying forever.** Where the `.monitoring-es-mb` index template is not governing the `.monitoring-es-8-mb` data stream, dynamic mapping produces `text` plus a `.keyword` subfield and a `terms` aggregation on the text field throws. The five affected string fields are now read through keyword runtime fields that prefer the `.keyword` subfield; both branches use doc values. Same class of problem 0.4.3 fixed for `composite_key`. Also affects `cluster_capacity_utilization`, which has sourced `.monitoring-es-*` since 0.4.0.
+
+#### Added (this repo)
+
+- **[`serverless/`](serverless/README.md)** — a Kibana Workflow that collects per-index usage from an Elastic Cloud Serverless project via `_cat/indices` and writes it in `.monitoring-es-*` document shape into `monitoring-indices-serverless`, which the stock contribution transforms pick up unchanged. Serverless exposes none of the stats APIs the Elasticsearch integration relies on (`_data_stream/_stats`, `<index>/_stats`, `_nodes/stats`, `_metering/stats` all return HTTP 410), and `store.size` is always `0` there, so `dataset.size` is used. Installed against Kibana rather than shipped in the package because it needs per-project credentials.
+- **[`agent/`](agent/README.md)** — an Elastic Cost Optimizer Agent Builder agent, two skills, nine ES|QL tools and a workflow-backed tool that analyse and explain the collected cost data and propose quantified optimizations, plus an idempotent `install.py`. Agents, skills and tools are not Fleet package asset types, so these are also installed against Kibana. The allocation tools reuse the dashboards' formula so the numbers cannot drift.
+
+
 ---
 
 ## Integration Releases

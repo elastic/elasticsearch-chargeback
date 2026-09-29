@@ -1,0 +1,19 @@
+{
+  "id": "chargeback.deployment_inventory",
+  "type": "esql",
+  "description": "Authoritative list of every billed deployment and Serverless project with its deployment_type, region and provider. deployment_type 'deployment' means Elastic Cloud Hosted; 'elasticsearch', 'observability' and 'security' mean Serverless. Use this to classify a deployment before giving advice, instead of inferring it from a blank name or from missing utilization data - those are not reliable signals.",
+  "tags": [
+    "chargeback",
+    "inventory",
+    "classification"
+  ],
+  "configuration": {
+    "query": "FROM metrics-ess_billing.billing-*\n| WHERE DATE_DIFF(\"day\", @timestamp, NOW()) <= ?days\n| EVAL platform = CASE(ess.billing.deployment_type == \"deployment\", \"hosted\", \"serverless\")\n| STATS chargeable_units = SUM(ess.billing.total_ecu), skus = COUNT_DISTINCT(ess.billing.sku)\n    BY deployment_id = ess.billing.deployment_id, deployment_name = ess.billing.deployment_name, deployment_type = ess.billing.deployment_type, platform, region = cloud.region\n| SORT chargeable_units DESC\n| LIMIT 50",
+    "params": {
+      "days": {
+        "type": "integer",
+        "description": "Lookback window in days, e.g. 30"
+      }
+    }
+  }
+}

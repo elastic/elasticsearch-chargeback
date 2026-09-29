@@ -1,0 +1,19 @@
+{
+  "id": "chargeback.cost_by_deployment",
+  "type": "esql",
+  "description": "Total chargeback cost per deployment or Serverless project over a recent window, in the configured currency, including the chargeback_group tag. Use this first to see who spends what and to pick a deployment worth drilling into. IMPORTANT: this tool does NOT tell you whether a deployment is Hosted or Serverless, and a blank deployment_name is not proof of either. Call chargeback.deployment_inventory to classify before giving platform-specific advice. days = lookback window in days.",
+  "tags": [
+    "chargeback",
+    "cost",
+    "overview"
+  ],
+  "configuration": {
+    "query": "FROM billing_cluster_cost_lookup\n| LOOKUP JOIN chargeback_conf_lookup ON @timestamp >= conf_start_date AND @timestamp <= conf_end_date\n| WHERE DATE_DIFF(\"day\", @timestamp, NOW()) <= ?days\n| EVAL cost = total_chargeable_units * conf_chargeable_unit_rate\n| STATS cost = SUM(cost), chargeable_units = SUM(total_chargeable_units), days_covered = COUNT_DISTINCT(@timestamp)\n    BY deployment_id, deployment_name, deployment_group\n| SORT cost DESC\n| LIMIT 50",
+    "params": {
+      "days": {
+        "type": "integer",
+        "description": "Lookback window in days, e.g. 30"
+      }
+    }
+  }
+}
