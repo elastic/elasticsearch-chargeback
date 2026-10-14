@@ -10,6 +10,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Integration Releases
 
+### [0.4.7] - 2026-09-23
+
+#### Fixed
+
+- Move all ingest pipelines into a stub `data_stream/lookup` so Kibana Fleet upload accepts the package (top-level package pipelines are rejected; see [elastic/kibana#286094](https://github.com/elastic/kibana/issues/286094)). Transform `dest.pipeline` refs use Fleet naming `logs-chargeback.lookup-{version}-{name}`. Rename `chargeback_conf_lookup` pipeline asset to `chargeback_conf` ([#117](https://github.com/elastic/elasticsearch-chargeback/issues/117)).
+- Fix `cluster_capacity_utilization` transform failure on legacy `.monitoring-es-8-mb-*` indices where `elasticsearch.cluster.name` is `TEXT`. Add keyword runtime mapping `cluster_name_kw` for the `group_by` terms aggregation ([#117](https://github.com/elastic/elasticsearch-chargeback/issues/117)).
+
+#### Changed
+
+- Package **0.4.7** keeps Kibana `^9.2.0`. Asset: [`integration/assets/0.4.7/chargeback-0.4.7.zip`](integration/assets/0.4.7/chargeback-0.4.7.zip). Source: [elastic/integrations#21568](https://github.com/elastic/integrations/pull/21568).
+
 ### [0.4.6] - 2026-09-22
 
 #### Fixed
@@ -18,7 +29,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 #### Changed
 
-- Package **0.4.6** keeps Kibana `^9.2.0`. Asset: [`integration/assets/0.4.6/chargeback-0.4.6.zip`](integration/assets/0.4.6/chargeback-0.4.6.zip). Source: [elastic/integrations#21560](https://github.com/elastic/integrations/pull/21560).
+- Package **0.4.6** keeps Kibana `^9.2.0`. Superseded by **0.4.7** (no retained zip asset). Source: [elastic/integrations#21561](https://github.com/elastic/integrations/pull/21561).
 
 ### [0.4.5] - 2026-09-22
 
