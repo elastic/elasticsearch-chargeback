@@ -2,9 +2,10 @@
 
 FinOps is an operational framework and cultural practice designed to maximize the business value of cloud usage. It enables timely, data-driven decision-making and fosters financial accountability through collaboration between engineering, finance, and business teams.
 
-The **Chargeback integration** (and **Chargeback module**) helps users answer a key question: How is my organisation consuming the Elastic solution, and to which tenants can I allocate these costs?
+The **Chargeback integration** helps you answer a key question: How is my organization consuming the Elastic solution, and to which tenants can I allocate these costs?
 
-Both Chargeback module and integration are based on the **Elasticsearch Service Billing** and **Elasticsearch** integrations. Their purpose is to provide data for chargeback calculations, offering a breakdown of chargeable units per:
+Chargeback is based on the **Elasticsearch Service Billing** and **Elasticsearch** integrations. Its purpose is to provide data for chargeback calculations, offering a breakdown of chargeable units per:
+
 - Deployment
 - Data tier
 - Data stream
@@ -16,19 +17,9 @@ Chargeback is created and supported by Elastic **Field** (Customer Engineering),
 
 When Chargeback reaches GA, **Field** will coordinate with **Elastic Support** to put an official support model in place for entitled customers.
 
-## Choosing between the **Chargeback integration** and **Chargeback module**
+## Installation
 
-The recommended approach is to use the *Chargeback integration* because of the following:
-- Our limited team cannot maintain more than one stream
-- All focus will be on the integration
-- The "module" has much more moving parts and is more difficult to set up, and is therefore prone to more issues
-
-The only reason you should choose the "module" in favour of the integration is if you cannot upgrade your monitoring cluster to 8.18 or later, and is stuck on 8.17.1 or later.
-
-## Installation options
-
-- For the [Chargeback Integration](integration/README.md): Follow the [`integration/Instructions.md`](integration/Instructions.md) to install the integration.
-- For the [Chargeback module](module/README.md): Follow the [`module/Instructions.md`](module/Instructions.md) to install the module.
+Follow the [Chargeback integration instructions](integration/Instructions.md) to install Chargeback. For package details, version compatibility, and data flow, see the [integration README](integration/README.md).
 
 ## Dashboards
 
@@ -49,3 +40,9 @@ Chargeback ships three focused dashboards. Screenshots from local stack testing 
 ## Troubleshooting
 
 If the Chargeback dashboard is empty after install, see **[integration/docs/troubleshooting.md](integration/docs/troubleshooting.md)** (step-by-step checks for billing/usage data, transforms, lookup indices, and configuration).
+
+## Legacy: Chargeback module
+
+An earlier, manually assembled **Chargeback module** still exists in this repository for environments that cannot meet the integration’s stack version requirements. It is not maintained and is not the recommended path.
+
+If you need it, see the [Chargeback module README](module/README.md) and [module installation instructions](module/Instructions.md).
