@@ -2,7 +2,7 @@
 
 ## Version
 
-Chargeback integration: 0.4.4
+Chargeback integration: 0.4.7
 
 ## Dependencies
 
@@ -36,6 +36,9 @@ This integration must be installed on the **Monitoring cluster** where the above
 | 0.4.2 | 9.2.0+ | 1.7.0+ | Dashboard ES\|QL fixes for Configuration legacy rate columns and ambiguous `@timestamp` LOOKUP JOIN |
 | 0.4.3 | 9.2.0+ | 1.7.0+ | Dashboard ES\|QL: remove remaining `conf_ecu_rate` / `total_ecu` COALESCE fallbacks on Billing and Usage panels |
 | 0.4.4 | 9.2.0+ | 1.7.0+ | Bootstrap transform writes `chargeback_conf_lookup` document ID `config` for `_update/config` |
+| 0.4.5 | 9.2.0+ | 1.7.0+ | Map `composite_key` as keyword; dashboard LOOKUP JOIN uses `composite_key` (not `.keyword`) |
+| 0.4.6 | 9.2.0+ | 1.7.0+ | Usage tier-cost panels: JOIN left side from `cluster_tier_contribution_lookup` for pre-0.4.5 text mappings |
+| 0.4.7 | 9.2.0+ | 1.7.0+ | Fleet pipeline layout (`data_stream/lookup`); capacity utilization runtime keyword for TEXT cluster names |
 
 ## Setup instructions
 
@@ -129,6 +132,38 @@ Version 0.2.8 includes three pre-configured Kibana alerting rule templates to he
 These alerting templates are automatically installed with the integration and can be configured through **Stack Management → Rules** in Kibana.
 
 **Important:** For alert rules 2 and 3, ensure that the Chargeback transforms are running before setting them up. These alerting rules query the lookup indices created by the transforms (`billing_cluster_cost_lookup`, `cluster_deployment_contribution_lookup`, etc.). If the transforms are not started, the alerts will not function correctly.
+
+## Version 0.4.7 Release Notes
+
+### Fixed
+
+- Move ingest pipelines under stub `data_stream/lookup` so Kibana Fleet upload accepts the package; update transform destination pipeline refs to Fleet naming; rename conf pipeline asset to `chargeback_conf` ([#117](https://github.com/elastic/elasticsearch-chargeback/issues/117)).
+- Fix `cluster_capacity_utilization` on legacy `.monitoring-es-8-mb-*` where `elasticsearch.cluster.name` is `TEXT` via keyword runtime mapping `cluster_name_kw` ([#117](https://github.com/elastic/elasticsearch-chargeback/issues/117)).
+
+### Changed
+
+- Package version **0.4.7**; Kibana remains `^9.2.0`. Transform pipeline refs and `fleet_transform_version` bumped to `0.4.7`.
+- Integration source: [elastic/integrations#21568](https://github.com/elastic/integrations/pull/21568). Asset: [`chargeback-0.4.7.zip`](assets/0.4.7/chargeback-0.4.7.zip).
+
+## Version 0.4.6 Release Notes
+
+### Fixed
+
+- Five Usage and Cost Allocation tier-cost panels restructured so `LOOKUP JOIN` works when `cluster_tier_contribution_lookup` still has a pre-0.4.5 `text` `composite_key` ([#114](https://github.com/elastic/elasticsearch-chargeback/pull/114)).
+
+### Changed
+
+- Package version **0.4.6**; Kibana remains `^9.2.0`. Superseded by **0.4.7** (use the 0.4.7 zip).
+
+## Version 0.4.5 Release Notes
+
+### Fixed
+
+- `LOOKUP JOIN` on `composite_key` failed with `Unknown column [composite_key.keyword]` on clean installs when Fleet created keyword-only mappings. Transform fields and dashboard ES|QL use `composite_key` as keyword ([#113](https://github.com/elastic/elasticsearch-chargeback/pull/114)).
+
+### Changed
+
+- Package version **0.4.5**; Kibana remains `^9.2.0`. Asset: [`chargeback-0.4.5.zip`](assets/0.4.5/chargeback-0.4.5.zip). Source: [elastic/integrations#21560](https://github.com/elastic/integrations/pull/21560).
 
 ## Version 0.4.4 Release Notes
 
