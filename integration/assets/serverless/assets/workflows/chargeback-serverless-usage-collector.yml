@@ -29,9 +29,31 @@ steps:
       method: POST
       path: "/{{consts.projects_index}}/_search"
       body:
+        # Hard cap: this collector does not paginate. Fail (next step) if more
+        # than 500 projects are registered rather than silently omitting some.
         size: 500
+        track_total_hits: true
         query:
           match_all: {}
+
+  - name: guard_project_limit
+    type: elasticsearch.request
+    with:
+      method: POST
+      path: "/_scripts/painless/_execute"
+      body:
+        script:
+          source: >-
+            int n = Integer.parseInt(params.total);
+            if (n > 500) {
+              throw new IllegalArgumentException(
+                "Chargeback Serverless collector supports at most 500 registered projects; found "
+                + n + ". Reduce the registry or split collectors."
+              );
+            }
+            return n;
+          params:
+            total: "{{ steps.list_projects.output.hits.total.value }}"
 
   # One registered Serverless project per hit. Continue on per-project failure
   # so one dead project does not skip the rest. Nested foreach (projects, then

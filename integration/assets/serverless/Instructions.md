@@ -38,7 +38,7 @@ export SL_API_KEY="<serverless api key>"
 ./scripts/install_serverless_usage.sh
 ```
 
-TLS is verified by default. Use `CURL_INSECURE=1` only for self-signed local stacks (localhost / `127.0.0.1` also skip verification automatically). Re-runs update the existing collector workflow by name; duplicate workflows with the same name fail the install so you can clean them up. `ALLOW_MISSING_WORKFLOWS=1` continues only when the Workflows API is absent (HTTP 404).
+TLS is verified by default per destination. Exact loopback hostnames (`localhost`, `127.0.0.1`, `::1`) skip verification for that URL only; `CURL_INSECURE=1` skips for all destinations. A local Elasticsearch default does not disable verification for a remote Kibana URL. Re-runs update the existing collector workflow by name; duplicate workflows with the same name fail the install so you can clean them up. `ALLOW_MISSING_WORKFLOWS=1` continues only when the Workflows API is absent (HTTP 404). The collector workflow supports at most **500** registered projects (fails rather than silently omitting extras).
 
 The script installs:
 

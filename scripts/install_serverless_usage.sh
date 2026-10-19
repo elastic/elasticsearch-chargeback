@@ -13,7 +13,7 @@
 #
 # Optional:
 #   PROJECT_ID / SL_URL / SL_API_KEY — if all three are set, registers one project after install
-#   CURL_INSECURE=1 — skip TLS verification (also auto-enabled for localhost / 127.0.0.1 / ::1)
+#   CURL_INSECURE=1 — skip TLS verification for all destinations (local stacks / self-signed)
 #   ALLOW_MISSING_WORKFLOWS=1 — continue only when the Workflows API is missing (HTTP 404);
 #                               other statuses (400/401/403/5xx) still fail
 
@@ -27,22 +27,32 @@ ES_URL="${ES_URL:-${ES_HOST:-https://127.0.0.1:9200}}"
 KIBANA_URL="${KIBANA_URL:-${KIBANA_HOST:-https://127.0.0.1:5601}}"
 ALLOW_MISSING_WORKFLOWS="${ALLOW_MISSING_WORKFLOWS:-0}"
 
-is_local_url() {
-  case "$1" in
-    *127.0.0.1*|*localhost*|*\[::1\]*|*:\/\/::1*) return 0 ;;
-    *) return 1 ;;
+# Exact loopback hostnames only (not substrings like localhost.example.com).
+url_hostname() {
+  python3 -c "from urllib.parse import urlparse; print((urlparse('''$1''').hostname or '').lower())"
+}
+
+curl_tls_args_for() {
+  # Prints -k when TLS should be skipped for this URL; empty otherwise.
+  if [[ "${CURL_INSECURE:-0}" == "1" ]]; then
+    printf '%s' '-k'
+    return
+  fi
+  case "$(url_hostname "$1")" in
+    localhost|127.0.0.1|::1) printf '%s' '-k' ;;
   esac
 }
 
-# Verify TLS by default. Skip only for explicit CURL_INSECURE=1 or local stack URLs.
-CURL_TLS=()
-if [[ "${CURL_INSECURE:-0}" == "1" ]] || is_local_url "$ES_URL" || is_local_url "$KIBANA_URL"; then
-  CURL_TLS=(-k)
-  if [[ "${CURL_INSECURE:-0}" != "1" ]]; then
-    echo "TLS verification skipped for local URL (set CURL_INSECURE=0 and use a CA-trusted host to verify)."
-  else
-    echo "TLS verification skipped (CURL_INSECURE=1)."
-  fi
+# Per-destination TLS flags (a local ES default must not disable verification for remote Kibana).
+ES_CURL_TLS=()
+KBN_CURL_TLS=()
+[[ "$(curl_tls_args_for "$ES_URL")" == "-k" ]] && ES_CURL_TLS=(-k)
+[[ "$(curl_tls_args_for "$KIBANA_URL")" == "-k" ]] && KBN_CURL_TLS=(-k)
+if [[ "${CURL_INSECURE:-0}" == "1" ]]; then
+  echo "TLS verification skipped for all destinations (CURL_INSECURE=1)."
+else
+  [[ ${#ES_CURL_TLS[@]} -gt 0 ]] && echo "TLS verification skipped for Elasticsearch ($(url_hostname "$ES_URL"))."
+  [[ ${#KBN_CURL_TLS[@]} -gt 0 ]] && echo "TLS verification skipped for Kibana ($(url_hostname "$KIBANA_URL"))."
 fi
 
 if [[ -z "${ES_API_KEY:-}" || -z "${KIBANA_API_KEY:-}" ]]; then
@@ -50,7 +60,7 @@ if [[ -z "${ES_API_KEY:-}" || -z "${KIBANA_API_KEY:-}" ]]; then
     PASS_BOOT="${ELASTIC_PASSWORD:-${PASS:-changeme}}"
     USER_BOOT="${ELASTIC_USER:-elastic}"
     echo "Creating short-lived Elasticsearch API key for add-on install..."
-    ENC=$(curl -sS "${CURL_TLS[@]}" -u "${USER_BOOT}:${PASS_BOOT}" -H "Content-Type: application/json" \
+    ENC=$(curl -sS "${ES_CURL_TLS[@]}" -u "${USER_BOOT}:${PASS_BOOT}" -H "Content-Type: application/json" \
       -X POST "${ES_URL%/}/_security/api_key" \
       -d '{"name":"chargeback-serverless-install","expiration":"2h"}' | jq -r '.encoded // empty')
     if [[ -z "$ENC" ]]; then
@@ -70,7 +80,7 @@ fi
 es() {
   local method="$1" path="$2"
   shift 2
-  curl -sS "${CURL_TLS[@]}" --fail-with-body -X "$method" "${ES_URL%/}${path}" \
+  curl -sS "${ES_CURL_TLS[@]}" --fail-with-body -X "$method" "${ES_URL%/}${path}" \
     -H "Authorization: ApiKey ${ES_API_KEY}" \
     -H "Content-Type: application/json" \
     "$@"
@@ -80,7 +90,7 @@ es() {
 es_put_index() {
   local path="$1" file="$2"
   local http
-  http=$(curl -sS "${CURL_TLS[@]}" -o /tmp/chargeback-es-put-index.json -w '%{http_code}' \
+  http=$(curl -sS "${ES_CURL_TLS[@]}" -o /tmp/chargeback-es-put-index.json -w '%{http_code}' \
     -X PUT "${ES_URL%/}${path}" \
     -H "Authorization: ApiKey ${ES_API_KEY}" \
     -H "Content-Type: application/json" \
@@ -114,7 +124,7 @@ echo "Importing looping collector workflow..."
 WF_JSON="$(python3 -c "import json,sys; print(json.dumps({'yaml': open(sys.argv[1]).read()}))" \
   "$ASSETS/workflows/chargeback-serverless-usage-collector.yml")"
 
-WF_LIST_HTTP=$(curl -sS "${CURL_TLS[@]}" -o /tmp/chargeback-wf-list.json -w '%{http_code}' \
+WF_LIST_HTTP=$(curl -sS "${KBN_CURL_TLS[@]}" -o /tmp/chargeback-wf-list.json -w '%{http_code}' \
   -X GET "${KIBANA_URL%/}/api/workflows" \
   -H "Authorization: ApiKey ${KIBANA_API_KEY}" \
   -H "kbn-xsrf: true" || true)
@@ -150,7 +160,7 @@ else
 
   if [[ "${#EXISTING_IDS[@]}" -eq 1 ]]; then
     WID="${EXISTING_IDS[0]}"
-    WF_HTTP=$(curl -sS "${CURL_TLS[@]}" -o /tmp/chargeback-wf-install.json -w '%{http_code}' \
+    WF_HTTP=$(curl -sS "${KBN_CURL_TLS[@]}" -o /tmp/chargeback-wf-install.json -w '%{http_code}' \
       -X PUT "${KIBANA_URL%/}/api/workflows/workflow/${WID}" \
       -H "Authorization: ApiKey ${KIBANA_API_KEY}" \
       -H "kbn-xsrf: true" \
@@ -163,7 +173,7 @@ else
       exit 1
     fi
   else
-    WF_HTTP=$(curl -sS "${CURL_TLS[@]}" -o /tmp/chargeback-wf-install.json -w '%{http_code}' \
+    WF_HTTP=$(curl -sS "${KBN_CURL_TLS[@]}" -o /tmp/chargeback-wf-install.json -w '%{http_code}' \
       -X POST "${KIBANA_URL%/}/api/workflows/workflow" \
       -H "Authorization: ApiKey ${KIBANA_API_KEY}" \
       -H "kbn-xsrf: true" \

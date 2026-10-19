@@ -8,7 +8,7 @@
     "reconciliation"
   ],
   "configuration": {
-    "query": "FROM billing_cluster_cost_lookup\n| EVAL ts = @timestamp\n| LOOKUP JOIN chargeback_conf_lookup ON ts >= conf_start_date AND ts <= conf_end_date\n| WHERE DATE_DIFF(\"day\", @timestamp, NOW()) <= ?days\n| EVAL cost = total_chargeable_units * conf_chargeable_unit_rate\n| STATS cost = SUM(cost) BY is_allocatable, cost_category, deployment_name\n| SORT cost DESC\n| LIMIT 100",
+    "query": "FROM billing_cluster_cost_lookup\n| EVAL ts = @timestamp\n| LOOKUP JOIN chargeback_conf_lookup ON ts >= conf_start_date AND ts <= conf_end_date\n| WHERE DATE_DIFF(\"day\", @timestamp, NOW()) <= ?days\n| EVAL cost = total_chargeable_units * conf_chargeable_unit_rate\n| STATS cost = SUM(cost) BY is_allocatable, cost_category, deployment_id, deployment_name\n| SORT cost DESC\n| LIMIT 100",
     "params": {
       "days": {
         "type": "integer",

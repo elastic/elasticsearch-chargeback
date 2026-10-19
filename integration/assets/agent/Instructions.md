@@ -28,7 +28,7 @@ Kibana derives a workflow id from its name and may append a suffix. The installe
 
 On Kibana builds without Workflows (for example local elastic-package), use `--skip-workflows`. That installs the ES|QL tools and companion agent with alternate instructions that open with `chargeback.configuration` → `chargeback.deployment_inventory` → `chargeback.cost_by_deployment` → `chargeback.utilization_waste` instead of `chargeback.cost_review`.
 
-TLS for the bootstrap API-key call is verified by default; localhost / `CURL_INSECURE=1` skip verification. The Python installer also verifies TLS except for localhost or `KIBANA_INSECURE=1`.
+TLS for the bootstrap API-key call is verified by default using the Elasticsearch URL hostname only (`localhost` / `127.0.0.1` / `::1`, or `CURL_INSECURE=1`). The Python installer verifies Kibana TLS the same way (exact loopback hostname or `KIBANA_INSECURE=1`).
 
 ## Verify
 

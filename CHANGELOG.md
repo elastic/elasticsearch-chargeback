@@ -32,10 +32,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - Agent ES|QL tools and `chargeback.cost_review` preserve billing `@timestamp` / `deployment_id` before capacity LOOKUP JOINs so Serverless and Hosted rows without node stats are not dropped.
 - Deployment inventory classifies `onprem` and unknown `deployment_type` values instead of labeling every non-Hosted row as Serverless.
-- Serverless installer verifies TLS by default (`CURL_INSECURE=1` or localhost only for `-k`), fails index create on errors other than `resource_already_exists_exception`, updates the collector workflow by name (detects duplicates), and lets `ALLOW_MISSING_WORKFLOWS=1` ignore only HTTP 404.
+- Serverless installer verifies TLS by default per destination (exact loopback hostname or `CURL_INSECURE=1`), fails index create on errors other than `resource_already_exists_exception`, updates the collector workflow by name (detects duplicates), and lets `ALLOW_MISSING_WORKFLOWS=1` ignore only HTTP 404.
 - `--skip-workflows` agent install switches instructions to the ES|QL overview tools (`configuration` → `deployment_inventory` → `cost_by_deployment` → `utilization_waste`).
 - Storage tool outputs renamed to `max_daily_storage_snapshot_bytes` so they are not read as point-in-time size.
 - E2E tier-preference proof waits for fixtures and requires cold, warm, and frozen.
+- Agent workflow sync fails closed when listing workflows fails (no duplicate create).
+- `chargeback.unallocatable_cost` groups by `deployment_id` and `deployment_name`.
+- Serverless collector fails when more than 500 projects are registered (no silent truncation).
+- E2E Workflows probe uses GET `/api/workflows` and skips workflows only on HTTP 404.
 
 #### Changed
 

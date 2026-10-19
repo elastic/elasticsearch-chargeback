@@ -23,6 +23,7 @@ import ssl
 import sys
 import urllib.error
 import urllib.request
+from urllib.parse import urlparse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ASSETS = os.path.join(HERE, 'assets')
@@ -63,10 +64,10 @@ INSTRUCTIONS_NO_WORKFLOWS = (
 )
 
 def ssl_context(base):
-    """Verify TLS by default; skip verification for localhost or KIBANA_INSECURE=1 (elastic-package)."""
+    """Verify TLS by default; skip only for exact loopback hostnames or KIBANA_INSECURE=1."""
     insecure = os.environ.get('KIBANA_INSECURE', '').lower() in ('1', 'true', 'yes')
-    host = (base or '').lower()
-    if insecure or '127.0.0.1' in host or 'localhost' in host:
+    host = (urlparse(base or '').hostname or '').lower()
+    if insecure or host in ('localhost', '127.0.0.1', '::1'):
         ctx = ssl.create_default_context()
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
@@ -132,8 +133,13 @@ def sync_workflows(base, key, verify):
     matching on name and handed to the workflow-typed tools rather than hardcoded.
     """
     st, listing = api(base, key, 'GET', '/api/workflows')
+    if st != 200:
+        print('  FAILED to list workflows (HTTP %s): %s' % (st, listing))
+        print('  Refusing to create workflows without a successful list (avoids duplicate suffixed ids).')
+        return max(1, len(load_workflows())), {}
+
     existing = {}
-    if st == 200 and isinstance(listing, dict):
+    if isinstance(listing, dict):
         for w in listing.get('results', []):
             existing[w.get('name')] = w.get('id')
 

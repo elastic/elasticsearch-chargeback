@@ -936,14 +936,20 @@ else
   export ES_URL="$ES_HOST"
   export KIBANA_URL="$KIBANA_HOST"
   # elastic-package 9.2.x exposes Agent Builder but not Kibana Workflows / skills APIs.
-  AGENT_FLAGS=(--skip-workflows)
-  WF_PROBE=$(curl -sS -k -o /dev/null -w '%{http_code}' -u "$USER:$PASS" -H "kbn-xsrf: true" \
-    -X POST "$KIBANA_HOST/api/workflows/workflow" -H "Content-Type: application/json" -d '{"yaml":"name: probe\n"}' 2>/dev/null || echo 000)
-  if [[ "$WF_PROBE" == "200" || "$WF_PROBE" == "201" ]]; then
-    AGENT_FLAGS=()
+  # Probe with a read-only list (never POST a throwaway workflow). Skip workflows only on 404.
+  AGENT_FLAGS=()
+  WF_PROBE=$(curl -sS -k -o /tmp/e2e-wf-list.json -w '%{http_code}' -u "$USER:$PASS" -H "kbn-xsrf: true" \
+    "$KIBANA_HOST/api/workflows" 2>/dev/null || echo 000)
+  if [[ "$WF_PROBE" == "200" ]]; then
     echo "  Kibana Workflows API available; installing full agent (including cost_review workflow)."
+  elif [[ "$WF_PROBE" == "404" ]]; then
+    AGENT_FLAGS=(--skip-workflows)
+    echo "  Kibana Workflows API unavailable (HTTP 404); installing agent with --skip-workflows."
   else
-    echo "  Kibana Workflows API unavailable (HTTP $WF_PROBE); installing agent with --skip-workflows."
+    echo "  Kibana Workflows API probe: FAIL (HTTP $WF_PROBE; expected 200 or 404)"
+    ADDON_OK=0
+    AGENT_FLAGS=(--skip-workflows)
+    echo "  Continuing agent install with --skip-workflows after probe failure (ES|QL tools only)."
   fi
   if ! "$CHARGEBACK_REPO/scripts/install_chargeback_agent.sh" "${AGENT_FLAGS[@]}"; then
     echo "  agent add-on install: FAIL"
