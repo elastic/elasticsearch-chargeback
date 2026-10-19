@@ -747,28 +747,37 @@ else
     fi
   fi
 
-  # 13b. Tier preference order: cold before hot when preference is data_cold,data_warm,data_hot
-  TIER_LOOKUP_COUNT=$(curl_es "$ES_HOST/cluster_tier_contribution_lookup/_count" -d '{"query":{"term":{"cluster_name":"tierpref"}}}' 2>/dev/null | jq -r '.count // 0' 2>/dev/null || echo 0)
+  # 13b. Tier preference order: fixtures seed unknown tier + preference lists that must
+  # resolve to cold, warm, and frozen (not hot-first). Wait briefly for the transform.
+  TIER_LOOKUP_COUNT=0
+  for _try in 1 2 3 4 5 6; do
+    TIER_LOOKUP_COUNT=$(curl_es "$ES_HOST/cluster_tier_contribution_lookup/_count" -d '{"query":{"term":{"cluster_name":"tierpref"}}}' 2>/dev/null | jq -r '.count // 0' 2>/dev/null || echo 0)
+    if [[ "${TIER_LOOKUP_COUNT:-0}" -ge 3 ]]; then
+      break
+    fi
+    sleep 5
+  done
   if [[ "${TIER_LOOKUP_COUNT:-0}" -eq 0 ]]; then
-    echo "  tier preference fallback: WARN (no tierpref rows in cluster_tier_contribution_lookup yet — transform may still be catching up)"
+    echo "  tier preference fallback: FAIL (no tierpref rows in cluster_tier_contribution_lookup after wait)"
+    PROOF_05_OK=0
   else
     TIERS=$(curl_es "$ES_HOST/cluster_tier_contribution_lookup/_search?size=20" -d '{"_source":["tier"],"query":{"term":{"cluster_name":"tierpref"}}}' 2>/dev/null \
       | jq -r '.hits.hits[]._source.tier // empty' 2>/dev/null | sort -u | tr '\n' ' ')
     echo "  tierpref tiers observed: ${TIERS:-none}"
-    if echo " $TIERS " | grep -q ' hot/content '; then
-      # hot/content alone is OK only if cold/warm/frozen also present for the preference fixtures
-      :
-    fi
-    if echo " $TIERS " | grep -Eq ' (cold|warm|frozen) '; then
-      if echo " $TIERS " | grep -q ' hot/content ' && ! echo " $TIERS " | grep -Eq ' (cold|warm|frozen) '; then
-        echo "  tier preference fallback: FAIL (only hot/content — hot-first bug)"
-        PROOF_05_OK=0
-      else
-        echo "  tier preference fallback: PASS (colder tiers present: $TIERS)"
+    MISSING_TIERS=()
+    for expect in cold warm frozen; do
+      if ! echo " $TIERS " | grep -q " $expect "; then
+        MISSING_TIERS+=("$expect")
       fi
-    else
-      echo "  tier preference fallback: FAIL (expected cold/warm/frozen from preference lists, got: ${TIERS:-none})"
+    done
+    if echo " $TIERS " | grep -q ' hot/content ' && [[ "${#MISSING_TIERS[@]}" -gt 0 ]]; then
+      echo "  tier preference fallback: FAIL (hot/content present but missing ${MISSING_TIERS[*]} — hot-first or dropped fixtures)"
       PROOF_05_OK=0
+    elif [[ "${#MISSING_TIERS[@]}" -gt 0 ]]; then
+      echo "  tier preference fallback: FAIL (expected cold, warm, and frozen from preference fixtures; missing: ${MISSING_TIERS[*]}; got: ${TIERS:-none})"
+      PROOF_05_OK=0
+    else
+      echo "  tier preference fallback: PASS (cold, warm, and frozen present: $TIERS)"
     fi
   fi
 

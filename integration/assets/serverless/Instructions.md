@@ -38,12 +38,14 @@ export SL_API_KEY="<serverless api key>"
 ./scripts/install_serverless_usage.sh
 ```
 
+TLS is verified by default. Use `CURL_INSECURE=1` only for self-signed local stacks (localhost / `127.0.0.1` also skip verification automatically). Re-runs update the existing collector workflow by name; duplicate workflows with the same name fail the install so you can clean them up. `ALLOW_MISSING_WORKFLOWS=1` continues only when the Workflows API is absent (HTTP 404).
+
 The script installs:
 
 1. Ingest pipeline `chargeback-serverless-usage`
 2. Staging index `monitoring-indices-serverless` (matches `monitoring-indices*`)
 3. Project registry `.chargeback-serverless-projects` (`sl_api_key` is `keyword` with `index: false` and `doc_values: false`)
-4. One **looping** collector workflow (no secrets in consts)
+4. One **looping** collector workflow (no secrets in consts), created or updated by name
 
 ## Register or replace a project
 

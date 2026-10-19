@@ -28,9 +28,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **[`integration/assets/serverless/`](integration/assets/serverless/README.md)** — looping Serverless usage collector and [`scripts/install_serverless_usage.sh`](scripts/install_serverless_usage.sh).
 - **[`integration/assets/agent/`](integration/assets/agent/README.md)** — optional Chargeback companion (Agent Builder) and [`scripts/install_chargeback_agent.sh`](scripts/install_chargeback_agent.sh).
 
+#### Fixed (this repo — add-ons / E2E)
+
+- Agent ES|QL tools and `chargeback.cost_review` preserve billing `@timestamp` / `deployment_id` before capacity LOOKUP JOINs so Serverless and Hosted rows without node stats are not dropped.
+- Deployment inventory classifies `onprem` and unknown `deployment_type` values instead of labeling every non-Hosted row as Serverless.
+- Serverless installer verifies TLS by default (`CURL_INSECURE=1` or localhost only for `-k`), fails index create on errors other than `resource_already_exists_exception`, updates the collector workflow by name (detects duplicates), and lets `ALLOW_MISSING_WORKFLOWS=1` ignore only HTTP 404.
+- `--skip-workflows` agent install switches instructions to the ES|QL overview tools (`configuration` → `deployment_inventory` → `cost_by_deployment` → `utilization_waste`).
+- Storage tool outputs renamed to `max_daily_storage_snapshot_bytes` so they are not read as point-in-time size.
+- E2E tier-preference proof waits for fixtures and requires cold, warm, and frozen.
+
 #### Changed
 
-- Package **0.5.0** keeps Kibana `^9.2.0`. Asset: [`integration/assets/0.5.0/chargeback-0.5.0.zip`](integration/assets/0.5.0/chargeback-0.5.0.zip). Source: draft [elastic/integrations#22057](https://github.com/elastic/integrations/pull/22057) (supersedes conflicted #20688). Usage transforms use `monitoring-indices*` only (Cloud Console via index_pivot; avoids double-counting raw `.monitoring-es-*`). Zip SHA-256 `4db4b3907bd66482d35a29da00f847c577fc7544c9edf8801833bca19ebcbffc` (includes tier-preference Painless fix: literal YAML `|` so `//` comments do not strip preference checks).
+- Package **0.5.0** keeps Kibana `^9.2.0`. Asset: [`integration/assets/0.5.0/chargeback-0.5.0.zip`](integration/assets/0.5.0/chargeback-0.5.0.zip). Source: [elastic/integrations#22057](https://github.com/elastic/integrations/pull/22057) + [elastic/integrations#22061](https://github.com/elastic/integrations/pull/22061). Zip SHA-256 `5ee3dc4419d9d448480199f41da2be606795863225a920f993d2bcdfcb634168`.
 
 ### [0.4.7] - 2026-09-23
 

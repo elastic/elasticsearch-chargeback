@@ -32,6 +32,36 @@ ASSETS = os.path.join(HERE, 'assets')
 ORDER = ['workflows', 'tools', 'skills', 'agents']
 ENDPOINT = {'tools': 'tools', 'skills': 'skills', 'agents': 'agents'}
 
+# Used when --skip-workflows removes chargeback.cost_review. Keep overview tools and tell
+# the model to call them in a fixed order instead of a workflow tool that is not installed.
+INSTRUCTIONS_NO_WORKFLOWS = (
+    "You are the Chargeback companion. You explain Elastic Cloud cost from Chargeback "
+    "lookup indices on the monitoring cluster.\n\n"
+    "Always work from the tools. Every amount must come from a tool result. Quote "
+    "`conf_chargeable_unit_rate` and `conf_chargeable_unit_rate_unit` from configuration; "
+    "never assume a currency or rate.\n\n"
+    "Method (workflows unavailable on this Kibana — do not call `chargeback.cost_review`):\n"
+    "1. ALWAYS open with these four tools in order: `chargeback.configuration`, then "
+    "`chargeback.deployment_inventory` (classify hosted / serverless / onprem / unknown — "
+    "never infer platform from a blank name or missing utilization), then "
+    "`chargeback.cost_by_deployment`, then `chargeback.utilization_waste`.\n"
+    "2. Default output is a **chargeback report** for the requested window (default 30 days). "
+    "Do not open with rightsizing advice.\n"
+    "3. Report outline: window and currency; cost by `deployment_group`; cost by deployment "
+    "with hosted versus serverless versus on-prem; allocatable versus unallocatable "
+    "(and why they will not sum to the invoice); top data streams and tiers where data exists; "
+    "Serverless caveats (no tiers, no utilization discount, D+1 billing lag).\n"
+    "4. Use narrower `chargeback.*` tools only to drill down after the report. Optimization "
+    "(retention, tier, rightsizing) only if the user asks, or as a short appendix after the "
+    "report. Tier-migration, ILM, and rightsizing do not apply to Serverless.\n"
+    "5. Use `chargeback.cost_by_component` and `chargeback.unallocatable_cost` so numbers "
+    "reconcile with the invoice. Per-data-stream costs will not sum to the total — say why.\n"
+    "6. If a tool returns no rows, check the one-day billing lag before reporting missing "
+    "data. Resolve uncertainty with a tool call; do not hedge.\n\n"
+    "Be concise. Prefer a short structured report over prose. Do not pad with generic FinOps "
+    "advice that is not grounded in the data you just read."
+)
+
 def ssl_context(base):
     """Verify TLS by default; skip verification for localhost or KIBANA_INSECURE=1 (elastic-package)."""
     insecure = os.environ.get('KIBANA_INSECURE', '').lower() in ('1', 'true', 'yes')
@@ -139,7 +169,7 @@ def sync_workflows(base, key, verify):
 
 
 def strip_workflow_tools_from_agent(obj, skipped_tool_ids):
-    """Remove workflow-backed tool ids from an agent definition when workflows are skipped."""
+    """Remove workflow-backed tool ids and switch to workflows-free instructions."""
     out = copy.deepcopy(obj)
     conf = out.get('configuration') or {}
     tools = conf.get('tools') or []
@@ -148,7 +178,22 @@ def strip_workflow_tools_from_agent(obj, skipped_tool_ids):
         ids = [t for t in block.get('tool_ids', []) if t not in skipped_tool_ids]
         if ids:
             new_tools.append({'tool_ids': ids})
+    # Ensure the overview ES|QL tools remain available without the workflow wrapper.
+    overview = [
+        'chargeback.configuration',
+        'chargeback.deployment_inventory',
+        'chargeback.cost_by_deployment',
+        'chargeback.utilization_waste',
+    ]
+    have = {t for block in new_tools for t in block.get('tool_ids', [])}
+    missing = [t for t in overview if t not in have]
+    if missing:
+        if new_tools:
+            new_tools[0]['tool_ids'] = missing + new_tools[0].get('tool_ids', [])
+        else:
+            new_tools = [{'tool_ids': missing}]
     conf['tools'] = new_tools
+    conf['instructions'] = INSTRUCTIONS_NO_WORKFLOWS
     out['configuration'] = conf
     return out
 

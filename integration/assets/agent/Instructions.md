@@ -26,13 +26,17 @@ The script creates, in dependency order: one Kibana Workflow, tools (ES|QL plus 
 
 Kibana derives a workflow id from its name and may append a suffix. The installer resolves the real id by matching on workflow `name` before creating the tool.
 
+On Kibana builds without Workflows (for example local elastic-package), use `--skip-workflows`. That installs the ES|QL tools and companion agent with alternate instructions that open with `chargeback.configuration` → `chargeback.deployment_inventory` → `chargeback.cost_by_deployment` → `chargeback.utilization_waste` instead of `chargeback.cost_review`.
+
+TLS for the bootstrap API-key call is verified by default; localhost / `CURL_INSECURE=1` skip verification. The Python installer also verifies TLS except for localhost or `KIBANA_INSECURE=1`.
+
 ## Verify
 
 ```bash
 ./scripts/install_chargeback_agent.sh --verify
 ```
 
-In Agent Builder, open **Chargeback companion** and ask for a 30-day chargeback report. The first tool call should be `chargeback.cost_review`. Amounts should quote the configured currency unit from conf, not a hard-coded EUR default.
+In Agent Builder, open **Chargeback companion** and ask for a 30-day chargeback report. With a full install the first tool call should be `chargeback.cost_review`; with `--skip-workflows` it should start with the four overview ES|QL tools above. Amounts should quote the configured currency unit from conf, not a hard-coded EUR default.
 
 ## Uninstall
 
