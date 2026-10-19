@@ -45,7 +45,7 @@ BILLING_CONTROLS = [
         "title": "Deployment name",
         "esql_query": (
             "FROM billing_cluster_cost_lookup\n"
-            '| WHERE deployment_group != ""\n'
+            "| WHERE deployment_name IS NOT NULL AND deployment_name != \"\"\n"
             "| STATS COUNT(*) BY deployment_name\n"
             "| KEEP deployment_name\n"
             "| SORT deployment_name"
@@ -96,7 +96,7 @@ USAGE_CONTROLS = [
         "title": "Deployment name",
         "esql_query": (
             "FROM billing_realized_pool_lookup\n"
-            '| WHERE deployment_group != ""\n'
+            "| WHERE deployment_name IS NOT NULL AND deployment_name != \"\"\n"
             "| STATS COUNT(*) BY deployment_name\n"
             "| KEEP deployment_name\n"
             "| SORT deployment_name"
