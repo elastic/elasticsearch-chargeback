@@ -7,11 +7,15 @@ set -e
 
 # Versions this cleanup is intended for (for documentation and optional checks)
 STACK_VERSION="${STACK_VERSION:-9.2.2}"
-CHARGEBACK_VERSION="${CHARGEBACK_VERSION:-0.3.1}"
+CHARGEBACK_VERSION="${CHARGEBACK_VERSION:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CHARGEBACK_REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
 INTEGRATIONS_REPO="${INTEGRATIONS_REPO:-$(cd "$CHARGEBACK_REPO/../integrations" 2>/dev/null && pwd)}"
+if [[ -z "$CHARGEBACK_VERSION" && -f "${INTEGRATIONS_REPO:-}/packages/chargeback/manifest.yml" ]]; then
+  CHARGEBACK_VERSION="$(grep -E '^version:' "$INTEGRATIONS_REPO/packages/chargeback/manifest.yml" | awk '{print $2}')"
+fi
+CHARGEBACK_VERSION="${CHARGEBACK_VERSION:-0.5.0}"
 KIBANA_HOST="${KIBANA_HOST:-https://127.0.0.1:5601}"
 ES_HOST="${ES_HOST:-https://127.0.0.1:9200}"
 USER="${ELASTIC_USER:-elastic}"

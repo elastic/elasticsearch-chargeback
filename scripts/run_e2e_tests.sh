@@ -10,18 +10,25 @@
 #   so the install creates them from the local package. Use when the dashboard in Kibana still shows
 #   "Unknown column [total_ecu]" (e.g. because a previous install came from the registry).
 #
-# Tested with: Elasticsearch/Kibana 9.2.2, Chargeback integration 0.3.2.
+# Tested with: Elasticsearch/Kibana 9.2.2, Chargeback integration 0.5.0.
 # Step 12 verifies elasticsearch-chargeback#99 (legacy ECU field aliases for dashboard COALESCE).
+# Step 13 verifies 0.5.0 package facts (canonical usage source, tier preference order, Serverless billing classification).
 set -e
 
 # Versions this E2E is intended for (for documentation and optional checks)
 STACK_VERSION="${STACK_VERSION:-9.2.2}"
-CHARGEBACK_VERSION="${CHARGEBACK_VERSION:-0.3.2}"
+# Prefer env, else integrations manifest, else 0.5.0
+CHARGEBACK_VERSION="${CHARGEBACK_VERSION:-}"
+# package = build+install from INTEGRATIONS_REPO/packages/chargeback
+# zip     = install committed artifact integration/assets/<ver>/chargeback-<ver>.zip
+CHARGEBACK_INSTALL_FROM="${CHARGEBACK_INSTALL_FROM:-package}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPLACE_CHARGEBACK_DASHBOARD="${REPLACE_CHARGEBACK_DASHBOARD:-0}"
 for arg in "$@"; do
   if [[ "$arg" == "--replace-chargeback-dashboard" ]]; then REPLACE_CHARGEBACK_DASHBOARD=1; fi
+  if [[ "$arg" == "--from-zip" ]]; then CHARGEBACK_INSTALL_FROM=zip; fi
+  if [[ "$arg" == "--from-package" ]]; then CHARGEBACK_INSTALL_FROM=package; fi
 done
 CHARGEBACK_REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
 INTEGRATIONS_REPO="${INTEGRATIONS_REPO:-$(cd "$CHARGEBACK_REPO/../integrations" 2>/dev/null && pwd)}"
@@ -29,6 +36,11 @@ KIBANA_HOST="${KIBANA_HOST:-https://127.0.0.1:5601}"
 ES_HOST="${ES_HOST:-https://127.0.0.1:9200}"
 USER="${ELASTIC_USER:-elastic}"
 PASS="${ELASTIC_PASSWORD:-changeme}"
+
+if [[ -z "$CHARGEBACK_VERSION" && -f "${INTEGRATIONS_REPO:-}/packages/chargeback/manifest.yml" ]]; then
+  CHARGEBACK_VERSION="$(grep -E '^version:' "$INTEGRATIONS_REPO/packages/chargeback/manifest.yml" | awk '{print $2}')"
+fi
+CHARGEBACK_VERSION="${CHARGEBACK_VERSION:-0.5.0}"
 
 # Sleep durations (seconds) for transform/config backfill
 SLEEP_CONFIG_BOOT=15
@@ -55,7 +67,7 @@ if command -v elastic-package >/dev/null 2>&1; then
 else
   EP_CMD="go run github.com/elastic/elastic-package"
 fi
-echo "E2E (stack $STACK_VERSION, chargeback $CHARGEBACK_VERSION). Using integrations repo: $INTEGRATIONS_REPO"
+echo "E2E (stack $STACK_VERSION, chargeback $CHARGEBACK_VERSION, install_from=$CHARGEBACK_INSTALL_FROM). Using integrations repo: $INTEGRATIONS_REPO"
 echo "Using: $EP_CMD"
 echo "Kibana: $KIBANA_HOST  ES: $ES_HOST"
 
@@ -198,6 +210,39 @@ if [[ "${MONITORING_COUNT_EARLY:-0}" -lt 1350 || "${LEGACY_SEED:-0}" -gt 0 || "$
   echo "Seeded monitoring-indices (30 days × 3 × 5 × 3 = 1350 docs) with Fleet type-dataset-namespace names."
 fi
 
+# 5c. Tier-preference fallback fixtures (0.5.0+): tier=unknown + preference list (colder first).
+# Use pipeline=_none so the Elasticsearch monitoring_indices pipeline does not require end.* fields
+# or overwrite tier before the Chargeback transform applies preference order.
+TIER_PREF_COUNT=$(curl_es "$ES_HOST/monitoring-indices/_count" -d '{"query":{"term":{"elasticsearch.cluster.name":"tierpref"}}}' 2>/dev/null | grep -oE '"count":[0-9]+' | sed 's/"count"://' || echo 0)
+if [[ "${TIER_PREF_COUNT:-0}" -lt 3 ]]; then
+  echo "Seeding monitoring-indices tier-preference fixtures (cluster=tierpref, tier=unknown)."
+  Y_TP=$(date -u -v-2d 2>/dev/null +%Y-%m-%dT00:00:00.000Z || date -u -d "2 days ago" 2>/dev/null +%Y-%m-%dT00:00:00.000Z)
+  for pref in \
+    "data_cold,data_warm,data_hot" \
+    "data_warm,data_hot" \
+    "data_frozen,data_cold,data_hot"
+  do
+    curl_es -X POST "$ES_HOST/monitoring-indices/_doc?refresh=true&pipeline=_none" -d "{
+      \"@timestamp\": \"$Y_TP\",
+      \"elasticsearch\": {
+        \"cluster\": { \"name\": \"tierpref\" },
+        \"index\": {
+          \"name\": \".ds-logs-tierpref-default-000001\",
+          \"datastream\": \"logs-tierpref-default\",
+          \"tier\": \"unknown\",
+          \"tier_preference\": \"$pref\",
+          \"total\": {
+            \"indexing\": { \"index_time_in_millis\": 100 },
+            \"search\": { \"query_time_in_millis\": 50 },
+            \"store\": { \"size_in_bytes\": 1000 }
+          },
+          \"primaries\": { \"store\": { \"total_data_set_size_in_bytes\": 1000 } }
+        }
+      }
+    }" >/dev/null 2>&1 || true
+  done
+fi
+
 # 6. On-Prem Billing: install (from integrations repo package or chargeback zip), then org + deployment config, enrich policies, pipeline, transform
 echo "--- 6. Install On-Prem Billing ---"
 ONPREM_INSTALLED=false
@@ -283,7 +328,22 @@ if [[ "$REPLACE_CHARGEBACK_DASHBOARD" == "1" ]]; then
   curl_kibana -X DELETE "$KIBANA_HOST/api/saved_objects/dashboard/chargeback-39a39857-746c-4a29-adca-3c2fcb6bcfb6" >/dev/null 2>&1 && echo "  Deleted Chargeback dashboard." || true
   curl_kibana -X DELETE "$KIBANA_HOST/api/saved_objects/index-pattern/chargeback_integration" >/dev/null 2>&1 && echo "  Deleted Chargeback index pattern." || true
 fi
-(cd "$INTEGRATIONS_REPO/packages/chargeback" && $EP_CMD build --skip-validation && $EP_CMD install --skip-validation)
+if [[ "$CHARGEBACK_INSTALL_FROM" == "zip" ]]; then
+  CHARGEBACK_ZIP="$CHARGEBACK_REPO/integration/assets/${CHARGEBACK_VERSION}/chargeback-${CHARGEBACK_VERSION}.zip"
+  if [[ ! -f "$CHARGEBACK_ZIP" ]]; then
+    echo "CHARGEBACK_INSTALL_FROM=zip but zip missing: $CHARGEBACK_ZIP" >&2
+    echo "Run ./scripts/sync_chargeback_from_integrations.sh first, or use --from-package." >&2
+    exit 1
+  fi
+  echo "  Installing from zip: $CHARGEBACK_ZIP"
+  if command -v shasum >/dev/null 2>&1; then
+    echo "  ZIP SHA-256: $(shasum -a 256 "$CHARGEBACK_ZIP" | awk '{print $1}')"
+  fi
+  (cd "$INTEGRATIONS_REPO" && $EP_CMD install --zip "$CHARGEBACK_ZIP" --skip-validation)
+else
+  echo "  Building and installing from integrations packages/chargeback"
+  (cd "$INTEGRATIONS_REPO/packages/chargeback" && $EP_CMD build --skip-validation && $EP_CMD install --skip-validation)
+fi
 
 # 7b. Start Chargeback transforms (package has start: true but installer may not start them)
 echo "--- 7b. Start Chargeback transforms ---"
@@ -646,6 +706,144 @@ if [[ "$ESQL_PROOF_OK" -ne 1 ]]; then
   exit 1
 fi
 echo "  Issue #99/#104 proof: PASS (lookup aliases present; dashboard ES|QL uses chargeable-unit fields)"
+
+# 13. Chargeback 0.5.0 proofs (canonical usage source, tier preference order, Serverless billing classification)
+echo ""
+echo "--- 13. Chargeback 0.5.0 proofs ---"
+PROOF_05_OK=1
+# Run 0.5.x proofs when version is 0.5.0 or newer (sort -V).
+if [[ "$(printf '%s\n' "$CHARGEBACK_VERSION" "0.5.0" | sort -V | head -1)" != "0.5.0" && "$CHARGEBACK_VERSION" != "0.5.0" ]]; then
+  echo "  Skipping 0.5.0 proofs (CHARGEBACK_VERSION=$CHARGEBACK_VERSION < 0.5.0)."
+else
+  # 13a. Usage transforms must NOT list .monitoring-es-* (canonical monitoring-indices* only)
+  USAGE_TID=$(get_transform_id 'logs-chargeback\.cluster_deployment_contribution-[^"]+')
+  if [[ -z "$USAGE_TID" ]]; then
+    echo "  usage transform source: FAIL (cluster_deployment_contribution not found)"
+    PROOF_05_OK=0
+  else
+    SRC_JSON=$(curl_es "$ES_HOST/_transform/$USAGE_TID" 2>/dev/null)
+    if echo "$SRC_JSON" | jq -e '
+        .transforms[0].source.index
+        | (if type=="string" then [.] else . end)
+        | map(tostring)
+        | any(test("monitoring-es"))
+      ' >/dev/null 2>&1; then
+      echo "  usage transform source: FAIL ($USAGE_TID still sources .monitoring-es-* — double-count risk)"
+      PROOF_05_OK=0
+    elif echo "$SRC_JSON" | jq -e '
+        .transforms[0].source.index
+        | (if type=="string" then [.] else . end)
+        | map(tostring)
+        | any(test("monitoring-indices"))
+      ' >/dev/null 2>&1; then
+      echo "  usage transform source: PASS ($USAGE_TID uses monitoring-indices* only)"
+    else
+      echo "  usage transform source: FAIL (expected monitoring-indices* on $USAGE_TID)"
+      PROOF_05_OK=0
+    fi
+  fi
+
+  # 13b. Tier preference order: cold before hot when preference is data_cold,data_warm,data_hot
+  TIER_LOOKUP_COUNT=$(curl_es "$ES_HOST/cluster_tier_contribution_lookup/_count" -d '{"query":{"term":{"cluster_name":"tierpref"}}}' 2>/dev/null | jq -r '.count // 0' 2>/dev/null || echo 0)
+  if [[ "${TIER_LOOKUP_COUNT:-0}" -eq 0 ]]; then
+    echo "  tier preference fallback: WARN (no tierpref rows in cluster_tier_contribution_lookup yet — transform may still be catching up)"
+  else
+    TIERS=$(curl_es "$ES_HOST/cluster_tier_contribution_lookup/_search?size=20" -d '{"_source":["tier"],"query":{"term":{"cluster_name":"tierpref"}}}' 2>/dev/null \
+      | jq -r '.hits.hits[]._source.tier // empty' 2>/dev/null | sort -u | tr '\n' ' ')
+    echo "  tierpref tiers observed: ${TIERS:-none}"
+    if echo " $TIERS " | grep -q ' hot/content '; then
+      # hot/content alone is OK only if cold/warm/frozen also present for the preference fixtures
+      :
+    fi
+    if echo " $TIERS " | grep -Eq ' (cold|warm|frozen) '; then
+      if echo " $TIERS " | grep -q ' hot/content ' && ! echo " $TIERS " | grep -Eq ' (cold|warm|frozen) '; then
+        echo "  tier preference fallback: FAIL (only hot/content — hot-first bug)"
+        PROOF_05_OK=0
+      else
+        echo "  tier preference fallback: PASS (colder tiers present: $TIERS)"
+      fi
+    else
+      echo "  tier preference fallback: FAIL (expected cold/warm/frozen from preference lists, got: ${TIERS:-none})"
+      PROOF_05_OK=0
+    fi
+  fi
+
+  # 13c. Serverless billing classification via installed Fleet billing pipeline
+  BILLING_PIPELINE="logs-chargeback.lookup-${CHARGEBACK_VERSION}-billing"
+  if ! curl_es "$ES_HOST/_ingest/pipeline/$BILLING_PIPELINE" 2>/dev/null | jq -e --arg p "$BILLING_PIPELINE" '.[$p] != null' >/dev/null 2>&1; then
+    # Fall back to any chargeback billing pipeline name
+    BILLING_PIPELINE=$(curl_es "$ES_HOST/_ingest/pipeline" 2>/dev/null | jq -r 'keys[] | select(test("chargeback") and test("billing"))' 2>/dev/null | head -1)
+  fi
+  if [[ -z "$BILLING_PIPELINE" ]]; then
+    echo "  serverless billing classify: FAIL (no chargeback billing ingest pipeline found)"
+    PROOF_05_OK=0
+  else
+    echo "  using billing pipeline: $BILLING_PIPELINE"
+    SIM_RESP=$(curl_es -X POST "$ES_HOST/_ingest/pipeline/$BILLING_PIPELINE/_simulate" -d "$(jq -n '{
+      docs: [
+        {"_source": {"@timestamp":"2026-10-01T00:00:00.000Z","deployment_id":"sl-proj","sku":"elasticsearch.general-purpose-search-vcu_gcp"}},
+        {"_source": {"@timestamp":"2026-10-01T00:00:00.000Z","deployment_id":"sl-proj","sku":"elasticsearch.general-purpose-ingest-vcu_gcp"}},
+        {"_source": {"@timestamp":"2026-10-01T00:00:00.000Z","deployment_id":"sl-proj","sku":"elasticsearch.retained_gcp"}},
+        {"_source": {"@timestamp":"2026-10-01T00:00:00.000Z","deployment_id":"sl-proj","sku":"elasticsearch.general-purpose-ml-vcu_gcp"}},
+        {"_source": {"@timestamp":"2026-10-01T00:00:00.000Z","deployment_id":"sl-proj","sku":"serverless.support-tier4"}}
+      ]
+    }')" 2>/dev/null)
+    for spec in \
+      "0|data_tier|true|search-vcu" \
+      "1|data_tier|true|ingest-vcu" \
+      "2|data_tier|true|retained" \
+      "3|platform|false|ml-vcu"
+    do
+      idx="${spec%%|*}"
+      rest="${spec#*|}"
+      expect_cat="${rest%%|*}"
+      rest2="${rest#*|}"
+      expect_alloc="${rest2%%|*}"
+      label="${rest2#*|}"
+      # jq treats false as falsy: use tostring so is_allocatable:false is not dropped by //
+      cat=$(echo "$SIM_RESP" | jq -r ".docs[$idx].doc._source.cost_category // empty" 2>/dev/null)
+      alloc=$(echo "$SIM_RESP" | jq -r ".docs[$idx].doc._source | if has(\"is_allocatable\") then .is_allocatable|tostring else \"missing\" end" 2>/dev/null)
+      if [[ "$cat" == "$expect_cat" && "$alloc" == "$expect_alloc" ]]; then
+        echo "  serverless billing classify ($label): PASS (cost_category=$cat is_allocatable=$alloc)"
+      else
+        echo "  serverless billing classify ($label): FAIL (got cost_category=$cat is_allocatable=$alloc; want $expect_cat / $expect_alloc)"
+        PROOF_05_OK=0
+      fi
+    done
+    # support type may be rewritten
+    support_type=$(echo "$SIM_RESP" | jq -r '.docs[4].doc._source.cost_type // empty' 2>/dev/null)
+    support_cat=$(echo "$SIM_RESP" | jq -r '.docs[4].doc._source.cost_category // empty' 2>/dev/null)
+    support_alloc=$(echo "$SIM_RESP" | jq -r '.docs[4].doc._source | if has("is_allocatable") then .is_allocatable|tostring else "missing" end' 2>/dev/null)
+    if [[ "$support_cat" == "support" && "$support_alloc" == "false" && "$support_type" == "serverless_premium_support" ]]; then
+      echo "  serverless billing classify (support): PASS (type=$support_type category=$support_cat)"
+    else
+      echo "  serverless billing classify (support): FAIL (type=$support_type category=$support_cat is_allocatable=$support_alloc)"
+      PROOF_05_OK=0
+    fi
+  fi
+
+  # 13d. fleet_transform_version / pipeline refs mention 0.5.0
+  POOL_TID=$(get_transform_id 'logs-chargeback\.billing_realized_pool-[^"]+')
+  if [[ -n "$POOL_TID" ]]; then
+    POOL_PIPE=$(curl_es "$ES_HOST/_transform/$POOL_TID" 2>/dev/null | jq -r '.transforms[0].dest.pipeline // empty' 2>/dev/null)
+    if echo "$POOL_PIPE" | grep -q "$CHARGEBACK_VERSION"; then
+      echo "  billing_realized_pool dest.pipeline: PASS ($POOL_PIPE)"
+    else
+      echo "  billing_realized_pool dest.pipeline: FAIL (got '$POOL_PIPE', expected to contain $CHARGEBACK_VERSION)"
+      PROOF_05_OK=0
+    fi
+  else
+    echo "  billing_realized_pool transform: FAIL (not found)"
+    PROOF_05_OK=0
+  fi
+
+  if [[ "$PROOF_05_OK" -ne 1 ]]; then
+    echo ""
+    echo "Chargeback 0.5.0 proofs FAILED."
+    exit 1
+  fi
+  echo "  Chargeback 0.5.0 proofs: PASS"
+fi
 
 echo ""
 echo "--- Done. Run 'go run github.com/elastic/elastic-package test' from $INTEGRATIONS_REPO/packages/chargeback for asset tests. ---"
