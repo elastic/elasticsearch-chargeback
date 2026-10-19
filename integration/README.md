@@ -134,6 +134,20 @@ These alerting templates are automatically installed with the integration and ca
 
 **Important:** For alert rules 2 and 3, ensure that the Chargeback transforms are running before setting them up. These alerting rules query the lookup indices created by the transforms (`billing_cluster_cost_lookup`, `cluster_deployment_contribution_lookup`, etc.). If the transforms are not started, the alerts will not function correctly.
 
+## Version 0.5.0 Release Notes
+
+### What's new
+
+- Serverless capacity SKUs in `billing_realized_pool` (search/ingest VCU, retained storage; ML VCU excluded).
+- Usage transforms source `.monitoring-es-*` with an index-metricset filter (Cloud Console Logs and metrics path).
+- Keyword runtime fields avoid fielddata retries on dynamically mapped text cluster/index names.
+- Add-ons (not in the zip): Serverless usage collector and Chargeback companion agent — see the root README.
+
+### Upgrade notes
+
+- Upload [`chargeback-0.5.0.zip`](assets/0.5.0/chargeback-0.5.0.zip). Package version **0.5.0**; Kibana remains `^9.2.0`.
+- Integration source: [elastic/integrations#22057](https://github.com/elastic/integrations/pull/22057).
+
 ## Version 0.4.7 Release Notes
 
 ### Fixed
