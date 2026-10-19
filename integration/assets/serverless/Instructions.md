@@ -4,7 +4,7 @@ This **add-on** extends pure Chargeback with per-index usage collection for Elas
 
 Assets install **on the monitoring cluster** (where Chargeback and ESS Billing already run), not on the Serverless project.
 
-Prefer [`scripts/install_serverless_usage.sh`](../scripts/install_serverless_usage.sh). The steps below match what that script does.
+Prefer [`scripts/install_serverless_usage.sh`](../../../scripts/install_serverless_usage.sh) from the repository root. The steps below match what that script does.
 
 ## Prerequisites
 

@@ -15,13 +15,13 @@ Chargeback is based on the **Elasticsearch Service Billing** and **Elasticsearch
 
 The Fleet package is **pure chargeback**: allocate invoice cost from billing and usage. It recognizes Elastic Cloud Hosted and Serverless **billing** SKUs (search/ingest VCU and retained storage; ML VCU stays out of the allocatable pool).
 
-Anything that needs per-environment secrets, Agent Builder, or Kibana Workflow asset types that Fleet cannot ship lives outside the zip as an add-on in this repository:
+Anything that needs per-environment secrets, Agent Builder, or Kibana Workflow asset types that Fleet cannot ship lives outside the zip as an add-on under [`integration/assets/`](integration/assets/) (alongside the Fleet zips and on-prem billing assets):
 
 | Layer | What it is | When you need it |
 | --- | --- | --- |
 | **Pure Chargeback** (Fleet zip) | Transforms, pipelines, dashboards, conf | Every install |
-| **Add-on: Serverless usage collector** ([`serverless/`](serverless/README.md)) | One looping Kibana Workflow plus staging index | Per–data-stream showback for Serverless projects (billing already works from the zip) |
-| **Add-on: Chargeback companion agent** ([`agent/`](agent/README.md)) | Agent Builder tools, skills, and agent | Optional report and Q&A over the lookup indices |
+| **Add-on: Serverless usage collector** ([`integration/assets/serverless/`](integration/assets/serverless/README.md)) | One looping Kibana Workflow plus staging index | Per–data-stream showback for Serverless projects (billing already works from the zip) |
+| **Add-on: Chargeback companion agent** ([`integration/assets/agent/`](integration/assets/agent/README.md)) | Agent Builder tools, skills, and agent | Optional report and Q&A over the lookup indices |
 
 Without the Serverless collector, Serverless cost still appears in the realized pool; datastream contribution may be empty. With the collector, usage follows the same allocation path as Hosted. The agent never blocks Chargeback.
 
@@ -36,8 +36,8 @@ When Chargeback reaches GA, **Field** will coordinate with **Elastic Support** t
 ## Installation
 
 1. Install pure Chargeback: follow the [Chargeback integration instructions](integration/Instructions.md). For package details, version compatibility, and data flow, see the [integration README](integration/README.md).
-2. Optional — Serverless usage breakdown: after integration **0.5.0+**, run [`scripts/install_serverless_usage.sh`](scripts/install_serverless_usage.sh) and follow [`serverless/Instructions.md`](serverless/Instructions.md).
-3. Optional — conversational reports: run [`scripts/install_chargeback_agent.sh`](scripts/install_chargeback_agent.sh) and follow [`agent/Instructions.md`](agent/Instructions.md).
+2. Optional — Serverless usage breakdown: after integration **0.5.0+**, run [`scripts/install_serverless_usage.sh`](scripts/install_serverless_usage.sh) and follow [`integration/assets/serverless/Instructions.md`](integration/assets/serverless/Instructions.md).
+3. Optional — conversational reports: run [`scripts/install_chargeback_agent.sh`](scripts/install_chargeback_agent.sh) and follow [`integration/assets/agent/Instructions.md`](integration/assets/agent/Instructions.md).
 
 ## Dashboards
 

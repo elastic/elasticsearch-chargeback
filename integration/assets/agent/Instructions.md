@@ -2,7 +2,7 @@
 
 This **optional add-on** installs on the **monitoring cluster** — where the Chargeback integration, ESS Billing, and `*_lookup` indices already run. The agent queries those indices directly.
 
-Prefer [`scripts/install_chargeback_agent.sh`](../scripts/install_chargeback_agent.sh).
+Prefer [`scripts/install_chargeback_agent.sh`](../../../scripts/install_chargeback_agent.sh) from the repository root.
 
 ## Prerequisites
 
@@ -19,6 +19,8 @@ export KIBANA_API_KEY=<base64 api key>
 
 ./scripts/install_chargeback_agent.sh
 ```
+
+(Run from the repository root.)
 
 The script creates, in dependency order: one Kibana Workflow, tools (ES|QL plus workflow-backed `chargeback.cost_review`), two skills, and the **Chargeback companion** agent. It is **idempotent**: existing assets are updated in place.
 

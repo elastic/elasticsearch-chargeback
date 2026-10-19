@@ -14,7 +14,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-ASSETS="$ROOT/serverless/assets"
+ASSETS="$ROOT/integration/assets/serverless/assets"
 
 : "${ES_URL:?Set ES_URL to the monitoring cluster Elasticsearch URL}"
 : "${ES_API_KEY:?Set ES_API_KEY}"
@@ -78,4 +78,4 @@ fi
 
 echo "Done. Run the workflow once from Kibana Workflows, then check:"
 echo "  GET monitoring-indices-serverless/_count"
-echo "See serverless/Instructions.md for RBAC and verification."
+echo "See integration/assets/serverless/Instructions.md for RBAC and verification."

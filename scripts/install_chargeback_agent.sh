@@ -14,4 +14,4 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 : "${KIBANA_API_KEY:?Set KIBANA_API_KEY}"
 
 export KIBANA_URL KIBANA_API_KEY
-exec python3 "$ROOT/agent/install.py" "$@"
+exec python3 "$ROOT/integration/assets/agent/install.py" "$@"

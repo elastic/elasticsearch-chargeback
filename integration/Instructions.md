@@ -58,8 +58,8 @@ To upgrade the integration, do the following:
 - Transforms will auto-start (from version 0.2.8 onwards).
 
 **Upgrading to 0.5.0:**
-- Upload [`chargeback-0.5.0.zip`](assets/0.5.0/chargeback-0.5.0.zip). Adds Serverless allocatable pool SKUs, `.monitoring-es-*` as a usage source (index metricset filter), and keyword runtime fields for fielddata-safe aggregations. Kibana requirement remains 9.2.0+.
-- For Serverless **usage** breakdown (not only billing), install the [Serverless add-on](../serverless/Instructions.md) after the zip.
+- Upload [`chargeback-0.5.0.zip`](assets/0.5.0/chargeback-0.5.0.zip). Adds Serverless allocatable pool SKUs, usage transforms on canonical `monitoring-indices*` only (Cloud Console via the Elasticsearch integration `index_pivot`; avoids double-counting raw `.monitoring-es-*`), tier-preference order matching `monitoring_indices.yml`, and keyword runtime fields for fielddata-safe aggregations. Kibana requirement remains 9.2.0+.
+- For Serverless **usage** breakdown (not only billing), install the [Serverless add-on](assets/serverless/Instructions.md) after the zip.
 - If you upgraded from 0.4.x and transforms stay on old definitions, confirm `fleet_transform_version` is `0.5.0` or reset and restart the affected transforms after upload.
 
 **Upgrading to 0.4.7:**
@@ -99,10 +99,10 @@ To upgrade the integration, do the following:
 
 ## Optional add-ons
 
-Pure Chargeback is this Fleet package. Optional add-ons live in the repository root (not in the zip):
+Pure Chargeback is this Fleet package. Optional add-ons live under [`assets/`](assets/) next to the versioned zips (not inside the Fleet zip itself):
 
-- **Serverless usage collector** — per–data-stream showback for Elastic Cloud Serverless after **0.5.0+**. See [`serverless/Instructions.md`](../serverless/Instructions.md) and [`scripts/install_serverless_usage.sh`](../scripts/install_serverless_usage.sh).
-- **Chargeback companion agent** — optional report and Q&A over lookup indices. See [`agent/Instructions.md`](../agent/Instructions.md) and [`scripts/install_chargeback_agent.sh`](../scripts/install_chargeback_agent.sh).
+- **Serverless usage collector** — per–data-stream showback for Elastic Cloud Serverless after **0.5.0+**. See [`assets/serverless/Instructions.md`](assets/serverless/Instructions.md) and [`scripts/install_serverless_usage.sh`](../scripts/install_serverless_usage.sh).
+- **Chargeback companion agent** — optional report and Q&A over lookup indices. See [`assets/agent/Instructions.md`](assets/agent/Instructions.md) and [`scripts/install_chargeback_agent.sh`](../scripts/install_chargeback_agent.sh).
 
 ## Troubleshooting
 

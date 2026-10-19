@@ -139,9 +139,10 @@ These alerting templates are automatically installed with the integration and ca
 ### What's new
 
 - Serverless capacity SKUs in `billing_realized_pool` (search/ingest VCU, retained storage; ML VCU excluded).
-- Usage transforms source `.monitoring-es-*` with an index-metricset filter (Cloud Console Logs and metrics path).
+- Usage transforms use canonical `monitoring-indices*` only (Cloud Console via Elasticsearch `index_pivot`; avoids double-counting raw `.monitoring-es-*`).
+- Tier preference fallbacks use frozen → cold → warm → hot/content order.
 - Keyword runtime fields avoid fielddata retries on dynamically mapped text cluster/index names.
-- Add-ons (not in the zip): Serverless usage collector and Chargeback companion agent — see the root README.
+- Add-ons (not in the zip): [`assets/serverless/`](assets/serverless/README.md) and [`assets/agent/`](assets/agent/README.md) — see the root README.
 
 ### Upgrade notes
 

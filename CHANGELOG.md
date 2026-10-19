@@ -15,17 +15,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 #### Added (package)
 
 - **Elastic Cloud Serverless billing support.** `billing_realized_pool` also matches Serverless capacity SKUs (`elasticsearch.*-search-vcu_*`, `elasticsearch.*-ingest-vcu_*`, `elasticsearch.retained_*` where `deployment_type` is `elasticsearch`). ML VCU stays out of the allocatable pool.
-- Usage transforms also source `.monitoring-es-*` (index metricset only), so Chargeback works with **Elastic Cloud Console → Logs and metrics** without requiring the Agent-based Elasticsearch integration for that path.
+- Usage transforms use **`monitoring-indices*` only** as the canonical source. Cloud Console Logs and metrics still work when the Elasticsearch integration `index_pivot` writes into that pattern (avoids double-counting raw `.monitoring-es-*`).
 
 #### Fixed (package)
 
 - **`Fielddata is disabled on [elasticsearch.cluster.name]`, retrying forever.** Keyword runtime fields for cluster and index name fields on usage and capacity transforms.
+- **Tier preference fallback scripts.** YAML folded scalars had collapsed newlines so `//` comments removed the frozen/cold/warm/hot checks; unknown-tier docs were ungrouped. Literal block scalars and block comments restore preference order.
 
 #### Added (this repo — add-ons, not in the Fleet zip)
 
 - **Pure Chargeback vs add-ons** documented in the root README.
-- **[`serverless/`](serverless/README.md)** — looping Serverless usage collector and [`scripts/install_serverless_usage.sh`](scripts/install_serverless_usage.sh).
-- **[`agent/`](agent/README.md)** — optional Chargeback companion and [`scripts/install_chargeback_agent.sh`](scripts/install_chargeback_agent.sh).
+- **[`integration/assets/serverless/`](integration/assets/serverless/README.md)** — looping Serverless usage collector and [`scripts/install_serverless_usage.sh`](scripts/install_serverless_usage.sh).
+- **[`integration/assets/agent/`](integration/assets/agent/README.md)** — optional Chargeback companion (Agent Builder) and [`scripts/install_chargeback_agent.sh`](scripts/install_chargeback_agent.sh).
 
 #### Changed
 
