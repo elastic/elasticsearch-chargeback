@@ -105,7 +105,7 @@ fi
 
 # 5. Delete indices created by testing
 echo "--- 5. Delete testing indices ---"
-for idx in billing_cluster_cost_lookup chargeback_conf_lookup cluster_datastream_contribution_lookup cluster_deployment_contribution_lookup cluster_tier_and_datastream_contribution_lookup cluster_tier_contribution_lookup monitoring-indices onprem_billing_config; do
+for idx in billing_cluster_cost_lookup chargeback_conf_lookup cluster_datastream_contribution_lookup cluster_deployment_contribution_lookup cluster_tier_and_datastream_contribution_lookup cluster_tier_contribution_lookup monitoring-indices monitoring-indices-serverless .chargeback-serverless-projects onprem_billing_config; do
   resp=$(curl_es -sS -X DELETE "$ES_HOST/$idx" 2>/dev/null)
   if echo "$resp" | grep -q '"acknowledged":true'; then
     echo "Deleted $idx"
@@ -115,6 +115,12 @@ for idx in billing_cluster_cost_lookup chargeback_conf_lookup cluster_datastream
     echo "Skip $idx"
   fi
 done
+
+# 5b. Remove Serverless add-on ingest pipeline (Agent Builder assets are left; re-install is idempotent)
+echo "--- 5b. Remove Serverless add-on pipeline ---"
+curl_es -X DELETE "$ES_HOST/_ingest/pipeline/chargeback-serverless-usage" >/dev/null 2>&1 \
+  && echo "Deleted pipeline chargeback-serverless-usage." \
+  || echo "Pipeline chargeback-serverless-usage skip or already gone."
 
 # 6. Re-enable legacy monitoring (optional)
 echo "--- 6. Re-enable legacy monitoring ---"

@@ -10,10 +10,12 @@ Usage:
     export KIBANA_API_KEY=<base64 api key>
     python install.py            # install or update everything
     python install.py --verify   # only check what is present, change nothing
+    python install.py --skip-workflows  # ES|QL tools/skills/agent only (no Kibana Workflows API)
 
 Requires Python 3.8+. No third-party dependencies.
 """
 import argparse
+import copy
 import json
 import os
 import re
@@ -30,7 +32,16 @@ ASSETS = os.path.join(HERE, 'assets')
 ORDER = ['workflows', 'tools', 'skills', 'agents']
 ENDPOINT = {'tools': 'tools', 'skills': 'skills', 'agents': 'agents'}
 
-ctx = ssl.create_default_context()
+def ssl_context(base):
+    """Verify TLS by default; skip verification for localhost or KIBANA_INSECURE=1 (elastic-package)."""
+    insecure = os.environ.get('KIBANA_INSECURE', '').lower() in ('1', 'true', 'yes')
+    host = (base or '').lower()
+    if insecure or '127.0.0.1' in host or 'localhost' in host:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        return ctx
+    return ssl.create_default_context()
 
 
 def api(base, key, method, path, body=None):
@@ -41,7 +52,7 @@ def api(base, key, method, path, body=None):
                  'Content-Type': 'application/json',
                  'kbn-xsrf': 'true'})
     try:
-        with urllib.request.urlopen(req, context=ctx, timeout=120) as r:
+        with urllib.request.urlopen(req, context=ssl_context(base), timeout=120) as r:
             raw = r.read()
             return r.status, (json.loads(raw) if raw else {})
     except urllib.error.HTTPError as e:
@@ -127,10 +138,29 @@ def sync_workflows(base, key, verify):
     return problems, resolved
 
 
+def strip_workflow_tools_from_agent(obj, skipped_tool_ids):
+    """Remove workflow-backed tool ids from an agent definition when workflows are skipped."""
+    out = copy.deepcopy(obj)
+    conf = out.get('configuration') or {}
+    tools = conf.get('tools') or []
+    new_tools = []
+    for block in tools:
+        ids = [t for t in block.get('tool_ids', []) if t not in skipped_tool_ids]
+        if ids:
+            new_tools.append({'tool_ids': ids})
+    conf['tools'] = new_tools
+    out['configuration'] = conf
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--verify', action='store_true',
                     help='report what exists without creating or updating anything')
+    ap.add_argument('--skip-workflows', action='store_true',
+                    help='skip Kibana Workflows and workflow-typed tools (local stacks without Workflows)')
+    ap.add_argument('--skip-skills', action='store_true',
+                    help='skip Agent Builder skills (stacks without the skills API)')
     args = ap.parse_args()
 
     base = os.environ.get('KIBANA_URL')
@@ -141,19 +171,41 @@ def main():
     st, _ = api(base, key, 'GET', '/api/agent_builder/agents')
     if st != 200:
         sys.exit('Agent Builder is not reachable at %s (HTTP %s). Check the URL, the API key '
-                 'privileges, and that Agent Builder is enabled.' % (base, st))
+                 'privileges, and that Agent Builder is enabled (Kibana 9.2.0+).' % (base, st))
+
+    skip_skills = args.skip_skills
+    if not skip_skills:
+        st_sk, _ = api(base, key, 'GET', '/api/agent_builder/skills')
+        if st_sk == 404:
+            print('Skills API not available (HTTP 404); continuing without skills.')
+            skip_skills = True
 
     failures = 0
     workflow_ids = {}
+    skipped_workflow_tools = set()
+    if args.skip_workflows:
+        skipped_workflow_tools = {
+            t['id'] for t in load('tools') if t.get('type') == 'workflow'
+        }
     for kind in ORDER:
         print('=== %s ===' % kind)
         if kind == 'workflows':
+            if args.skip_workflows:
+                print('  (skipped: --skip-workflows)')
+                continue
             problems, workflow_ids = sync_workflows(base, key, args.verify)
             failures += problems
+            continue
+        if kind == 'skills' and skip_skills:
+            print('  (skipped: skills API unavailable or --skip-skills)')
             continue
         for obj in load(kind):
             # A workflow-typed tool must point at the id Kibana actually assigned.
             if kind == 'tools' and obj.get('type') == 'workflow':
+                if args.skip_workflows:
+                    skipped_workflow_tools.add(obj['id'])
+                    print('  %-42s SKIPPED (--skip-workflows)' % obj['id'])
+                    continue
                 stem = obj['configuration'].get('workflow_id')
                 real = workflow_ids.get(stem)
                 if not real:
@@ -161,11 +213,16 @@ def main():
                     failures += 1
                     continue
                 obj['configuration']['workflow_id'] = real
+            if kind == 'agents' and skipped_workflow_tools:
+                obj = strip_workflow_tools_from_agent(obj, skipped_workflow_tools)
             oid = obj['id']
             ep = '/api/agent_builder/%s' % ENDPOINT[kind]
 
             if args.verify:
                 st, _ = api(base, key, 'GET', '%s/%s' % (ep, oid))
+                if st != 200 and kind == 'tools' and oid in skipped_workflow_tools:
+                    print('  %-42s skipped (workflow tool)' % oid)
+                    continue
                 print('  %-42s %s' % (oid, 'present' if st == 200 else 'MISSING'))
                 failures += (st != 200)
                 continue
@@ -192,7 +249,10 @@ def main():
     if failures:
         print('%d problem(s). Nothing else was changed.' % failures)
         sys.exit(1)
-    print('Done. Open Agent Builder in Kibana and chat with "Elastic Cost Optimizer".')
+    if args.skip_workflows:
+        print('Done (workflows skipped). Open Agent Builder in Kibana and chat with "Chargeback companion".')
+    else:
+        print('Done. Open Agent Builder in Kibana and chat with "Chargeback companion".')
 
 
 if __name__ == '__main__':

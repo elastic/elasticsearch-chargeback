@@ -13,6 +13,8 @@
 # Tested with: Elasticsearch/Kibana 9.2.2, Chargeback integration 0.5.0.
 # Step 12 verifies elasticsearch-chargeback#99 (legacy ECU field aliases for dashboard COALESCE).
 # Step 13 verifies 0.5.0 package facts (canonical usage source, tier preference order, Serverless billing classification).
+# Step 14 installs the Serverless usage collector add-on (pipeline + indices; workflow optional on local stacks).
+# Step 15 installs the Chargeback companion Agent Builder add-on (workflows skipped when Kibana Workflows API is absent).
 set -e
 
 # Versions this E2E is intended for (for documentation and optional checks)
@@ -154,11 +156,13 @@ fi
 #     <type>-<dataset>-<namespace> so ds_type / ds_namespace parse clearly on the Usage dashboard.
 #     30 days × 3 deployments × 5 datastreams × 3 tiers = 1350 docs.
 #     Also ensures On-Prem config_bootstrap discovers all 3 deployments.
-MONITORING_COUNT_EARLY=$(curl_es "$ES_HOST/monitoring-indices/_count" 2>/dev/null | grep -oE '"count":[0-9]+' | sed 's/"count"://')
-# Reseed when empty/short, or when the legacy short names (logs-app) are still present.
-LEGACY_SEED=$(curl_es "$ES_HOST/monitoring-indices/_count" -d '{"query":{"term":{"elasticsearch.index.datastream":"logs-app"}}}' 2>/dev/null | grep -oE '"count":[0-9]+' | sed 's/"count"://')
-GOOD_SEED=$(curl_es "$ES_HOST/monitoring-indices/_count" -d '{"query":{"term":{"elasticsearch.index.datastream":"logs-nginx.access-finance"}}}' 2>/dev/null | grep -oE '"count":[0-9]+' | sed 's/"count"://')
-if [[ "${MONITORING_COUNT_EARLY:-0}" -lt 1350 || "${LEGACY_SEED:-0}" -gt 0 || "${GOOD_SEED:-0}" -eq 0 ]]; then
+MONITORING_COUNT_EARLY=$(curl_es "$ES_HOST/monitoring-indices/_count" 2>/dev/null | grep -oE '"count":[0-9]+' | sed 's/"count"://' || true)
+LEGACY_SEED=$(curl_es "$ES_HOST/monitoring-indices/_count" -d '{"query":{"term":{"elasticsearch.index.datastream":"logs-app"}}}' 2>/dev/null | grep -oE '"count":[0-9]+' | sed 's/"count"://' || true)
+GOOD_SEED=$(curl_es "$ES_HOST/monitoring-indices/_count" -d '{"query":{"term":{"elasticsearch.index.datastream":"logs-nginx.access-finance"}}}' 2>/dev/null | grep -oE '"count":[0-9]+' | sed 's/"count"://' || true)
+MONITORING_COUNT_EARLY=${MONITORING_COUNT_EARLY:-0}
+LEGACY_SEED=${LEGACY_SEED:-0}
+GOOD_SEED=${GOOD_SEED:-0}
+if [[ "$MONITORING_COUNT_EARLY" -lt 1350 || "$LEGACY_SEED" -gt 0 || "$GOOD_SEED" -eq 0 ]]; then
   echo "Seeding monitoring-indices: 30 days × 3 deployments × 5 Fleet datastreams × 3 tiers (1350 docs)."
   curl_es -X DELETE "$ES_HOST/monitoring-indices" >/dev/null 2>&1 || true
   BULK_MON=$(mktemp)
@@ -843,6 +847,125 @@ else
     exit 1
   fi
   echo "  Chargeback 0.5.0 proofs: PASS"
+fi
+
+# 14. Serverless usage collector add-on (integration/assets/serverless/)
+echo ""
+echo "--- 14. Serverless usage collector add-on ---"
+ADDON_OK=1
+if [[ "$(printf '%s\n' "$CHARGEBACK_VERSION" "0.5.0" | sort -V | head -1)" != "0.5.0" && "$CHARGEBACK_VERSION" != "0.5.0" ]]; then
+  echo "  Skipping Serverless add-on (CHARGEBACK_VERSION=$CHARGEBACK_VERSION < 0.5.0)."
+else
+  export ELASTIC_PASSWORD="$PASS"
+  export ES_URL="$ES_HOST"
+  export KIBANA_URL="$KIBANA_HOST"
+  export ALLOW_MISSING_WORKFLOWS=1
+  if ! "$CHARGEBACK_REPO/scripts/install_serverless_usage.sh"; then
+    echo "  serverless add-on install: FAIL"
+    ADDON_OK=0
+  else
+    echo "  serverless add-on install: PASS (pipeline + indices; workflow may be WARN on local stacks)"
+  fi
+  # Prove the ingest pipeline reshapes _cat/indices-shaped rows into monitoring-indices* docs.
+  SIM_SL=$(curl_es -X POST "$ES_HOST/_ingest/pipeline/chargeback-serverless-usage/_simulate" -d "$(jq -n '{
+    docs: [{
+      "_source": {
+        "idx": ".ds-logs-demo-default-000001",
+        "project": "sl-e2e-project",
+        "docs": "10",
+        "dsize": "1000",
+        "itime": "100",
+        "itotal": "5",
+        "qtime": "50",
+        "qtotal": "3"
+      }
+    }]
+  }')" 2>/dev/null)
+  SL_CLUSTER=$(echo "$SIM_SL" | jq -r '.docs[0].doc._source.elasticsearch.cluster.name // empty' 2>/dev/null)
+  SL_TIER=$(echo "$SIM_SL" | jq -r '.docs[0].doc._source.elasticsearch.index.tier // empty' 2>/dev/null)
+  SL_SRC=$(echo "$SIM_SL" | jq -r '.docs[0].doc._source.source_type // empty' 2>/dev/null)
+  if [[ "$SL_CLUSTER" == "sl-e2e-project" && "$SL_TIER" == "serverless" && "$SL_SRC" == "serverless_cat_indices" ]]; then
+    echo "  serverless usage pipeline simulate: PASS (cluster=$SL_CLUSTER tier=$SL_TIER)"
+  else
+    echo "  serverless usage pipeline simulate: FAIL (cluster=$SL_CLUSTER tier=$SL_TIER source_type=$SL_SRC)"
+    ADDON_OK=0
+  fi
+  # Index one simulated row through the pipeline into the staging index.
+  curl_es -X POST "$ES_HOST/monitoring-indices-serverless/_doc?pipeline=chargeback-serverless-usage&refresh=true" -d "$(jq -n '{
+    idx: ".ds-logs-demo-default-000001",
+    project: "sl-e2e-project",
+    docs: "10",
+    dsize: "1000",
+    itime: "100",
+    itotal: "5",
+    qtime: "50",
+    qtotal: "3"
+  }')" >/dev/null 2>&1 || true
+  SL_COUNT=$(curl_es "$ES_HOST/monitoring-indices-serverless/_count" -d '{"query":{"term":{"elasticsearch.cluster.name":"sl-e2e-project"}}}' 2>/dev/null | jq -r '.count // 0' 2>/dev/null || echo 0)
+  if [[ "${SL_COUNT:-0}" -ge 1 ]]; then
+    echo "  monitoring-indices-serverless seeded: PASS ($SL_COUNT docs for sl-e2e-project)"
+  else
+    echo "  monitoring-indices-serverless seeded: FAIL (count=$SL_COUNT)"
+    ADDON_OK=0
+  fi
+  # Project registry index must exist (mapping from add-on).
+  if curl_es "$ES_HOST/.chargeback-serverless-projects" 2>/dev/null | jq -e '.".chargeback-serverless-projects" != null' >/dev/null 2>&1; then
+    echo "  .chargeback-serverless-projects index: PASS"
+  else
+    echo "  .chargeback-serverless-projects index: FAIL"
+    ADDON_OK=0
+  fi
+fi
+
+# 15. Chargeback companion Agent Builder add-on (integration/assets/agent/)
+echo ""
+echo "--- 15. Chargeback companion agent add-on ---"
+if [[ "$(printf '%s\n' "$CHARGEBACK_VERSION" "0.5.0" | sort -V | head -1)" != "0.5.0" && "$CHARGEBACK_VERSION" != "0.5.0" ]]; then
+  echo "  Skipping Agent add-on (CHARGEBACK_VERSION=$CHARGEBACK_VERSION < 0.5.0)."
+else
+  export ELASTIC_PASSWORD="$PASS"
+  export ES_URL="$ES_HOST"
+  export KIBANA_URL="$KIBANA_HOST"
+  # elastic-package 9.2.x exposes Agent Builder but not Kibana Workflows / skills APIs.
+  AGENT_FLAGS=(--skip-workflows)
+  WF_PROBE=$(curl -sS -k -o /dev/null -w '%{http_code}' -u "$USER:$PASS" -H "kbn-xsrf: true" \
+    -X POST "$KIBANA_HOST/api/workflows/workflow" -H "Content-Type: application/json" -d '{"yaml":"name: probe\n"}' 2>/dev/null || echo 000)
+  if [[ "$WF_PROBE" == "200" || "$WF_PROBE" == "201" ]]; then
+    AGENT_FLAGS=()
+    echo "  Kibana Workflows API available; installing full agent (including cost_review workflow)."
+  else
+    echo "  Kibana Workflows API unavailable (HTTP $WF_PROBE); installing agent with --skip-workflows."
+  fi
+  if ! "$CHARGEBACK_REPO/scripts/install_chargeback_agent.sh" "${AGENT_FLAGS[@]}"; then
+    echo "  agent add-on install: FAIL"
+    ADDON_OK=0
+  else
+    echo "  agent add-on install: PASS"
+  fi
+  # Verify with the same flags (skills auto-skipped when API is 404).
+  if ! "$CHARGEBACK_REPO/scripts/install_chargeback_agent.sh" --verify "${AGENT_FLAGS[@]}"; then
+    echo "  agent add-on verify: FAIL"
+    ADDON_OK=0
+  else
+    echo "  agent add-on verify: PASS"
+  fi
+  # Spot-check companion agent and a core ES|QL tool via Kibana API (basic auth).
+  AGENT_HTTP=$(curl -sS -k -o /tmp/e2e-agent.json -w '%{http_code}' -u "$USER:$PASS" -H "kbn-xsrf: true" \
+    "$KIBANA_HOST/api/agent_builder/agents/chargeback-companion" 2>/dev/null || echo 000)
+  TOOL_HTTP=$(curl -sS -k -o /dev/null -w '%{http_code}' -u "$USER:$PASS" -H "kbn-xsrf: true" \
+    "$KIBANA_HOST/api/agent_builder/tools/chargeback.configuration" 2>/dev/null || echo 000)
+  if [[ "$AGENT_HTTP" == "200" && "$TOOL_HTTP" == "200" ]]; then
+    echo "  agent API spot-check: PASS (chargeback-companion + chargeback.configuration)"
+  else
+    echo "  agent API spot-check: FAIL (agent HTTP $AGENT_HTTP, configuration tool HTTP $TOOL_HTTP)"
+    ADDON_OK=0
+  fi
+fi
+
+if [[ "${ADDON_OK:-1}" -ne 1 ]]; then
+  echo ""
+  echo "Add-on E2E steps FAILED (Serverless collector and/or Agent Builder)."
+  exit 1
 fi
 
 echo ""

@@ -11,7 +11,7 @@
     "query": "FROM billing_cluster_cost_lookup\n| EVAL ts = @timestamp\n| LOOKUP JOIN chargeback_conf_lookup ON ts >= conf_start_date AND ts <= conf_end_date\n| WHERE DATE_DIFF(\"day\", @timestamp, NOW()) <= ?days AND deployment_id == ?deployment_id\n| EVAL cost = total_chargeable_units * conf_chargeable_unit_rate\n| STATS cost = SUM(cost), currency = VALUES(conf_chargeable_unit_rate_unit) BY cost_type, cost_category, is_allocatable\n| SORT cost DESC\n| LIMIT 50",
     "params": {
       "deployment_id": {
-        "type": "string",
+        "type": "keyword",
         "description": "Deployment ID or Serverless project ID"
       },
       "days": {
