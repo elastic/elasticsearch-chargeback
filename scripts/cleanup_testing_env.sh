@@ -7,11 +7,15 @@ set -e
 
 # Versions this cleanup is intended for (for documentation and optional checks)
 STACK_VERSION="${STACK_VERSION:-9.2.2}"
-CHARGEBACK_VERSION="${CHARGEBACK_VERSION:-0.3.1}"
+CHARGEBACK_VERSION="${CHARGEBACK_VERSION:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CHARGEBACK_REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
 INTEGRATIONS_REPO="${INTEGRATIONS_REPO:-$(cd "$CHARGEBACK_REPO/../integrations" 2>/dev/null && pwd)}"
+if [[ -z "$CHARGEBACK_VERSION" && -f "${INTEGRATIONS_REPO:-}/packages/chargeback/manifest.yml" ]]; then
+  CHARGEBACK_VERSION="$(grep -E '^version:' "$INTEGRATIONS_REPO/packages/chargeback/manifest.yml" | awk '{print $2}')"
+fi
+CHARGEBACK_VERSION="${CHARGEBACK_VERSION:-0.5.0}"
 KIBANA_HOST="${KIBANA_HOST:-https://127.0.0.1:5601}"
 ES_HOST="${ES_HOST:-https://127.0.0.1:9200}"
 USER="${ELASTIC_USER:-elastic}"
@@ -101,7 +105,7 @@ fi
 
 # 5. Delete indices created by testing
 echo "--- 5. Delete testing indices ---"
-for idx in billing_cluster_cost_lookup chargeback_conf_lookup cluster_datastream_contribution_lookup cluster_deployment_contribution_lookup cluster_tier_and_datastream_contribution_lookup cluster_tier_contribution_lookup monitoring-indices onprem_billing_config; do
+for idx in billing_cluster_cost_lookup chargeback_conf_lookup cluster_datastream_contribution_lookup cluster_deployment_contribution_lookup cluster_tier_and_datastream_contribution_lookup cluster_tier_contribution_lookup monitoring-indices monitoring-indices-serverless .chargeback-serverless-projects onprem_billing_config; do
   resp=$(curl_es -sS -X DELETE "$ES_HOST/$idx" 2>/dev/null)
   if echo "$resp" | grep -q '"acknowledged":true'; then
     echo "Deleted $idx"
@@ -111,6 +115,12 @@ for idx in billing_cluster_cost_lookup chargeback_conf_lookup cluster_datastream
     echo "Skip $idx"
   fi
 done
+
+# 5b. Remove Serverless add-on ingest pipeline (Agent Builder assets are left; re-install is idempotent)
+echo "--- 5b. Remove Serverless add-on pipeline ---"
+curl_es -X DELETE "$ES_HOST/_ingest/pipeline/chargeback-serverless-usage" >/dev/null 2>&1 \
+  && echo "Deleted pipeline chargeback-serverless-usage." \
+  || echo "Pipeline chargeback-serverless-usage skip or already gone."
 
 # 6. Re-enable legacy monitoring (optional)
 echo "--- 6. Re-enable legacy monitoring ---"

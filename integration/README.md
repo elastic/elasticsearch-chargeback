@@ -2,7 +2,7 @@
 
 ## Version
 
-Chargeback integration: 0.4.7
+Chargeback integration: 0.5.0
 
 ## Dependencies
 
@@ -39,6 +39,7 @@ This integration must be installed on the **Monitoring cluster** where the above
 | 0.4.5 | 9.2.0+ | 1.7.0+ | Map `composite_key` as keyword; dashboard LOOKUP JOIN uses `composite_key` (not `.keyword`) |
 | 0.4.6 | 9.2.0+ | 1.7.0+ | Usage tier-cost panels: JOIN left side from `cluster_tier_contribution_lookup` for pre-0.4.5 text mappings |
 | 0.4.7 | 9.2.0+ | 1.7.0+ | Fleet pipeline layout (`data_stream/lookup`); capacity utilization runtime keyword for TEXT cluster names |
+| 0.5.0 | 9.2.0+ | 1.7.0+ | Serverless billing pool SKUs; `.monitoring-es-*` usage source (index metricset); fielddata runtime fields |
 
 ## Setup instructions
 
@@ -132,6 +133,21 @@ Version 0.2.8 includes three pre-configured Kibana alerting rule templates to he
 These alerting templates are automatically installed with the integration and can be configured through **Stack Management → Rules** in Kibana.
 
 **Important:** For alert rules 2 and 3, ensure that the Chargeback transforms are running before setting them up. These alerting rules query the lookup indices created by the transforms (`billing_cluster_cost_lookup`, `cluster_deployment_contribution_lookup`, etc.). If the transforms are not started, the alerts will not function correctly.
+
+## Version 0.5.0 Release Notes
+
+### What's new
+
+- Serverless capacity SKUs in `billing_realized_pool` (search/ingest VCU, retained storage; ML VCU excluded).
+- Usage transforms use canonical `monitoring-indices*` only (Cloud Console via Elasticsearch `index_pivot`; avoids double-counting raw `.monitoring-es-*`).
+- Tier preference fallbacks use frozen → cold → warm → hot/content order.
+- Keyword runtime fields avoid fielddata retries on dynamically mapped text cluster/index names.
+- Add-ons (not in the zip): [`assets/serverless/`](assets/serverless/README.md) and [`assets/agent/`](assets/agent/README.md) — see the root README.
+
+### Upgrade notes
+
+- Upload [`chargeback-0.5.0.zip`](assets/0.5.0/chargeback-0.5.0.zip). Package version **0.5.0**; Kibana remains `^9.2.0`.
+- Integration source: [elastic/integrations#22057](https://github.com/elastic/integrations/pull/22057).
 
 ## Version 0.4.7 Release Notes
 

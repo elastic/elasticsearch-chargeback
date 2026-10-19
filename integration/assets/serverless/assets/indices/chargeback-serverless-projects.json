@@ -1,0 +1,25 @@
+{
+  "settings": {
+    "index": {
+      "number_of_shards": 1,
+      "number_of_replicas": 1,
+      "auto_expand_replicas": "0-1"
+    }
+  },
+  "mappings": {
+    "dynamic": "strict",
+    "properties": {
+      "project_id": {
+        "type": "keyword"
+      },
+      "sl_url": {
+        "type": "keyword"
+      },
+      "sl_api_key": {
+        "type": "keyword",
+        "index": false,
+        "doc_values": false
+      }
+    }
+  }
+}

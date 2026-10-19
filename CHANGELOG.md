@@ -10,6 +10,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Integration Releases
 
+### [0.5.0] - 2026-10-19
+
+#### Added (package)
+
+- **Elastic Cloud Serverless billing support.** `billing_realized_pool` also matches Serverless capacity SKUs (`elasticsearch.*-search-vcu_*`, `elasticsearch.*-ingest-vcu_*`, `elasticsearch.retained_*` where `deployment_type` is `elasticsearch`). ML VCU stays out of the allocatable pool.
+- Usage transforms use **`monitoring-indices*` only** as the canonical source. Cloud Console Logs and metrics still work when the Elasticsearch integration `index_pivot` writes into that pattern (avoids double-counting raw `.monitoring-es-*`).
+
+#### Fixed (package)
+
+- **`Fielddata is disabled on [elasticsearch.cluster.name]`, retrying forever.** Keyword runtime fields for cluster and index name fields on usage and capacity transforms.
+- **Tier preference fallback scripts.** YAML folded scalars had collapsed newlines so `//` comments removed the frozen/cold/warm/hot checks; unknown-tier docs were ungrouped. Literal block scalars and block comments restore preference order.
+
+#### Added (this repo — add-ons, not in the Fleet zip)
+
+- **Pure Chargeback vs add-ons** documented in the root README.
+- **[`integration/assets/serverless/`](integration/assets/serverless/README.md)** — looping Serverless usage collector and [`scripts/install_serverless_usage.sh`](scripts/install_serverless_usage.sh).
+- **[`integration/assets/agent/`](integration/assets/agent/README.md)** — optional Chargeback companion (Agent Builder) and [`scripts/install_chargeback_agent.sh`](scripts/install_chargeback_agent.sh).
+
+#### Fixed (this repo — add-ons / E2E)
+
+- Agent ES|QL tools and `chargeback.cost_review` preserve billing `@timestamp` / `deployment_id` before capacity LOOKUP JOINs so Serverless and Hosted rows without node stats are not dropped.
+- Deployment inventory classifies `onprem` and unknown `deployment_type` values instead of labeling every non-Hosted row as Serverless.
+- Serverless installer verifies TLS by default per destination (exact loopback hostname or `CURL_INSECURE=1`), fails index create on errors other than `resource_already_exists_exception`, updates the collector workflow by name (detects duplicates), and lets `ALLOW_MISSING_WORKFLOWS=1` ignore only HTTP 404.
+- `--skip-workflows` agent install switches instructions to the ES|QL overview tools (`configuration` → `deployment_inventory` → `cost_by_deployment` → `utilization_waste`).
+- Storage tool outputs renamed to `max_daily_storage_snapshot_bytes` so they are not read as point-in-time size.
+- E2E tier-preference proof waits for fixtures and requires cold, warm, and frozen.
+- Agent workflow sync fails closed when listing workflows fails (no duplicate create).
+- `chargeback.unallocatable_cost` groups by `deployment_id` and `deployment_name`.
+- Serverless collector fails when more than 500 projects are registered (no silent truncation).
+- E2E Workflows probe uses GET `/api/workflows` and skips workflows only on HTTP 404.
+
+#### Changed
+
+- Package **0.5.0** keeps Kibana `^9.2.0`. Asset: [`integration/assets/0.5.0/chargeback-0.5.0.zip`](integration/assets/0.5.0/chargeback-0.5.0.zip). Source: [elastic/integrations#22057](https://github.com/elastic/integrations/pull/22057) + [elastic/integrations#22061](https://github.com/elastic/integrations/pull/22061). Zip SHA-256 `5ee3dc4419d9d448480199f41da2be606795863225a920f993d2bcdfcb634168`.
+
 ### [0.4.7] - 2026-09-23
 
 #### Fixed

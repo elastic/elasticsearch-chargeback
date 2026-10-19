@@ -1,0 +1,13 @@
+{
+  "id": "chargeback-cost-analysis",
+  "name": "chargeback-cost-analysis",
+  "description": "Elastic Chargeback data model and cost arithmetic: which indices hold cost and usage, how per-data-stream cost is derived as a share of an allocatable pool, why allocated costs do not sum to the invoice, how Serverless projects differ from Hosted deployments, and the one-day billing lag. Load this whenever the user asks what something costs, why a cost changed, or how a chargeback figure was derived.",
+  "tool_ids": [
+    "chargeback.configuration",
+    "chargeback.deployment_inventory",
+    "chargeback.cost_by_deployment",
+    "chargeback.cost_by_component",
+    "chargeback.unallocatable_cost"
+  ],
+  "content_file": "chargeback-cost-analysis.md"
+}

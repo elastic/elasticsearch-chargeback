@@ -39,9 +39,14 @@ From the **elasticsearch-chargeback** repo root, with the stack already running:
 
 ```bash
 ./scripts/run_e2e_tests.sh
+# Install the committed zip under integration/assets/<version>/ instead of building packages/chargeback:
+./scripts/run_e2e_tests.sh --from-zip
+# Or: CHARGEBACK_INSTALL_FROM=zip CHARGEBACK_VERSION=0.5.0 ./scripts/run_e2e_tests.sh
 ```
 
-**What it does:** Installs **Elasticsearch** integration → **On-Prem Billing** → **Chargeback**, in that order. **On-Prem Billing** is installed from the integrations repo when `packages/onprem_billing` exists (e.g. branch `wip/onprem-billing-integration`), otherwise from a zip on a chargeback repo branch. Post-install uses a **12 ERU test scenario**: three deployments (dev, prod, monitoring), two deployment groups (product, monitoring); organization config (12 ERU licence), deployment configs (dev 2 ERU, prod 8 ERU, monitoring 2 ERU), both enrich policies, `calculate_cost` pipeline, and billing transform. Then seeds **monitoring-indices** and **billing** with **one doc per deployment** (3 of each), resets and starts Chargeback transforms, and prints **evidence tables** (full content of all lookup indices + cross-verification).
+**What it does:** Installs **Elasticsearch** integration → **On-Prem Billing** → **Chargeback**, in that order. **On-Prem Billing** is installed from the integrations repo when `packages/onprem_billing` exists (e.g. branch `wip/onprem-billing-integration`), otherwise from a zip on a chargeback repo branch. Post-install uses a **12 ERU test scenario**: three deployments (dev, prod, monitoring), two deployment groups (product, monitoring); organization config (12 ERU licence), deployment configs (dev 2 ERU, prod 8 ERU, monitoring 2 ERU), both enrich policies, `calculate_cost` pipeline, and billing transform. Then seeds **monitoring-indices** and **billing**, resets and starts Chargeback transforms, prints **evidence tables**, runs **step 12** (#99/#104 aliases), and for **0.5.0+** runs **step 13** (canonical usage source, tier-preference order, Serverless billing classification), **step 14** (Serverless usage collector add-on: pipeline, staging index, project registry, pipeline simulate), and **step 15** (Chargeback companion Agent Builder add-on; uses `--skip-workflows` when the Kibana Workflows API is absent on local stacks).
+
+**Env:** `CHARGEBACK_VERSION` (default: integrations `manifest.yml`, else `0.5.0`), `CHARGEBACK_INSTALL_FROM=package|zip` (or `--from-zip` / `--from-package`).
 
 **Before running:** Start the stack from the integrations repo (first time can take 5–10 min):
 

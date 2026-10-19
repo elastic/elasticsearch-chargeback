@@ -1,0 +1,103 @@
+{
+  "settings": {
+    "index": {
+      "number_of_shards": "1",
+      "number_of_replicas": "1",
+      "default_pipeline": "chargeback-serverless-usage"
+    }
+  },
+  "mappings": {
+    "dynamic": "false",
+    "properties": {
+      "@timestamp": {
+        "type": "date"
+      },
+      "elasticsearch": {
+        "properties": {
+          "cluster": {
+            "properties": {
+              "name": {
+                "type": "keyword"
+              }
+            }
+          },
+          "index": {
+            "properties": {
+              "name": {
+                "type": "keyword"
+              },
+              "primaries": {
+                "properties": {
+                  "store": {
+                    "properties": {
+                      "size_in_bytes": {
+                        "type": "long"
+                      },
+                      "total_data_set_size_in_bytes": {
+                        "type": "long"
+                      }
+                    }
+                  }
+                }
+              },
+              "tier": {
+                "type": "keyword"
+              },
+              "total": {
+                "properties": {
+                  "docs": {
+                    "properties": {
+                      "count": {
+                        "type": "long"
+                      }
+                    }
+                  },
+                  "indexing": {
+                    "properties": {
+                      "index_time_in_millis": {
+                        "type": "long"
+                      },
+                      "index_total": {
+                        "type": "long"
+                      }
+                    }
+                  },
+                  "search": {
+                    "properties": {
+                      "query_time_in_millis": {
+                        "type": "long"
+                      },
+                      "query_total": {
+                        "type": "long"
+                      }
+                    }
+                  },
+                  "store": {
+                    "properties": {
+                      "size_in_bytes": {
+                        "type": "long"
+                      },
+                      "total_data_set_size_in_bytes": {
+                        "type": "long"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "metricset": {
+        "properties": {
+          "name": {
+            "type": "keyword"
+          }
+        }
+      },
+      "source_type": {
+        "type": "keyword"
+      }
+    }
+  }
+}

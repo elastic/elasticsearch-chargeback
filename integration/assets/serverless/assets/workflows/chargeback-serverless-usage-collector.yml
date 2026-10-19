@@ -1,0 +1,126 @@
+version: "1"
+name: Chargeback - Serverless usage collector
+description: >-
+  Collects per-index usage from every Elastic Cloud Serverless project registered
+  in .chargeback-serverless-projects. For each project document, calls _cat/indices
+  and writes rows into monitoring-indices-serverless in the .monitoring-es-*
+  document shape. The stock Chargeback contribution transforms already source
+  monitoring-indices*, so they aggregate this into the same lookup indices as
+  Elastic Cloud Hosted data with no transform changes. Add a project by indexing
+  a document; do not copy this workflow per project. Secrets live only in the
+  project index, never in workflow consts.
+enabled: true
+triggers:
+  - type: manual
+  - type: scheduled
+    with:
+      every: 1h
+consts:
+  staging_index: "monitoring-indices-serverless"
+  projects_index: ".chargeback-serverless-projects"
+  # store.size and pri.store.size are always 0 on Serverless (object storage);
+  # dataset.size is the real figure. bytes=b and time=ms are required so every
+  # value arrives as a plain numeric string with no unit suffix.
+  cat_cols: "index,docs.count,dataset.size,indexing.index_time,indexing.index_total,search.query_time,search.query_total"
+steps:
+  - name: list_projects
+    type: elasticsearch.request
+    with:
+      method: POST
+      path: "/{{consts.projects_index}}/_search"
+      body:
+        # Hard cap: this collector does not paginate. Fail (next step) if more
+        # than 500 projects are registered rather than silently omitting some.
+        size: 500
+        track_total_hits: true
+        query:
+          match_all: {}
+
+  - name: guard_project_limit
+    type: elasticsearch.request
+    with:
+      method: POST
+      path: "/_scripts/painless/_execute"
+      body:
+        script:
+          source: >-
+            int n = Integer.parseInt(params.total);
+            if (n > 500) {
+              throw new IllegalArgumentException(
+                "Chargeback Serverless collector supports at most 500 registered projects; found "
+                + n + ". Reduce the registry or split collectors."
+              );
+            }
+            return n;
+          params:
+            total: "{{ steps.list_projects.output.hits.total.value }}"
+
+  # One registered Serverless project per hit. Continue on per-project failure
+  # so one dead project does not skip the rest. Nested foreach (projects, then
+  # indices) is expressed as foreach + Liquid for-loop bulk write so project_id
+  # stays in scope (outer foreach.item is shadowed inside an inner foreach).
+  - name: for_each_project
+    type: foreach
+    foreach: "{{ steps.list_projects.output.hits.hits | json }}"
+    on-failure:
+      continue: true
+    steps:
+      - name: fetch_cat_indices
+        type: http
+        timeout: "60s"
+        on-failure:
+          continue: true
+          retry:
+            max-attempts: 3
+            delay: "10s"
+            strategy: exponential
+        with:
+          method: GET
+          url: "{{ foreach.item._source.sl_url }}/_cat/indices?h={{consts.cat_cols}}&format=json&bytes=b&time=ms&expand_wildcards=all"
+          headers:
+            Authorization: "ApiKey {{ foreach.item._source.sl_api_key }}"
+
+      # One document per index per run. These are cumulative-counter snapshots,
+      # exactly like Metricbeat produces for ECH: the transforms sum them and the
+      # dashboards divide datastream_sum_X / deployment_sum_X, so snapshot frequency
+      # cancels out and shard-level counter resets can never produce a negative
+      # delta. Do not convert this to a delta calculation.
+      # NDJSON bulk keeps project_id from outer foreach.item in Liquid scope.
+      - name: write_rows
+        type: elasticsearch.request
+        on-failure:
+          continue: true
+        with:
+          method: POST
+          path: "/_bulk"
+          body: |
+            {% for row in steps.fetch_cat_indices.output.data -%}
+            {"index":{"_index":"{{consts.staging_index}}"}}
+            {"idx":{{ row.index | json }},"project":{{ foreach.item._source.project_id | json }},"docs":{{ row["docs.count"] | json }},"dsize":{{ row["dataset.size"] | json }},"itime":{{ row["indexing.index_time"] | json }},"itotal":{{ row["indexing.index_total"] | json }},"qtime":{{ row["search.query_time"] | json }},"qtotal":{{ row["search.query_total"] | json }}}
+            {% endfor %}
+
+      - name: project_summary
+        type: console
+        with:
+          message: "Serverless usage collected for project {{ foreach.item._source.project_id }}"
+
+  # Snapshots are only needed until the day bucket they belong to has been
+  # aggregated, so 30 days is generous. Without this the staging index grows
+  # without bound (indices x 24 per day).
+  - name: prune_old_snapshots
+    type: elasticsearch.request
+    on-failure:
+      continue: true
+    with:
+      method: POST
+      path: "/{{consts.staging_index}}/_delete_by_query"
+      body:
+        query:
+          range:
+            "@timestamp":
+              lt: "now-30d"
+
+  - name: summary
+    type: console
+    with:
+      message: "Serverless usage collector finished for {{ steps.list_projects.output.hits.total.value }} registered projects"

@@ -5,3 +5,4 @@ scripts/e2e_issue_99_proof.log
 
 # Agent/IDE guidance — not part of shipped integration
 integration/AGENTS.md
+__pycache__/
