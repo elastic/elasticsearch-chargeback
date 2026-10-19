@@ -2,7 +2,7 @@
 
 ## Version
 
-Chargeback integration: 0.4.7
+Chargeback integration: 0.5.0
 
 ## Dependencies
 
@@ -39,6 +39,7 @@ This integration must be installed on the **Monitoring cluster** where the above
 | 0.4.5 | 9.2.0+ | 1.7.0+ | Map `composite_key` as keyword; dashboard LOOKUP JOIN uses `composite_key` (not `.keyword`) |
 | 0.4.6 | 9.2.0+ | 1.7.0+ | Usage tier-cost panels: JOIN left side from `cluster_tier_contribution_lookup` for pre-0.4.5 text mappings |
 | 0.4.7 | 9.2.0+ | 1.7.0+ | Fleet pipeline layout (`data_stream/lookup`); capacity utilization runtime keyword for TEXT cluster names |
+| 0.5.0 | 9.2.0+ | 1.7.0+ | Serverless billing pool SKUs; `.monitoring-es-*` usage source (index metricset); fielddata runtime fields |
 
 ## Setup instructions
 

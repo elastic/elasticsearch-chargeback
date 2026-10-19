@@ -18,7 +18,7 @@ See [Requirements](README.md#requirements) for details.
 
 ### 2. Upload ZIP File: 
 
-- Asset: [`chargeback-0.4.7.zip`](assets/0.4.7/chargeback-0.4.7.zip)
+- Asset: [`chargeback-0.5.0.zip`](assets/0.5.0/chargeback-0.5.0.zip)
 - Browse to Integrations, and click on `+ Create new integration`
 
 ![alt text](assets/img/CreateNewIntegration.png)
@@ -31,7 +31,7 @@ See [Requirements](README.md#requirements) for details.
 
 Starting from version 0.2.8, all Chargeback transforms are configured to auto-start upon installation. You no longer need to manually start the transforms.
 
-**Starting from version 0.2.10** (current: **v0.4.7**), the `chargeback_conf_lookup` index is automatically created via a bootstrap transform during installation. No manual setup is required! The transform creates the index with default configuration:
+**Starting from version 0.2.10** (current: **v0.5.0**), the `chargeback_conf_lookup` index is automatically created via a bootstrap transform during installation. No manual setup is required! The transform creates the index with default configuration:
 - **Chargeable unit rate:** 0.85 EUR
 - **Weights:** indexing=20, query=20, storage=40
 - **Date range:** 2010-01-01 to 2046-12-31
@@ -57,8 +57,13 @@ To upgrade the integration, do the following:
 - Upload the new asset (ZIP) file to Kibana.
 - Transforms will auto-start (from version 0.2.8 onwards).
 
+**Upgrading to 0.5.0:**
+- Upload [`chargeback-0.5.0.zip`](assets/0.5.0/chargeback-0.5.0.zip). Adds Serverless allocatable pool SKUs, `.monitoring-es-*` as a usage source (index metricset filter), and keyword runtime fields for fielddata-safe aggregations. Kibana requirement remains 9.2.0+.
+- For Serverless **usage** breakdown (not only billing), install the [Serverless add-on](../serverless/Instructions.md) after the zip.
+- If you upgraded from 0.4.x and transforms stay on old definitions, confirm `fleet_transform_version` is `0.5.0` or reset and restart the affected transforms after upload.
+
 **Upgrading to 0.4.7:**
-- Upload [`chargeback-0.4.7.zip`](assets/0.4.7/chargeback-0.4.7.zip). Includes Fleet pipeline layout under `data_stream/lookup`, conf pipeline rename, and `cluster_capacity_utilization` runtime keyword for TEXT `elasticsearch.cluster.name` on legacy `.monitoring-es-8-mb-*` ([#117](https://github.com/elastic/elasticsearch-chargeback/issues/117)). Also includes 0.4.4–0.4.6 fixes (`config` document ID, keyword `composite_key`, tier-panel JOIN restructure). Kibana requirement remains 9.2.0+.
+- Prefer **0.5.0**. Or upload [`chargeback-0.4.7.zip`](assets/0.4.7/chargeback-0.4.7.zip). Includes Fleet pipeline layout under `data_stream/lookup`, conf pipeline rename, and `cluster_capacity_utilization` runtime keyword for TEXT `elasticsearch.cluster.name` on legacy `.monitoring-es-8-mb-*` ([#117](https://github.com/elastic/elasticsearch-chargeback/issues/117)). Also includes 0.4.4–0.4.6 fixes (`config` document ID, keyword `composite_key`, tier-panel JOIN restructure). Kibana requirement remains 9.2.0+.
 - **If you upgraded from 0.2.10–0.4.3** and already have a hashed-ID bootstrap row: after upgrade creates the `_id` `config` document, copy any customized values with `POST chargeback_conf_lookup/_update/config`, then delete the hashed-ID document so LOOKUP JOIN does not match two overlapping date windows. Do not index a partial document to ID `config` with the index API (`_doc`); that replaces the whole document and can drop required bootstrap fields such as `config_join_key`. Fresh 0.4.4+ installs need no cleanup.
 - If `cluster_capacity_utilization` failed before upgrade on TEXT cluster names, reset and restart that transform after installing 0.4.7 so historical utilization rows backfill.
 
@@ -105,7 +110,7 @@ If the dashboard is empty after install, see **[docs/troubleshooting.md](docs/tr
 
 ## Configuration
 
-Configuration values are stored in the `chargeback_conf_lookup` index, which is automatically created by version 0.2.10+ (current: **v0.4.7**). The dashboard automatically applies the correct configuration based on the billing date falling within the `conf_start_date` and `conf_end_date` range.
+Configuration values are stored in the `chargeback_conf_lookup` index, which is automatically created by version 0.2.10+ (current: **v0.5.0**). The dashboard automatically applies the correct configuration based on the billing date falling within the `conf_start_date` and `conf_end_date` range.
 
 ### Update the default configuration:
 

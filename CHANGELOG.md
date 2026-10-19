@@ -6,29 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### Chargeback 0.5.0 — pending [elastic/integrations#20688](https://github.com/elastic/integrations/pull/20688)
-
-The package source change lives in the integrations PR above, against `wip-johannes-chargeback`. The built zip is **not** committed here yet: per [scripts/PR_AND_RELEASE_CHECKLIST.md](scripts/PR_AND_RELEASE_CHECKLIST.md) the artifact must be an `elastic-package build` of that branch, produced by `./scripts/release_chargeback.sh`. This entry becomes a released version once that has run and the step-12 E2E proof is attached.
-
-#### Added (package, in integrations#20688)
-
-- **Elastic Cloud Serverless support.** `billing_realized_pool` also matches Serverless capacity SKUs (`elasticsearch.*-search-vcu_*`, `elasticsearch.*-ingest-vcu_*`, `elasticsearch.retained_*` where `deployment_type` is `elasticsearch`). Previously only ECH `*.es.data*.*` node SKUs matched, so every serverless cost row was `is_allocatable: false` and `billing_realized_pool_lookup` had no serverless rows — no serverless cost could be attributed to a tier or data stream. ML VCU is deliberately excluded, matching how ECH treats ML as `cost_category: platform`.
-- Usage transforms also source `.monitoring-es-*`, so Chargeback works with **Elastic Cloud Console → Logs and metrics** (Cloud-managed Metricbeat) instead of requiring the Agent-based Elasticsearch integration.
-
-#### Fixed (package, in integrations#20688)
-
-- **`Fielddata is disabled on [elasticsearch.cluster.name]`, retrying forever.** Where the `.monitoring-es-mb` index template is not governing the `.monitoring-es-8-mb` data stream, dynamic mapping produces `text` plus a `.keyword` subfield and a `terms` aggregation on the text field throws. The five affected string fields are now read through keyword runtime fields that prefer the `.keyword` subfield; both branches use doc values. Same class of problem 0.4.3 fixed for `composite_key`. Also affects `cluster_capacity_utilization`, which has sourced `.monitoring-es-*` since 0.4.0.
-
-#### Added (this repo)
-
-- **Pure Chargeback vs add-ons.** The Fleet zip stays pure chargeback (allocate invoice cost from billing and usage, including Serverless billing SKUs in 0.5.0). Serverless usage collection and the Agent Builder agent ship as add-ons in this repository with install scripts; they are not in the Fleet zip.
-- **[`serverless/`](serverless/README.md)** — looping Kibana Workflow that reads projects from `.chargeback-serverless-projects` (secrets stay in the index, not in workflow consts), collects per-index usage via `_cat/indices`, and writes `.monitoring-es-*` shape into `monitoring-indices-serverless`. Install with [`scripts/install_serverless_usage.sh`](scripts/install_serverless_usage.sh).
-- **[`agent/`](agent/README.md)** — optional **Chargeback companion** Agent Builder agent (report-first), skills, ES|QL tools, workflow-backed `chargeback.cost_review`, and [`scripts/install_chargeback_agent.sh`](scripts/install_chargeback_agent.sh).
-
-
 ---
 
 ## Integration Releases
+
+### [0.5.0] - 2026-10-19
+
+#### Added (package)
+
+- **Elastic Cloud Serverless billing support.** `billing_realized_pool` also matches Serverless capacity SKUs (`elasticsearch.*-search-vcu_*`, `elasticsearch.*-ingest-vcu_*`, `elasticsearch.retained_*` where `deployment_type` is `elasticsearch`). ML VCU stays out of the allocatable pool.
+- Usage transforms also source `.monitoring-es-*` (index metricset only), so Chargeback works with **Elastic Cloud Console → Logs and metrics** without requiring the Agent-based Elasticsearch integration for that path.
+
+#### Fixed (package)
+
+- **`Fielddata is disabled on [elasticsearch.cluster.name]`, retrying forever.** Keyword runtime fields for cluster and index name fields on usage and capacity transforms.
+
+#### Added (this repo — add-ons, not in the Fleet zip)
+
+- **Pure Chargeback vs add-ons** documented in the root README.
+- **[`serverless/`](serverless/README.md)** — looping Serverless usage collector and [`scripts/install_serverless_usage.sh`](scripts/install_serverless_usage.sh).
+- **[`agent/`](agent/README.md)** — optional Chargeback companion and [`scripts/install_chargeback_agent.sh`](scripts/install_chargeback_agent.sh).
+
+#### Changed
+
+- Package **0.5.0** keeps Kibana `^9.2.0`. Asset: [`integration/assets/0.5.0/chargeback-0.5.0.zip`](integration/assets/0.5.0/chargeback-0.5.0.zip). Source: [elastic/integrations#22057](https://github.com/elastic/integrations/pull/22057) (supersedes conflicted #20688). E2E step 12 (#99/#104) PASS on stack 9.2.2; zip SHA-256 `f02d424491e9d7fa4ed7e559733b8e341b745506cae1413e38909be80cb2ec74`.
 
 ### [0.4.7] - 2026-09-23
 
