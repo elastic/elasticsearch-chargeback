@@ -29,7 +29,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 #### Changed
 
-- Package **0.5.0** keeps Kibana `^9.2.0`. Asset: [`integration/assets/0.5.0/chargeback-0.5.0.zip`](integration/assets/0.5.0/chargeback-0.5.0.zip). Source: [elastic/integrations#22057](https://github.com/elastic/integrations/pull/22057) (supersedes conflicted #20688). E2E step 12 (#99/#104) PASS on stack 9.2.2; zip SHA-256 `f02d424491e9d7fa4ed7e559733b8e341b745506cae1413e38909be80cb2ec74`.
+- Package **0.5.0** keeps Kibana `^9.2.0`. Asset: [`integration/assets/0.5.0/chargeback-0.5.0.zip`](integration/assets/0.5.0/chargeback-0.5.0.zip). Source: draft [elastic/integrations#22057](https://github.com/elastic/integrations/pull/22057) (supersedes conflicted #20688). Usage transforms use `monitoring-indices*` only (Cloud Console via index_pivot; avoids double-counting raw `.monitoring-es-*`). Zip SHA-256 `b97d98ff1887636c5be7ef01ecdfa78e0c1f34b71cf3db4cb9d22eb836fe18af`.
 
 ### [0.4.7] - 2026-09-23
 
