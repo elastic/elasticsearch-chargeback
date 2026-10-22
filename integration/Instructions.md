@@ -68,19 +68,19 @@ To upgrade the integration, do the following:
 - If `cluster_capacity_utilization` failed before upgrade on TEXT cluster names, reset and restart that transform after installing 0.4.7 so historical utilization rows backfill.
 
 **Upgrading to 0.4.4:**
-- Prefer **0.4.7** (or upload `chargeback-0.4.4.zip` only if you cannot take a newer asset). The bootstrap transform writes the default configuration document with `_id` `config`, so `POST chargeback_conf_lookup/_update/config` works as documented ([#110](https://github.com/elastic/elasticsearch-chargeback/issues/110)). Kibana requirement remains 9.2.0+.
+- Prefer **0.5.0** (or upload `chargeback-0.4.4.zip` only if you cannot take a newer asset). The bootstrap transform writes the default configuration document with `_id` `config`, so `POST chargeback_conf_lookup/_update/config` works as documented ([#110](https://github.com/elastic/elasticsearch-chargeback/issues/110)). Kibana requirement remains 9.2.0+.
 
 **Upgrading to 0.4.3:**
-- Upload `chargeback-0.4.3.zip` (or go directly to `0.4.7`). Replaces Billing and Usage dashboard saved objects that still used `COALESCE(..., conf_ecu_rate)` / `total_ecu` after 0.4.2 ([#104](https://github.com/elastic/elasticsearch-chargeback/issues/104)). No transform reset required. Kibana requirement remains 9.2.0+.
+- Upload `chargeback-0.4.3.zip` (or go directly to `0.5.0`). Replaces Billing and Usage dashboard saved objects that still used `COALESCE(..., conf_ecu_rate)` / `total_ecu` after 0.4.2 ([#104](https://github.com/elastic/elasticsearch-chargeback/issues/104)). No transform reset required. Kibana requirement remains 9.2.0+.
 
 **Upgrading to 0.4.2:**
-- Upload `chargeback-0.4.2.zip` (or go directly to `0.4.7`). Replaces dashboard saved objects that still referenced legacy `conf_ecu_rate*` columns on the Configuration dashboard or used bare `@timestamp` in `LOOKUP JOIN` ON clauses ([#104](https://github.com/elastic/elasticsearch-chargeback/issues/104), [#105](https://github.com/elastic/elasticsearch-chargeback/issues/105)). No transform reset required. Kibana requirement remains 9.2.0+.
+- Upload `chargeback-0.4.2.zip` (or go directly to `0.5.0`). Replaces dashboard saved objects that still referenced legacy `conf_ecu_rate*` columns on the Configuration dashboard or used bare `@timestamp` in `LOOKUP JOIN` ON clauses ([#104](https://github.com/elastic/elasticsearch-chargeback/issues/104), [#105](https://github.com/elastic/elasticsearch-chargeback/issues/105)). No transform reset required. Kibana requirement remains 9.2.0+.
 
 **Upgrading to 0.4.1:**
-- Upload `chargeback-0.4.1.zip` (or go directly to `0.4.7`). Usage transforms gain `ds_type` / `ds_namespace` and all lookups gain `event.ingested`. Reset usage transforms if you need historical rows enriched. Kibana requirement remains 9.2.0+.
+- Upload `chargeback-0.4.1.zip` (or go directly to `0.5.0`). Usage transforms gain `ds_type` / `ds_namespace` and all lookups gain `event.ingested`. Reset usage transforms if you need historical rows enriched. Kibana requirement remains 9.2.0+.
 
 **Upgrading from 0.3.x to 0.4.0:**
-- Upload `chargeback-0.4.0.zip` (or go directly to `0.4.7`). Two new transforms (`billing_realized_pool`, `cluster_capacity_utilization`) are created and auto-started.
+- Upload `chargeback-0.4.0.zip` (or go directly to `0.5.0`). Two new transforms (`billing_realized_pool`, `cluster_capacity_utilization`) are created and auto-started.
 - The old `[Chargeback] Cost and Consumption breakdown` dashboard is replaced by three new dashboards (`[Chargeback] Billing Components Overview`, `[Chargeback] Usage & Cost Allocation`, and `[Chargeback] Configuration`). If Kibana does not replace the old dashboard automatically, delete it and re-import from **Saved Objects**.
 - Reset and restart the `billing_cluster_cost` transform to backfill `cost_type`, `cost_category`, and `is_allocatable` into existing lookup documents. Until the backfill completes, "Cost by component (SKU)" panels will show no data.
 - Ensure `node_stats` data is flowing into `metrics-elasticsearch.stack_monitoring.node_stats-*` for the utilization transform. Without this, `cluster_capacity_utilization_lookup` will be empty and utilization defaults to 100% (full provisioned cost charged to all tiers).

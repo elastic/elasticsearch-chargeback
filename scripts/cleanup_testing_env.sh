@@ -105,7 +105,7 @@ fi
 
 # 5. Delete indices created by testing
 echo "--- 5. Delete testing indices ---"
-for idx in billing_cluster_cost_lookup chargeback_conf_lookup cluster_datastream_contribution_lookup cluster_deployment_contribution_lookup cluster_tier_and_datastream_contribution_lookup cluster_tier_contribution_lookup monitoring-indices monitoring-indices-serverless .chargeback-serverless-projects onprem_billing_config; do
+for idx in billing_cluster_cost_lookup billing_realized_pool_lookup chargeback_conf_lookup cluster_capacity_utilization_lookup cluster_datastream_contribution_lookup cluster_deployment_contribution_lookup cluster_tier_and_datastream_contribution_lookup cluster_tier_contribution_lookup monitoring-indices monitoring-indices-serverless .chargeback-serverless-projects onprem_billing_config metrics-ess_billing.billing-onprem; do
   resp=$(curl_es -sS -X DELETE "$ES_HOST/$idx" 2>/dev/null)
   if echo "$resp" | grep -q '"acknowledged":true'; then
     echo "Deleted $idx"

@@ -1,5 +1,6 @@
 sync_data_locally.sh
 .DS_Store
+.env
 scripts/evidence_lookup_indices.txt
 scripts/e2e_issue_99_proof.log
 

@@ -1,6 +1,6 @@
 # Chargeback troubleshooting
 
-This guide helps when Chargeback dashboards are empty or incomplete, even though transforms appear to be running. It applies to the **Chargeback integration** installed from this repository (current release asset: **`chargeback-0.4.7.zip`** in [`integration/assets/0.4.7/`](../assets/0.4.7/)).
+This guide helps when Chargeback dashboards are empty or incomplete, even though transforms appear to be running. It applies to the **Chargeback integration** installed from this repository (current release asset: **`chargeback-0.5.0.zip`** in [`integration/assets/0.5.0/`](../assets/0.5.0/)).
 
 For prerequisites, installation, and configuration, see [integration README](../README.md) and [Instructions.md](../Instructions.md).
 
@@ -17,19 +17,23 @@ Confirm these three facts (most empty-dashboard cases fail one of them):
 ```text
 ESS Billing integration
   → metrics-ess_billing.billing-*
-  → billing_cluster_cost transform
-  → billing_cluster_cost_lookup
+  → billing_cluster_cost + billing_realized_pool transforms
+  → billing_cluster_cost_lookup + billing_realized_pool_lookup
 
 Elasticsearch integration + index_pivot transform (must be started manually)
   → monitoring-indices*  (default destination: monitoring-indices)
   → cluster_*_contribution transforms
   → cluster_*_contribution_lookup indices
 
+Node stats (metrics-elasticsearch.stack_monitoring.node_stats-* / .monitoring-es-* / metricbeat-*)
+  → cluster_capacity_utilization transform
+  → cluster_capacity_utilization_lookup
+
 chargeback_conf_lookup (config; date range for cost conversion)
   → joined in dashboard ES|QL
 
 Dashboard ES|QL
-  → LOOKUP JOIN on billing + config (+ usage lookups for blended panels)
+  → LOOKUP JOIN on billing + config (+ usage / utilization lookups for blended panels)
 ```
 
 Chargeback does **not** collect billing or usage by itself. If upstream integrations or `index_pivot` are missing, Chargeback transforms may run but produce empty or non-joinable lookup indices.
@@ -39,7 +43,7 @@ Chargeback does **not** collect billing or usage by itself. If upstream integrat
 | Component | Minimum (documented) | Notes |
 |-----------|----------------------|--------|
 | Monitoring cluster (Elasticsearch) | **9.2.0+** | See [Instructions.md](../Instructions.md) |
-| Chargeback integration | **0.4.7** | ZIP in `integration/assets/0.4.7/` |
+| Chargeback integration | **0.5.0** | ZIP in `integration/assets/0.5.0/` |
 | Elasticsearch Service Billing | **1.4.1+** | **1.7.0+** if using `chargeback_group` deployment tags |
 | Elasticsearch integration | **1.16.0+** | Usage / stack monitoring collection |
 | `logs-elasticsearch.index_pivot-default-{VERSION}` | Must be **started** | Not started by default in the Elasticsearch integration |
@@ -93,12 +97,14 @@ Open **[Elasticsearch] Indices & data streams usage**. If it is empty, fix Elast
 
 ## Step 2 — Verify Chargeback transforms
 
-In **Stack Management → Transforms**, filter by **`chargeback`**. The integration installs **six** transforms (from **0.2.8** onward they are configured to auto-start on install):
+In **Stack Management → Transforms**, filter by **`chargeback`**. The integration installs **eight** transforms (from **0.2.8** onward they are configured to auto-start on install):
 
 | Transform (asset name) | Destination lookup index | Schedule |
 |------------------------|--------------------------|----------|
 | `chargeback_conf_lookup` | `chargeback_conf_lookup` | No periodic `frequency`; runs when started / on package update |
-| `billing_cluster_cost` | `billing_cluster_cost_lookup` | `frequency: 60m`, sync delay **1h** on `event.ingested` |
+| `billing_cluster_cost` | `billing_cluster_cost_lookup` | `frequency: 60m`, sync delay **1h** on `@timestamp` |
+| `billing_realized_pool` | `billing_realized_pool_lookup` | `frequency: 60m`, sync delay **1h** on `@timestamp` |
+| `cluster_capacity_utilization` | `cluster_capacity_utilization_lookup` | `frequency: 60m`, sync delay **1h** on `@timestamp` |
 | `cluster_deployment_contribution` | `cluster_deployment_contribution_lookup` | `frequency: 60m`, sync delay **1h** on `@timestamp` |
 | `cluster_datastream_contribution` | `cluster_datastream_contribution_lookup` | `frequency: 60m`, sync delay **1h** on `@timestamp` |
 | `cluster_tier_contribution` | `cluster_tier_contribution_lookup` | `frequency: 60m`, sync delay **1h** on `@timestamp` |
@@ -108,7 +114,7 @@ Fleet transform IDs typically look like:
 
 `logs-chargeback.<transform_name>-default-<fleet_transform_version>`
 
-Example: `logs-chargeback.billing_cluster_cost-default-0.3.2`
+Example: `logs-chargeback.billing_cluster_cost-default-0.5.0`
 
 Check each transform:
 
@@ -123,7 +129,7 @@ If transforms are stopped after upgrade, start them manually.
 
 After install or a full reprocess, lookup indices may stay empty for **one to two hours** because:
 
-- `billing_cluster_cost` runs every **60 minutes** with a **1 hour** ingest delay.
+- `billing_cluster_cost` and `billing_realized_pool` run every **60 minutes** with a **1 hour** sync delay on `@timestamp`.
 - Contribution transforms use a **1 hour** sync delay on `@timestamp`.
 
 To trigger an immediate run during testing (replace `<transform_id>`):
@@ -137,6 +143,8 @@ POST _transform/<transform_id>/_schedule_now
 
 ```json
 GET billing_cluster_cost_lookup/_count
+GET billing_realized_pool_lookup/_count
+GET cluster_capacity_utilization_lookup/_count
 GET cluster_deployment_contribution_lookup/_count
 GET cluster_datastream_contribution_lookup/_count
 GET chargeback_conf_lookup/_search
@@ -144,7 +152,8 @@ GET chargeback_conf_lookup/_search
 
 | Lookup index | If count is 0 |
 |--------------|----------------|
-| `billing_cluster_cost_lookup` | No billing data, all `total_ecu` <= 0, transform stopped/failed, or still within sync/frequency window |
+| `billing_cluster_cost_lookup` / `billing_realized_pool_lookup` | No billing data, all `total_ecu` <= 0, transform stopped/failed, or still within sync/frequency window |
+| `cluster_capacity_utilization_lookup` | No `node_stats` data (or Serverless-only environment; utilization defaults to 100%) |
 | `cluster_*_contribution_lookup` | No `monitoring-indices*` data, `index_pivot` not started, or transform error |
 | `chargeback_conf_lookup` | Bootstrap transform not run yet, no billing docs in source, or transform failed |
 
@@ -206,7 +215,7 @@ FROM billing_cluster_cost_lookup
 **Billing + usage correlation (blended / tier / data stream panels):**
 
 ```esql
-FROM billing_cluster_cost_lookup
+FROM billing_realized_pool_lookup
 | LOOKUP JOIN cluster_deployment_contribution_lookup ON composite_key
 | STATS rows = COUNT(*) BY composite_key
 | LIMIT 20
@@ -218,10 +227,10 @@ FROM billing_cluster_cost_lookup
 
 ## Step 6 — Dashboard-specific checks
 
-- Dashboard name: **[Chargeback] Cost and Consumption breakdown**
-- Time picker must include dates present in `billing_cluster_cost_lookup` (`@timestamp` is daily, midnight UTC).
+- Dashboards (0.4.0+): **[Chargeback] Billing Components Overview**, **[Chargeback] Usage & Cost Allocation**, and **[Chargeback] Configuration** (replacing the pre-0.4.0 **[Chargeback] Cost and Consumption breakdown** dashboard)
+- Time picker must include dates present in `billing_cluster_cost_lookup` / `billing_realized_pool_lookup` (`@timestamp` is daily, midnight UTC).
 - Clear **Deployment name** and **Deployment group** controls (or set explicitly).
-- Panels with **`Unknown column [total_ecu]`** / **`[conf_ecu_rate]`** → see [Unknown column errors (0.3.1)](#unknown-column-total_ecu-or-conf_ecu_rate-031). On **0.4.2**, upgrade to **0.4.3** so Billing and Usage panels stop referencing those legacy names in ES|QL.
+- Panels with **`Unknown column [total_ecu]`** / **`[conf_ecu_rate]`** → see [Unknown column errors (0.3.1)](#unknown-column-total_ecu-or-conf_ecu_rate-031). On **0.4.2**, upgrade to **0.4.3+** so Billing and Usage panels stop referencing those legacy names in ES|QL.
 
 ## Small differences versus the ESS Billing dashboard
 

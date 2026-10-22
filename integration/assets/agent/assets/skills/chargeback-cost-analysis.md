@@ -20,8 +20,8 @@ Everything joins on `composite_key`, which is `YYYY-MM-DD_<deployment_id>`.
 
 `chargeback_conf_lookup` holds the currency rate and the weights. Every cost figure is
 `chargeable_units x conf_chargeable_unit_rate`, so **always read the configuration before
-quoting a currency amount** — the rate and the currency are customer-configurable and
-customer-configurable. Never assume 0.85 EUR — always read `conf_chargeable_unit_rate` and `conf_chargeable_unit_rate_unit` from `chargeback_conf_lookup` or `chargeback.configuration`.
+quoting a currency amount** — the rate and the currency are customer-configurable.
+Never assume 0.85 EUR — always read `conf_chargeable_unit_rate` and `conf_chargeable_unit_rate_unit` from `chargeback_conf_lookup` or `chargeback.configuration`.
 
 ## How cost is attributed to a data stream
 
