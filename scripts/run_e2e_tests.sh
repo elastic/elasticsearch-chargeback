@@ -328,8 +328,15 @@ fi
 # 7. Build and install Chargeback
 echo "--- 7. Build and install Chargeback ---"
 if [[ "$REPLACE_CHARGEBACK_DASHBOARD" == "1" ]]; then
-  echo "Replacing Chargeback dashboard/index pattern from local package (REPLACE_CHARGEBACK_DASHBOARD=1)."
-  curl_kibana -X DELETE "$KIBANA_HOST/api/saved_objects/dashboard/chargeback-39a39857-746c-4a29-adca-3c2fcb6bcfb6" >/dev/null 2>&1 && echo "  Deleted Chargeback dashboard." || true
+  echo "Replacing Chargeback dashboards/index pattern from local package (REPLACE_CHARGEBACK_DASHBOARD=1)."
+  for dash_id in \
+    chargeback-b6cecac0-ebe7-43de-bfc6-1ff287ad860a \
+    chargeback-21588d0e-fb6a-4f76-ad2f-cd7b3d7a3d7c \
+    chargeback-7ec9743a-ccfa-43d2-8311-2f25893dadae \
+    chargeback-39a39857-746c-4a29-adca-3c2fcb6bcfb6
+  do
+    curl_kibana -X DELETE "$KIBANA_HOST/api/saved_objects/dashboard/$dash_id" >/dev/null 2>&1 && echo "  Deleted Chargeback dashboard $dash_id." || true
+  done
   curl_kibana -X DELETE "$KIBANA_HOST/api/saved_objects/index-pattern/chargeback_integration" >/dev/null 2>&1 && echo "  Deleted Chargeback index pattern." || true
 fi
 if [[ "$CHARGEBACK_INSTALL_FROM" == "zip" ]]; then
@@ -503,7 +510,7 @@ echo "--- 9. Verification ---"
 echo "Transforms (chargeback):"
 curl_es "$ES_HOST/_transform?size=50" 2>/dev/null | grep -o '"id":"[^"]*chargeback[^"]*"' || true
 echo "Lookup indices (chargeback) — document counts:"
-for idx in billing_cluster_cost_lookup billing_realized_pool_lookup chargeback_conf_lookup cluster_datastream_contribution_lookup cluster_deployment_contribution_lookup cluster_tier_and_datastream_contribution_lookup cluster_tier_contribution_lookup; do
+for idx in billing_cluster_cost_lookup billing_realized_pool_lookup chargeback_conf_lookup cluster_capacity_utilization_lookup cluster_datastream_contribution_lookup cluster_deployment_contribution_lookup cluster_tier_and_datastream_contribution_lookup cluster_tier_contribution_lookup; do
   count=$(curl_es "$ES_HOST/$idx/_count" 2>/dev/null | grep -oE '"count":[0-9]+' | sed 's/"count"://')
   echo "  $idx: ${count:-0} docs"
 done
@@ -530,7 +537,7 @@ if command -v jq >/dev/null 2>&1 && [[ -n "$cat_resp" ]]; then
   LOOKUP_INDICES=$(echo "$cat_resp" | jq -r '.[].index' 2>/dev/null | sort -u)
 fi
 if [[ -z "$LOOKUP_INDICES" ]]; then
-  LOOKUP_INDICES="billing_cluster_cost_lookup chargeback_conf_lookup cluster_datastream_contribution_lookup cluster_deployment_contribution_lookup cluster_tier_and_datastream_contribution_lookup cluster_tier_contribution_lookup"
+  LOOKUP_INDICES="billing_cluster_cost_lookup billing_realized_pool_lookup chargeback_conf_lookup cluster_capacity_utilization_lookup cluster_datastream_contribution_lookup cluster_deployment_contribution_lookup cluster_tier_and_datastream_contribution_lookup cluster_tier_contribution_lookup"
 fi
 EVIDENCE_FILE="$CHARGEBACK_REPO/scripts/evidence_lookup_indices.txt"
 {

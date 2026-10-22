@@ -127,9 +127,9 @@ Chargeback will create `chargeback_conf_lookup` and start its transforms. Verify
 
 ## Verification
 
-- **Transforms:** `billing_cluster_cost`, `chargeback_conf_lookup`, `cluster_deployment_contribution`, `cluster_datastream_contribution`, `cluster_tier_contribution`, `cluster_tier_and_ds_contribution`.
-- **Lookup indices:** `billing_cluster_cost_lookup`, `chargeback_conf_lookup`, `cluster_*_contribution_lookup`.
-- **Dashboard:** **Dashboards** → `[Chargeback] Cost and Consumption breakdown`. Newer Chargeback versions use TO_DOUBLE() for chargeable units (avoids integer-division errors).
+- **Transforms:** `billing_cluster_cost`, `billing_realized_pool`, `chargeback_conf_lookup`, `cluster_capacity_utilization`, `cluster_deployment_contribution`, `cluster_datastream_contribution`, `cluster_tier_contribution`, `cluster_tier_and_ds_contribution`.
+- **Lookup indices:** `billing_cluster_cost_lookup`, `billing_realized_pool_lookup`, `chargeback_conf_lookup`, `cluster_capacity_utilization_lookup`, `cluster_*_contribution_lookup`.
+- **Dashboards:** **Dashboards** → `[Chargeback] Billing Components Overview`, `[Chargeback] Usage & Cost Allocation`, and `[Chargeback] Configuration`.
 
 ---
 

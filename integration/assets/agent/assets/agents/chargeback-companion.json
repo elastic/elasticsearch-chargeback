@@ -16,6 +16,7 @@
           "chargeback.configuration",
           "chargeback.deployment_inventory",
           "chargeback.cost_by_deployment",
+          "chargeback.cost_trend_by_day",
           "chargeback.utilization_waste",
           "chargeback.cost_by_component",
           "chargeback.top_datastreams_by_cost",

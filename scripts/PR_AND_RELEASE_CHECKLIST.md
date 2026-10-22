@@ -4,35 +4,21 @@ Use this when cutting a release across **elastic/integrations** and **elastic/el
 
 ## Branch line (integrations)
 
-**Base branch for Chargeback PRs:** `wip-johannes-chargeback` (not `main`) until Chargeback is GA.
+**Base branch for Chargeback PRs:** `wip-johannes-chargeback` (or `main` when merging package updates upstream).
 
-## PR map (less convoluted)
-
-| PR | State | What it is | What to do |
-|----|--------|------------|------------|
-| [integrations#18102](https://github.com/elastic/integrations/pull/18102) | Open, **CONFLICTING** | 0.3.1 chargeable-unit rename (old branch `wip-johannes-chargeback-chargable-units`) | **Close** — 0.3.1 is already on `wip-johannes-chargeback`; branch is stale after #18269 merged |
-| [integrations#18269](https://github.com/elastic/integrations/pull/18269) | **Merged** | 0.3.2 `monitoring-indices*` for usage transforms | Done — this is the correct integrations PR for 0.3.2 |
-| **New PR** (you) | — | 0.3.2 bugfix: legacy ECU **field aliases** for dashboard ES|QL ([#99](https://github.com/elastic/elasticsearch-chargeback/issues/99)) | Open **one** PR: `fix/chargeback-99-esql-dual-write` → `wip-johannes-chargeback` |
-
-Do **not** reopen or stack more commits on #18269’s merged branch name. Do **not** try to merge #18102; resolve by closing with a short comment.
-
-### Suggested integrations workflow for #99 fix
+### Suggested integrations workflow
 
 ```bash
 cd /path/to/integrations
-git fetch origin wip-johannes-chargeback
-git checkout -b fix/chargeback-99-esql-dual-write origin/wip-johannes-chargeback
+git fetch origin
+git checkout -b feat/chargeback-<version>-<topic> origin/wip-johannes-chargeback
 
-# Apply package changes (legacy field aliases in lookup mappings, changelog → links to elasticsearch-chargeback#99)
-# Do not reference integrations#18102 in new changelog lines.
-
+# Apply package changes under packages/chargeback/ (manifest.yml, transforms, pipelines, dashboards, changelog.yml)
 git add packages/chargeback/
-git commit -m "fix(chargeback): add legacy ECU aliases for dashboard ES|QL (0.3.2)"
-git push -u origin fix/chargeback-99-esql-dual-write
-gh pr create --base wip-johannes-chargeback --title "Chargeback 0.3.2: legacy ECU aliases for dashboard ES|QL" --body "Fixes elastic/elasticsearch-chargeback#99. Follow-up to #18269 (merged). Closes dashboard Unknown column [total_ecu] / [conf_ecu_rate] on 0.3.1 lookups."
+git commit -m "feat(chargeback): <summary> (<version>)"
+git push -u origin feat/chargeback-<version>-<topic>
+gh pr create --base wip-johannes-chargeback --title "Chargeback <version>: <summary>"
 ```
-
-Keep **one changelog bugfix** under `0.3.2` if that version is not published yet; use `0.3.3` only if 0.3.2 is already shipped externally.
 
 ### elasticsearch-chargeback companion PR (pairs with integrations PR)
 
@@ -40,16 +26,16 @@ Keep **one changelog bugfix** under `0.3.2` if that version is not published yet
 
 | Order | Works? | Notes |
 |-------|--------|--------|
-| Both PRs open together | Yes | Zip is built from the **same integrations branch commit** as the package PR (e.g. #19196). Reviewers see matching code + artifact + E2E proof. |
+| Both PRs open together | Yes | Zip is built from the **same integrations branch commit** as the package PR. Reviewers see matching code + artifact + E2E proof. |
 | Integrations merged first | Preferred | Then merge chargeback PR (zip already matches). If integrations gets a fixup commit, re-run `./scripts/release_chargeback.sh --skip-e2e` and push to the chargeback PR. |
-| Chargeback merged first | OK | Zip still valid if built from integrations PR head; link #19196 in the chargeback PR body. |
+| Chargeback merged first | OK | Zip still valid if built from integrations PR head; link the integrations PR in the chargeback PR body. |
 
-The chargeback repo does **not** block integrations merge. It ships the **downloadable zip** and **E2E evidence** for Field/customers.
+The chargeback repo does **not** block integrations merge. It ships the **downloadable zip**, **add-ons**, and **E2E evidence** for Field/customers.
 
-1. On integrations branch (e.g. `fix/chargeback-99-esql-dual-write`): merge-ready package commit.
-2. Run `./scripts/release_chargeback.sh --cleanup-first --replace-dashboard` from elasticsearch-chargeback.
-3. Open chargeback PR: `integration/assets/0.3.2/chargeback-0.3.2.zip`, scripts, troubleshooting — link **integrations #19196** and **#99**.
-4. Paste E2E step 12 output into **both** PR descriptions (written locally to `/tmp/chargeback_e2e_issue_99_proof.log` by `release_chargeback.sh`; do not commit).
+1. On integrations branch: merge-ready package commit.
+2. Run `./scripts/release_chargeback.sh --cleanup-first --replace-dashboard` from `elasticsearch-chargeback`.
+3. Open chargeback PR: `integration/assets/<version>/chargeback-<version>.zip`, `CHANGELOG.md`, `integration/README.md`, `integration/Instructions.md`, `integration/docs/troubleshooting.md`, scripts.
+4. Paste E2E output (Steps 12–15) into the PR description.
 
 ---
 
@@ -113,7 +99,7 @@ Each package version needs a git tag and a GitHub Release so people can subscrib
 
 Convention (matches existing releases):
 
-- Tag: `integration-<version>` (for example `integration-0.4.3`)
+- Tag: `integration-<version>` (for example `integration-0.5.0`)
 - Title: `Chargeback Integration <version>`
 - Asset: `integration/assets/<version>/chargeback-<version>.zip`
 - Marked as a pre-release until Chargeback is generally available
@@ -123,8 +109,8 @@ Convention (matches existing releases):
 **Manual / backfill** (from `main`, after merge):
 
 ```bash
-./scripts/create_github_release.sh --dry-run --version 0.4.3
-./scripts/create_github_release.sh --version 0.4.3
+./scripts/create_github_release.sh --dry-run --version 0.5.0
+./scripts/create_github_release.sh --version 0.5.0
 ./scripts/create_github_release.sh --missing
 ```
 
@@ -138,5 +124,6 @@ Do not tag a feature branch. The script refuses to run off `main` unless you pas
 
 | Repo | Branch | Action |
 |------|--------|--------|
-| **integrations** | `fix/chargeback-99-…` → `wip-johannes-chargeback` | New PR for alias fix (#99); close #18102; #18269 already merged |
+| **integrations** | `feat/chargeback-<version>-…` → `wip-johannes-chargeback` | Package changes under `packages/chargeback/` |
 | **elasticsearch-chargeback** | your release branch → `main` | `./scripts/release_chargeback.sh`, commit zip + scripts + docs, PR. Tag and GitHub Release are created on merge. |
+
