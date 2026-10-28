@@ -398,7 +398,7 @@ BILLING_KPI_TEMPLATE = f"""\
   </div>
   <div class="cb-kpi">
     <div class="cb-kpi-label">Days of Data</div>
-    <div class="cb-kpi-value">{{{{ r["days_count"].value | default: (r["billed_days"].value | default: 0) }}}}</div>
+    <div class="cb-kpi-value">{{{{ r["days_count"].value | default: 0 }}}}</div>
     <div class="cb-kpi-sub">In selected time range</div>
   </div>
   <div class="cb-kpi">
@@ -699,6 +699,66 @@ AI_MODELS_TEMPLATE = f"""\
     <div class="cb-num" style="font-weight: 600;"><span style="font-size:0.8rem; opacity:0.8;">{{{{ sym }}}}</span> {{{{ fmt_cost }}}}</div>
   </div>
 {{% endfor %}}
+</div>
+"""
+
+
+DAILY_PROJECT_COST_TEMPLATE = f"""\
+<style>
+  .cb-tbl-wrap {{ max-height: 100%; overflow: auto; }}
+  table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; }}
+  table.cb-t th {{
+    position: sticky; top: 0; background: var(--cc-color-surface); z-index: 1;
+    text-align: left; padding: 6px 8px; border-bottom: 2px solid var(--cc-color-border);
+    font-weight: 600; opacity: 0.75; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em;
+  }}
+  table.cb-t td {{ padding: 6px 8px; border-bottom: 1px solid var(--cc-color-border); }}
+  table.cb-t th.num, table.cb-t td.num {{ text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }}
+  .cb-sym {{ font-weight: 500; opacity: 0.85; margin-right: 2px; }}
+  .cb-bar-track {{
+    height: 10px; background: var(--cc-color-border);
+    border-radius: var(--cc-radius-s, 4px); overflow: hidden; min-width: 120px;
+  }}
+  .cb-bar {{ height: 100%; background: var(--cc-vis-0, #3274D9); min-width: 2px; }}
+  .cb-date-badge {{
+    display: inline-block; padding: 2px 6px; border-radius: 4px;
+    font-size: 0.78rem; font-weight: 600; font-variant-numeric: tabular-nums;
+    background: var(--cc-color-lightShade, #f0f3f6); color: var(--cc-color-text, #1a1c21);
+    white-space: nowrap;
+  }}
+</style>
+{{% assign unit = rows[0]["unit"].value | default: "ECU" %}}
+{{% assign sym = rows[0]["currency_symbol"].value | default: unit %}}
+{{% assign max_cost = 1.0 %}}
+{{% for row in rows %}}
+  {{% assign c = row["cost"].value | default: 0.0 %}}
+  {{% if c > max_cost %}}{{% assign max_cost = c %}}{{% endif %}}
+{{% endfor %}}
+<div class="cb-tbl-wrap">
+<table class="cb-t">
+  <thead>
+    <tr>
+      <th style="width: 120px;">Date</th>
+      <th>Project</th>
+      <th>Daily Share</th>
+      <th class="num">Cost ({{{{ unit }}}})</th>
+    </tr>
+  </thead>
+  <tbody>
+  {{% for row in rows %}}
+    {{% assign cost = row["cost"].value | default: 0.0 %}}
+    {{% assign bar_pct = cost | times: 100.0 | divided_by: max_cost | round: 1 %}}
+    {{% assign d = row["day"].value | default: "—" | slice: 0, 10 %}}
+{liquid_money_block("cost", "fmt_cost", with_decimals=True)}
+    <tr>
+      <td><span class="cb-date-badge">{{{{ d }}}}</span></td>
+      <td><strong>{{{{ row["project"].value }}}}</strong></td>
+      <td><div class="cb-bar-track"><div class="cb-bar" style="width: {{{{ bar_pct }}}}%;"></div></div></td>
+      <td class="num"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_cost }}}}</span></td>
+    </tr>
+  {{% endfor %}}
+  </tbody>
+</table>
 </div>
 """
 
@@ -1107,22 +1167,16 @@ def build_billing() -> dict:
     )
     panels.append(p)
 
-    esql = f"""{COST_PRELUDE}
-| STATS `Normalized cost` = SUM(cost) BY ts, project
-| RENAME ts AS `@timestamp`
-| SORT `@timestamp` DESC
-| LIMIT 5000"""
-    p, _ = lens_esql(
-        stable_uuid("lens-billing-project"),
+    p, _ = custom_panel(
+        stable_uuid("cc-billing-daily-project"),
         "Daily cost by project",
-        esql,
-        [
-            col("@timestamp", "date"),
-            col("project", "keyword", "Project"),
-            col("Normalized cost", "double"),
-        ],
-        "lnsXY",
-        xy_vis("Normalized cost", "project"),
+        DAILY_PROJECT_COST_TEMPLATE,
+        f"""{COST_PRELUDE}
+| EVAL day = TO_STRING(DATE_TRUNC(1 day, ts))
+| STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY day, project
+| SORT day DESC, cost DESC
+| LIMIT 250
+| KEEP day, project, cost, currency_symbol, unit""",
         0,
         8,
         48,
