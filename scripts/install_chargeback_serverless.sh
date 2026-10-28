@@ -187,44 +187,8 @@ do
   es_put_index "/${idx}" "$ASSETS/indices/${idx}.json"
 done
 
-echo "Writing config document..."
-CONFIG_DOC=$(jq -n \
-  --arg org "$ORGANIZATION_ID" \
-  --arg billing_base "${BILLING_API_BASE:-https://billing.elastic-cloud.com}" \
-  --arg cloud_base "${CLOUD_API_BASE:-https://api.elastic-cloud.com}" \
-  --arg billing_key "$BILLING_API_KEY" \
-  --arg usage_key "$USAGE_API_KEY" \
-  --arg hub_key "${HUB_ES_API_KEY:-${ES_API_KEY}}" \
-  --arg updated "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  '{
-    organization_id: $org,
-    billing_api_base: $billing_base,
-    cloud_api_base: $cloud_base,
-    billing_api_key: $billing_key,
-    usage_api_key: $usage_key,
-    hub_es_api_key: $hub_key,
-    project_api_keys: {},
-    include_project_ids: [],
-    exclude_project_ids: [],
-    updated_at: $updated
-  }')
-es PUT "/chargeback-serverless-config/_doc/config" -d "$CONFIG_DOC" >/dev/null
-
-echo "Ensuring chargeback_conf_lookup config row..."
-CONF_DOC=$(jq -n \
-  --argjson rate "${CONF_RATE:-1}" \
-  --arg unit "${CONF_RATE_UNIT:-ECU}" \
-  --arg sym "$CONF_CURRENCY_SYMBOL" \
-  '{
-    "@timestamp": "1970-01-01T00:00:00.000Z",
-    config_join_key: "config",
-    conf_start_date: "2020-01-01T00:00:00.000Z",
-    conf_end_date: "2099-12-31T23:59:59.999Z",
-    conf_chargeable_unit_rate: $rate,
-    conf_chargeable_unit_rate_unit: $unit,
-    conf_currency_symbol: $sym
-  }')
-es PUT "/chargeback_conf_lookup/_doc/config" -d "$CONF_DOC" >/dev/null
+echo "Applying integration configuration..."
+"$ROOT/scripts/configure_chargeback_serverless.sh"
 
 echo "Importing workflows..."
 WF_LIST_HTTP=$(kbn_curl -o /tmp/cbs-wf-list.json -w '%{http_code}' \

@@ -11,6 +11,28 @@ Scripts for running Chargeback integration tests locally. **Use the automated E2
 
 ---
 
+## Chargeback Serverless (E2E Hub Deployment)
+
+For deploying and verifying the **native Chargeback Serverless hub integration** (`chargeback_serverless` package 0.1.6+ with Kibana Workflows, EPM API, and least-privileged harvesting keys):
+
+```bash
+# Full E2E deployment to test env (uses .env or prompts for credentials)
+./scripts/deploy_chargeback_serverless.sh
+
+# Fast deployment skipping build step (uses existing package zip in dist/)
+./scripts/deploy_chargeback_serverless.sh --skip-build
+
+# Verification and health check only (prints index counts & project harvest status)
+./scripts/deploy_chargeback_serverless.sh --verify-only
+```
+
+Modular components:
+- [`deploy_chargeback_serverless.sh`](deploy_chargeback_serverless.sh): Orchestrates dashboard generation, `elastic-package build`, Fleet package upload, infrastructure install, credentials sync, workflow triggering, and verification queries.
+- [`install_chargeback_serverless.sh`](install_chargeback_serverless.sh): Installs ingest pipeline, sets up 8 core lean index mappings, imports Workflows, and calls configuration.
+- [`configure_chargeback_serverless.sh`](configure_chargeback_serverless.sh): Configures `chargeback-serverless-config` (Cloud Org ID, Billing/Usage API keys, Hub ES API key, remote project harvesting keys) and `chargeback_conf_lookup` (currency rate, unit, currency symbol).
+
+---
+
 ## Release automation (integrations → zip → E2E)
 
 After editing `packages/chargeback` in **elastic/integrations**:

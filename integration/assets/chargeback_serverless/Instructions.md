@@ -12,7 +12,22 @@ Install on a **Serverless hub** (Observability Complete recommended). Do not ins
 
 ## Install
 
-### 1. Fleet package
+### Automated E2E Deployment (One-Command Deploy)
+
+Builds package with `elastic-package`, loads `.env` or prompts for credentials, uploads to Kibana Fleet EPM, installs infrastructure, syncs configuration, and executes workflows:
+
+```bash
+# Deploys latest build to test/target environment using .env or interactive prompts
+./scripts/deploy_chargeback_serverless.sh
+
+# Options:
+./scripts/deploy_chargeback_serverless.sh --skip-build       # deploy existing package
+./scripts/deploy_chargeback_serverless.sh --verify-only      # check indices & health
+```
+
+### Manual / Step-by-Step Install
+
+#### 1. Fleet package
 
 Upload the zip (Content-Type `application/zip`):
 
@@ -25,29 +40,20 @@ curl -X POST "${KIBANA_URL}/api/fleet/epm/packages" \
   --data-binary @dist/chargeback_serverless-0.1.6.zip
 ```
 
-### 2. Integration settings (credentials)
+#### 2. Infrastructure & Workflows Install
 
-**Integrations → Chargeback Serverless → Add / Settings:**
-
-- Organization ID
-- Billing API key (secret)
-- Usage API key (secret)
-
-### 3. Indices, config sync, and workflows
-
-Bootstrap indices and import Workflows; sync Integration credentials into `chargeback-serverless-config`:
+Bootstrap indices, classification pipeline, and Kibana Workflows:
 
 ```bash
-export ES_URL=...
-export ES_API_KEY=...
-export KIBANA_URL=...
-export KIBANA_API_KEY=...
-export ORGANIZATION_ID=...      # same as Integration setting
-export BILLING_API_KEY=...      # same as Integration setting
-export USAGE_API_KEY=...        # same as Integration setting
-export HUB_ES_API_KEY=...
-
 ./scripts/install_chargeback_serverless.sh
+```
+
+#### 3. Integration Configuration & Credentials
+
+Sync credentials, remote harvesting keys, and currency rates into `chargeback-serverless-config` and `chargeback_conf_lookup`:
+
+```bash
+./scripts/configure_chargeback_serverless.sh
 ```
 
 ### 4. Remote Projects Usage Harvesting (Least-Privileged Keys)
