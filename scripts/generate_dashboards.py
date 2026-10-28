@@ -34,6 +34,7 @@ BILLING = "billing_cluster_cost_lookup"
 POOL = "billing_realized_pool_lookup"
 DS_CONTRIB = "cluster_datastream_contribution_lookup"
 DEP_CONTRIB = "cluster_deployment_contribution_lookup"
+AI_CONTRIB = "cluster_ai_model_contribution_lookup"
 PROJECTS = "chargeback-serverless-projects"
 STATE = "chargeback-serverless-state"
 CONF = "chargeback_conf_lookup"
@@ -396,6 +397,11 @@ BILLING_KPI_TEMPLATE = f"""\
     <div class="cb-kpi-sub">Active projects in window</div>
   </div>
   <div class="cb-kpi">
+    <div class="cb-kpi-label">Days of Data</div>
+    <div class="cb-kpi-value">{{{{ r["days_count"].value | default: (r["billed_days"].value | default: 0) }}}}</div>
+    <div class="cb-kpi-sub">In selected time range</div>
+  </div>
+  <div class="cb-kpi">
     <div class="cb-kpi-label">Latest Billed Day</div>
     <div class="cb-kpi-value">{{{{ r["latest_day"].value | default: "—" | slice: 0, 10 }}}}</div>
     <div class="cb-kpi-sub">UTC invoice snapshot</div>
@@ -492,6 +498,205 @@ SANKEY_TEMPLATE = f"""\
     <div class="cb-stage">→ {{{{ row["project_type"].value }}}}</div>
     <div class="cb-bar-track"><div class="cb-bar" style="width: {{{{ bar_pct }}}}%;"></div></div>
     <div class="cb-cost"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_cost }}}}</span></div>
+  </div>
+{{% endfor %}}
+</div>
+"""
+
+
+AI_KPIS_TEMPLATE = f"""\
+<style>
+  .cb-ai-kpis {{
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--cc-space-m, 16px);
+    font-family: inherit;
+  }}
+  .cb-ai-card {{
+    background: var(--cc-color-surface, #ffffff);
+    border: 1px solid var(--cc-color-border, #d3dae6);
+    border-radius: var(--cc-radius-m, 8px);
+    padding: var(--cc-space-m, 16px);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }}
+  .cb-ai-label {{
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--cc-color-text-secondary, #69707d);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 8px;
+  }}
+  .cb-ai-val {{
+    font-size: 1.65rem;
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--cc-color-text, #1a1c21);
+    font-variant-numeric: tabular-nums;
+  }}
+  .cb-ai-val .sym {{
+    font-size: 1.1rem;
+    font-weight: 500;
+    opacity: 0.75;
+    margin-right: 2px;
+  }}
+  .cb-ai-sub {{
+    font-size: 0.78rem;
+    color: var(--cc-color-text-secondary, #69707d);
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }}
+  .cb-ai-pill {{
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    background: var(--cc-color-primary-subdued, #e8f2fe);
+    color: var(--cc-color-primary, #006bb4);
+  }}
+</style>
+{{% assign unit = rows[0]["unit"].value | default: "ECU" %}}
+{{% assign sym = rows[0]["currency_symbol"].value | default: unit %}}
+{{% assign ai_spend = rows[0]["ai_spend"].value | default: 0.0 %}}
+{{% assign inf_count = rows[0]["total_inferences"].value | default: 0 %}}
+{{% assign avg_latency = rows[0]["avg_latency_ms"].value | default: 0.0 | round: 1 %}}
+{{% assign cost_per_k = rows[0]["cost_per_1k"].value | default: 0.0 %}}
+
+{liquid_money_block("ai_spend", "fmt_ai_spend", with_decimals=True)}
+{liquid_money_block("inf_count", "fmt_inf_count", with_decimals=False)}
+{liquid_money_block("cost_per_k", "fmt_cost_per_k", with_decimals=True)}
+
+<div class="cb-ai-kpis">
+  <div class="cb-ai-card">
+    <div class="cb-ai-label">Total AI &amp; ML Spend</div>
+    <div class="cb-ai-val"><span class="sym">{{{{ sym }}}}</span>{{{{ fmt_ai_spend }}}}</div>
+    <div class="cb-ai-sub"><span class="cb-ai-pill">ml-vcu + inference</span> attributable</div>
+  </div>
+  <div class="cb-ai-card">
+    <div class="cb-ai-label">Inference Volume</div>
+    <div class="cb-ai-val">{{{{ fmt_inf_count }}}}</div>
+    <div class="cb-ai-sub">Total model inference calls</div>
+  </div>
+  <div class="cb-ai-card">
+    <div class="cb-ai-label">Avg Model Latency</div>
+    <div class="cb-ai-val">{{{{ avg_latency }}}} <span style="font-size: 1rem; font-weight: 500;">ms</span></div>
+    <div class="cb-ai-sub">Compute execution speed</div>
+  </div>
+  <div class="cb-ai-card">
+    <div class="cb-ai-label">Unit Cost (1k Inferences)</div>
+    <div class="cb-ai-val"><span class="sym">{{{{ sym }}}}</span>{{{{ fmt_cost_per_k }}}}</div>
+    <div class="cb-ai-sub">Effective unit economics</div>
+  </div>
+</div>
+"""
+
+
+AI_MODELS_TEMPLATE = f"""\
+<style>
+  .cb-model-list {{
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-family: inherit;
+    padding: 2px 4px;
+  }}
+  .cb-model-head {{
+    display: grid;
+    grid-template-columns: minmax(140px, 1.8fr) 110px 2fr 90px 110px;
+    gap: var(--cc-space-s, 8px);
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: var(--cc-color-text-secondary, #69707d);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--cc-color-border, #d3dae6);
+  }}
+  .cb-model-head .num {{ text-align: right; }}
+  .cb-model-row {{
+    display: grid;
+    grid-template-columns: minmax(140px, 1.8fr) 110px 2fr 90px 110px;
+    gap: var(--cc-space-s, 8px);
+    align-items: center;
+    font-size: 0.85rem;
+    padding: 6px 0;
+    border-bottom: 1px dashed var(--cc-color-border, #e7ebf0);
+  }}
+  .cb-model-name {{
+    font-weight: 600;
+    color: var(--cc-color-text, #1a1c21);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }}
+  .cb-model-tag {{
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 500;
+    background: var(--cc-color-lightShade, #f0f3f6);
+    color: var(--cc-color-text-secondary, #535966);
+    text-transform: uppercase;
+  }}
+  .cb-track {{
+    height: 12px;
+    background: var(--cc-color-border, #e7ebf0);
+    border-radius: 6px;
+    overflow: hidden;
+  }}
+  .cb-fill {{
+    height: 100%;
+    background: linear-gradient(90deg, #1b85b8, #5a9e6f);
+    border-radius: 6px;
+  }}
+  .cb-num {{
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }}
+</style>
+{{% assign unit = rows[0]["unit"].value | default: "ECU" %}}
+{{% assign sym = rows[0]["currency_symbol"].value | default: unit %}}
+{{% assign max_time = rows[0]["total_compute"].value | default: 1.0 %}}
+{{% if max_time <= 0 %}}{{% assign max_time = 1.0 %}}{{% endif %}}
+
+<div class="cb-model-list">
+  <div class="cb-model-head">
+    <div>Model Name</div>
+    <div>Task Type</div>
+    <div>Compute Allocation Share</div>
+    <div class="num">Inferences</div>
+    <div class="num">Attributed Cost</div>
+  </div>
+{{% for r in rows %}}
+  {{% assign c_time = r["total_compute"].value | default: 0 %}}
+  {{% assign bar_w = c_time | times: 100.0 | divided_by: max_time | round: 1 %}}
+  {{% assign calls = r["total_inf"].value | default: 0 %}}
+  {{% assign cost = r["attributed_cost"].value | default: 0.0 %}}
+  {liquid_money_block("calls", "fmt_calls", with_decimals=False)}
+  {liquid_money_block("cost", "fmt_cost", with_decimals=True)}
+  <div class="cb-model-row">
+    <div class="cb-model-name" title="{{{{ r[\"model_id\"].value }}}}">
+      <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#1b85b8;"></span>
+      {{{{ r["model_id"].value }}}}
+    </div>
+    <div><span class="cb-model-tag">{{{{ r["task_type"].value | default: "inference" }}}}</span></div>
+    <div>
+      <div class="cb-track">
+        <div class="cb-fill" style="width: {{{{ bar_w }}}}%;"></div>
+      </div>
+    </div>
+    <div class="cb-num">{{{{ fmt_calls }}}}</div>
+    <div class="cb-num" style="font-weight: 600;"><span style="font-size:0.8rem; opacity:0.8;">{{{{ sym }}}}</span> {{{{ fmt_cost }}}}</div>
   </div>
 {{% endfor %}}
 </div>
@@ -893,11 +1098,35 @@ def build_billing() -> dict:
         f"""{COST_PRELUDE}
 | EVAL alloc_cost = CASE(COALESCE(is_allocatable, false) == true AND allocation_driver != "none", cost, 0.0)
 | EVAL unalloc_cost = CASE(COALESCE(is_allocatable, false) == false OR allocation_driver == "none", cost, 0.0)
-| STATS total_spend = SUM(cost), allocatable_spend = SUM(alloc_cost), unallocatable_spend = SUM(unalloc_cost), project_count = COUNT_DISTINCT(project_id), latest_day = TO_STRING(MAX(ts)), currency_symbol = MAX(currency_symbol), unit = MAX(unit)""",
+| EVAL day = DATE_TRUNC(1 day, ts)
+| STATS total_spend = SUM(cost), allocatable_spend = SUM(alloc_cost), unallocatable_spend = SUM(unalloc_cost), project_count = COUNT_DISTINCT(project_id), days_count = COUNT_DISTINCT(day), billed_days = COUNT_DISTINCT(day), latest_day = TO_STRING(MAX(ts)), currency_symbol = MAX(currency_symbol), unit = MAX(unit)""",
         0,
         2,
         48,
         6,
+    )
+    panels.append(p)
+
+    esql = f"""{COST_PRELUDE}
+| STATS `Normalized cost` = SUM(cost) BY ts, project
+| RENAME ts AS `@timestamp`
+| SORT `@timestamp` DESC
+| LIMIT 5000"""
+    p, _ = lens_esql(
+        stable_uuid("lens-billing-project"),
+        "Daily cost by project",
+        esql,
+        [
+            col("@timestamp", "date"),
+            col("project", "keyword", "Project"),
+            col("Normalized cost", "double"),
+        ],
+        "lnsXY",
+        xy_vis("Normalized cost", "project"),
+        0,
+        8,
+        48,
+        14,
     )
     panels.append(p)
 
@@ -911,7 +1140,7 @@ def build_billing() -> dict:
 | LIMIT 25
 | KEEP project, cost, currency_symbol, unit""",
         0,
-        8,
+        22,
         24,
         14,
     )
@@ -928,7 +1157,7 @@ def build_billing() -> dict:
 | LIMIT 25
 | KEEP category, cost, currency_symbol, unit""",
         24,
-        8,
+        22,
         24,
         14,
     )
@@ -945,7 +1174,7 @@ def build_billing() -> dict:
 | RENAME category_label AS category, cost_type_label AS cost_type, project_type_label AS project_type
 | KEEP category, cost_type, project_type, cost, currency_symbol, unit""",
         0,
-        22,
+        36,
         28,
         14,
     )
@@ -963,7 +1192,7 @@ def build_billing() -> dict:
 | LIMIT 50
 | KEEP category, cost_type, sku, project, ecu, cost, currency_symbol, unit""",
         28,
-        22,
+        36,
         20,
         14,
     )
@@ -980,7 +1209,7 @@ def build_billing() -> dict:
 | LIMIT 200
 | KEEP project, project_type, category, cost_type, sku, driver, qty, ecu, cost, currency_symbol, unit""",
         0,
-        36,
+        50,
         48,
         14,
     )
