@@ -50,9 +50,43 @@ export HUB_ES_API_KEY=...
 ./scripts/install_chargeback_serverless.sh
 ```
 
-To harvest `_cat/indices` from projects outside this hub, add per-project Elasticsearch API keys under `project_api_keys` (map of `project_id -> api_key`) in `chargeback-serverless-config/_doc/config`.
+### 4. Remote Projects Usage Harvesting (Least-Privileged Keys)
 
-### 4. Rates / local currency
+To break down usage per data stream across projects outside this hub:
+
+1. **Generate a least-privileged key on the remote project** in its Kibana Dev Tools:
+   ```json
+   POST _security/api_key
+   {
+     "name": "chargeback-usage-harvesting",
+     "role_descriptors": {
+       "chargeback_harvest": {
+         "cluster": ["monitor"],
+         "indices": [
+           {
+             "names": ["*"],
+             "privileges": ["view_index_metadata"]
+           }
+         ]
+       }
+     }
+   }
+   ```
+   *(This key only grants permission to read `_cat/indices` metadata — it cannot read, search, or modify any data).*
+
+2. **Register the key on your Hub project** in Dev Tools:
+   ```json
+   POST chargeback-serverless-config/_update/config
+   {
+     "doc": {
+       "project_api_keys": {
+         "<REMOTE_PROJECT_ID>": "<ENCODED_API_KEY_FROM_STEP_1>"
+       }
+     }
+   }
+   ```
+
+### 5. Rates / local currency
 
 On **[Chargeback Serverless] Configuration**, set `conf_chargeable_unit_rate` and `conf_chargeable_unit_rate_unit` in `chargeback_conf_lookup`. All spend visuals use that conversion.
 
@@ -68,12 +102,23 @@ Filter tag **Chargeback**. Wording is **project** (Serverless), not deployment.
 
 ## Verify
 
-1. Run **Chargeback Serverless - Billing**, then check `GET billing_cluster_cost_lookup/_count` and `GET billing_realized_pool_lookup/_count`
-2. Run **Chargeback Serverless - Usage**, then check `chargeback-serverless-projects`, `chargeback-serverless-state`, and `cluster_datastream_contribution_lookup`
-3. Confirm Links between the three dashboards work
-4. Confirm spend panels show values in your configured currency unit
+1. Run **Chargeback Serverless - Billing**, then check:
+   ```json
+   GET billing_cluster_cost_lookup/_count
+   GET billing_realized_pool_lookup/_count
+   ```
+2. Run **Chargeback Serverless - Usage**, then check project status:
+   ```json
+   GET chargeback-serverless-projects/_search
+   GET chargeback-serverless-state/_search
+   GET cluster_datastream_contribution_lookup/_count
+   ```
+   * Ensure `last_status` is `"ok"` for all projects being harvested (if a remote project shows `"empty_or_unauthorized"`, check that its least-privileged key was registered in `project_api_keys`).
+3. Confirm Links between the three dashboards work.
+4. Confirm spend panels show values in your configured currency unit.
 
-## Known limitations
+## Security & Architecture Notes
 
-- Remote project `_cat/indices` needs a per-project Elasticsearch API key (`project_api_keys[project_id]`) with `monitor` and `view_index_metadata` privileges
-- Indexing time is a proxy for Observability and Security ingest GB
+- Remote project `_cat/indices` requires a per-project Elasticsearch API key (`project_api_keys[project_id]`) with `monitor` and `view_index_metadata` privileges.
+- Restrict read access to `chargeback-serverless-config` using Kibana RBAC so standard dashboard users cannot inspect configuration credentials.
+- Indexing time is a proxy for Observability and Security ingest GB.

@@ -1011,8 +1011,9 @@ def build_config() -> dict:
 
     config_dsl = """\
 <style>
-  .cb-dsl { display: grid; grid-template-columns: 1fr 1fr; gap: var(--cc-space-m); font-size: 0.85rem; }
+  .cb-dsl { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--cc-space-m); font-size: 0.85rem; }
   .cb-dsl h4 { margin: 0 0 4px 0; font-size: 0.9rem; font-weight: 600; }
+  .cb-dsl p { margin: 0 0 6px 0; font-size: 0.75rem; color: var(--cc-color-text-secondary); }
   .cb-dsl pre {
     background: var(--cc-color-surface);
     border: 1px solid var(--cc-color-border);
@@ -1020,14 +1021,15 @@ def build_config() -> dict:
     padding: var(--cc-space-s);
     margin: 0;
     font-family: monospace;
-    font-size: 0.78rem;
+    font-size: 0.74rem;
     overflow-x: auto;
   }
 </style>
 {% assign r = rows[0] %}
 <div class="cb-dsl">
   <div>
-    <h4>Currency Rate Window (Dev Tools)</h4>
+    <h4>1. Currency Rate Window (Dev Tools)</h4>
+    <p>Set active rate, currency, and date bounds in chargeback_conf_lookup.</p>
     <pre>PUT chargeback_conf_lookup/_doc/config
 {
   "@timestamp": "1970-01-01T00:00:00.000Z",
@@ -1040,16 +1042,34 @@ def build_config() -> dict:
 }</pre>
   </div>
   <div>
-    <h4>Workflow Config Document (Dev Tools)</h4>
-    <pre>PUT chargeback-serverless-config/_doc/config
+    <h4>2. Remote Least-Privilege Key (Dev Tools)</h4>
+    <p>Run on remote project. Grants index metadata read only (no data access).</p>
+    <pre>POST _security/api_key
 {
-  "organization_id": "&lt;ORG_ID&gt;",
-  "billing_api_key": "&lt;BILLING_API_KEY&gt;",
-  "usage_api_key": "&lt;USAGE_API_KEY&gt;",
-  "hub_es_api_key": "&lt;HUB_ES_API_KEY&gt;",
-  "project_api_keys": {},
-  "include_project_ids": [],
-  "exclude_project_ids": []
+  "name": "chargeback-usage-harvesting",
+  "role_descriptors": {
+    "chargeback_harvest": {
+      "cluster": ["monitor"],
+      "indices": [
+        {
+          "names": ["*"],
+          "privileges": ["view_index_metadata"]
+        }
+      ]
+    }
+  }
+}</pre>
+  </div>
+  <div>
+    <h4>3. Register Remote Key on Hub (Dev Tools)</h4>
+    <p>Run on Hub to register encoded key for remote project ID.</p>
+    <pre>POST chargeback-serverless-config/_update/config
+{
+  "doc": {
+    "project_api_keys": {
+      "&lt;REMOTE_PROJECT_ID&gt;": "&lt;ENCODED_API_KEY&gt;"
+    }
+  }
 }</pre>
   </div>
 </div>
@@ -1065,7 +1085,7 @@ def build_config() -> dict:
         0,
         2,
         48,
-        11,
+        13,
     )
     panels.append(p)
 
