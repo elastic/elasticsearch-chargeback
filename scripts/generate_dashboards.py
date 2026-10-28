@@ -49,6 +49,7 @@ INDEX_PATTERN_ID = "chargeback_serverless-billing_cluster_cost_lookup"
 COST_PRELUDE = f"""FROM {BILLING}
 | EVAL ts = @timestamp
 | LOOKUP JOIN {CONF} ON ts >= conf_start_date AND ts <= conf_end_date
+| EVAL @timestamp = ts
 | EVAL unit = COALESCE(conf_chargeable_unit_rate_unit, "ECU")
 | EVAL currency_symbol = CASE(
     conf_currency_symbol IS NOT NULL AND conf_currency_symbol != "", conf_currency_symbol,
@@ -1707,6 +1708,7 @@ def build_usage() -> dict:
 | LOOKUP JOIN {DEP_CONTRIB} ON composite_key
 | LOOKUP JOIN {POOL} ON composite_key
 | LOOKUP JOIN {CONF} ON ts >= conf_start_date AND ts <= conf_end_date
+| EVAL @timestamp = ts
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
 | EVAL unit = COALESCE(conf_chargeable_unit_rate_unit, "ECU")
 | EVAL currency_symbol = CASE(
@@ -1753,6 +1755,7 @@ def build_usage() -> dict:
 | LOOKUP JOIN {DEP_CONTRIB} ON composite_key
 | LOOKUP JOIN {POOL} ON composite_key
 | LOOKUP JOIN {CONF} ON ts >= conf_start_date AND ts <= conf_end_date
+| EVAL @timestamp = ts
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
 | EVAL unit = COALESCE(conf_chargeable_unit_rate_unit, "ECU")
 | EVAL currency_symbol = CASE(
@@ -1800,6 +1803,7 @@ def build_usage() -> dict:
 | LOOKUP JOIN {DEP_CONTRIB} ON composite_key
 | LOOKUP JOIN {POOL} ON composite_key
 | LOOKUP JOIN {CONF} ON ts >= conf_start_date AND ts <= conf_end_date
+| EVAL @timestamp = ts
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
 | EVAL unit = COALESCE(conf_chargeable_unit_rate_unit, "ECU")
 | EVAL currency_symbol = CASE(
@@ -1882,6 +1886,7 @@ def build_usage() -> dict:
 | EVAL ts = @timestamp
 | LOOKUP JOIN {POOL} ON composite_key
 | LOOKUP JOIN {CONF} ON ts >= conf_start_date AND ts <= conf_end_date
+| EVAL @timestamp = ts
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
 | EVAL unit = COALESCE(conf_chargeable_unit_rate_unit, "ECU")
 | EVAL currency_symbol = CASE(
@@ -1922,6 +1927,7 @@ def build_usage() -> dict:
 | EVAL ts = @timestamp
 | LOOKUP JOIN {POOL} ON composite_key
 | LOOKUP JOIN {CONF} ON ts >= conf_start_date AND ts <= conf_end_date
+| EVAL @timestamp = ts
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
 | EVAL unit = COALESCE(conf_chargeable_unit_rate_unit, "ECU")
 | EVAL currency_symbol = CASE(
