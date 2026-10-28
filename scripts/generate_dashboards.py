@@ -668,6 +668,11 @@ AI_MODELS_TEMPLATE = f"""\
 {{% assign sym = rows[0]["currency_symbol"].value | default: unit %}}
 {{% assign max_time = rows[0]["total_compute"].value | default: 1.0 %}}
 {{% if max_time <= 0 %}}{{% assign max_time = 1.0 %}}{{% endif %}}
+{{% assign tot_compute = 0.0 %}}
+{{% for r in rows %}}
+  {{% assign tc = r["total_compute"].value | default: 0 %}}
+  {{% assign tot_compute = tot_compute | plus: tc %}}
+{{% endfor %}}
 
 <div class="cb-model-list">
   <div class="cb-model-head">
@@ -682,6 +687,10 @@ AI_MODELS_TEMPLATE = f"""\
   {{% assign bar_w = c_time | times: 100.0 | divided_by: max_time | round: 1 %}}
   {{% assign calls = r["total_inf"].value | default: 0 %}}
   {{% assign cost = r["attributed_cost"].value | default: 0.0 %}}
+  {{% if cost <= 0.0 and tot_compute > 0 %}}
+    {{% assign p_cost = r["ai_pool"].value | default: 0.0 %}}
+    {{% assign cost = c_time | times: p_cost | divided_by: tot_compute %}}
+  {{% endif %}}
   {liquid_money_block("calls", "fmt_calls", with_decimals=False)}
   {liquid_money_block("cost", "fmt_cost", with_decimals=True)}
   <div class="cb-model-row">
@@ -705,60 +714,200 @@ AI_MODELS_TEMPLATE = f"""\
 
 DAILY_PROJECT_COST_TEMPLATE = f"""\
 <style>
-  .cb-tbl-wrap {{ max-height: 100%; overflow: auto; }}
-  table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; }}
-  table.cb-t th {{
-    position: sticky; top: 0; background: var(--cc-color-surface); z-index: 1;
-    text-align: left; padding: 6px 8px; border-bottom: 2px solid var(--cc-color-border);
-    font-weight: 600; opacity: 0.75; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em;
+  .cb-hist-wrap {{
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 250px;
+    font-family: inherit;
+    box-sizing: border-box;
+    padding: 10px 14px 14px 14px;
+    overflow: hidden;
   }}
-  table.cb-t td {{ padding: 6px 8px; border-bottom: 1px solid var(--cc-color-border); }}
-  table.cb-t th.num, table.cb-t td.num {{ text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }}
-  .cb-sym {{ font-weight: 500; opacity: 0.85; margin-right: 2px; }}
-  .cb-bar-track {{
-    height: 10px; background: var(--cc-color-border);
-    border-radius: var(--cc-radius-s, 4px); overflow: hidden; min-width: 120px;
+  .cb-hist-head {{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
   }}
-  .cb-bar {{ height: 100%; background: var(--cc-vis-0, #3274D9); min-width: 2px; }}
-  .cb-date-badge {{
-    display: inline-block; padding: 2px 6px; border-radius: 4px;
-    font-size: 0.78rem; font-weight: 600; font-variant-numeric: tabular-nums;
-    background: var(--cc-color-lightShade, #f0f3f6); color: var(--cc-color-text, #1a1c21);
+  .cb-hist-legend {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    font-size: 0.78rem;
+  }}
+  .cb-legend-item {{
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-weight: 500;
+    color: var(--cc-color-text, #1a1c21);
+  }}
+  .cb-legend-dot {{
+    width: 9px;
+    height: 9px;
+    border-radius: 2px;
+    display: inline-block;
+  }}
+  .cb-hist-body {{
+    display: flex;
+    flex: 1;
+    position: relative;
+    min-height: 180px;
+    gap: 10px;
+  }}
+  .cb-hist-y {{
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    font-size: 0.72rem;
+    color: var(--cc-color-text-secondary, #69707d);
+    text-align: right;
+    padding-right: 8px;
+    min-width: 55px;
+    border-right: 1px solid var(--cc-color-border, #d3dae6);
+    user-select: none;
+    margin-bottom: 26px;
+  }}
+  .cb-hist-plot {{
+    display: flex;
+    flex: 1;
+    align-items: flex-end;
+    gap: 12px;
+    overflow-x: auto;
+    position: relative;
+    padding-bottom: 26px;
+    border-bottom: 1px solid var(--cc-color-border, #d3dae6);
+    background-image: repeating-linear-gradient(to top, var(--cc-color-border, #e7ebf0) 0, var(--cc-color-border, #e7ebf0) 1px, transparent 1px, transparent 25%);
+  }}
+  .cb-hist-col {{
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+    min-width: 44px;
+    max-width: 72px;
+    height: 100%;
+    justify-content: flex-end;
+    position: relative;
+  }}
+  .cb-col-tip {{
+    font-size: 0.68rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--cc-color-text-secondary, #69707d);
+    margin-bottom: 4px;
+    white-space: nowrap;
+  }}
+  .cb-hist-stack {{
+    display: flex;
+    flex-direction: column-reverse;
+    width: 100%;
+    height: 100%;
+    border-radius: 4px 4px 0 0;
+    overflow: hidden;
+  }}
+  .cb-hist-seg {{
+    width: 100%;
+    transition: opacity 0.15s ease-in-out;
+    cursor: pointer;
+  }}
+  .cb-hist-seg:hover {{
+    filter: brightness(1.15);
+    opacity: 0.9;
+  }}
+  .cb-hist-date {{
+    position: absolute;
+    bottom: -22px;
+    font-size: 0.72rem;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--cc-color-text-secondary, #69707d);
     white-space: nowrap;
   }}
 </style>
 {{% assign unit = rows[0]["unit"].value | default: "ECU" %}}
 {{% assign sym = rows[0]["currency_symbol"].value | default: unit %}}
-{{% assign max_cost = 1.0 %}}
-{{% for row in rows %}}
-  {{% assign c = row["cost"].value | default: 0.0 %}}
-  {{% if c > max_cost %}}{{% assign max_cost = c %}}{{% endif %}}
+{{% assign colors = "#3274D9,#54B399,#E0752F,#8E63CE,#00BFB3,#F2BE42,#FA6E6E,#1B85B8,#11A987,#46B3A4" | split: "," %}}
+
+{{% assign proj_str = "" %}}
+{{% assign max_day_cost = 1.0 %}}
+{{% for r in rows %}}
+  {{% assign pn = r["project"].value | default: "unknown" %}}
+  {{% unless proj_str contains pn %}}
+    {{% assign proj_str = proj_str | append: pn | append: "||" %}}
+  {{% endunless %}}
+  {{% assign dc = r["day_cost"].value | default: 0.0 %}}
+  {{% if dc > max_day_cost %}}
+    {{% assign max_day_cost = dc %}}
+  {{% endif %}}
 {{% endfor %}}
-<div class="cb-tbl-wrap">
-<table class="cb-t">
-  <thead>
-    <tr>
-      <th style="width: 120px;">Date</th>
-      <th>Project</th>
-      <th>Daily Share</th>
-      <th class="num">Cost ({{{{ unit }}}})</th>
-    </tr>
-  </thead>
-  <tbody>
-  {{% for row in rows %}}
-    {{% assign cost = row["cost"].value | default: 0.0 %}}
-    {{% assign bar_pct = cost | times: 100.0 | divided_by: max_cost | round: 1 %}}
-    {{% assign d = row["day"].value | default: "—" | slice: 0, 10 %}}
-{liquid_money_block("cost", "fmt_cost", with_decimals=True)}
-    <tr>
-      <td><span class="cb-date-badge">{{{{ d }}}}</span></td>
-      <td><strong>{{{{ row["project"].value }}}}</strong></td>
-      <td><div class="cb-bar-track"><div class="cb-bar" style="width: {{{{ bar_pct }}}}%;"></div></div></td>
-      <td class="num"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_cost }}}}</span></td>
-    </tr>
-  {{% endfor %}}
-  </tbody>
-</table>
+{{% assign projects = proj_str | split: "||" %}}
+
+{{% assign half_cost = max_day_cost | times: 0.5 %}}
+{liquid_money_block("max_day_cost", "fmt_max_cost", with_decimals=True)}
+{liquid_money_block("half_cost", "fmt_half_cost", with_decimals=True)}
+
+<div class="cb-hist-wrap">
+  <div class="cb-hist-head">
+    <div class="cb-hist-legend">
+      {{% for p in projects %}}
+        {{% if p != "" %}}
+          {{% assign c_idx = forloop.index0 | modulo: 10 %}}
+          <div class="cb-legend-item">
+            <span class="cb-legend-dot" style="background: {{{{ colors[c_idx] }}}};"></span>
+            <span>{{{{ p }}}}</span>
+          </div>
+        {{% endif %}}
+      {{% endfor %}}
+    </div>
+  </div>
+  <div class="cb-hist-body">
+    <div class="cb-hist-y">
+      <div>{{{{ sym }}}}{{{{ fmt_max_cost }}}}</div>
+      <div>{{{{ sym }}}}{{{{ fmt_half_cost }}}}</div>
+      <div>0</div>
+    </div>
+    <div class="cb-hist-plot">
+      {{% assign cur_day = "" %}}
+      {{% for r in rows %}}
+        {{% assign d = r["day"].value | slice: 0, 10 %}}
+        {{% if d != cur_day %}}
+          {{% if cur_day != "" %}}
+              </div>
+              <div class="cb-hist-date">{{{{ cur_day | slice: 5, 5 }}}}</div>
+            </div>
+          {{% endif %}}
+          {{% assign cur_day = d %}}
+          {{% assign d_cost = r["day_cost"].value | default: 0.0 %}}
+          {liquid_money_block("d_cost", "fmt_d_cost", with_decimals=True)}
+          <div class="cb-hist-col" title="{{{{ cur_day }}}}: {{{{ sym }}}}{{{{ fmt_d_cost }}}}">
+            <div class="cb-col-tip">{{{{ sym }}}}{{{{ fmt_d_cost }}}}</div>
+            <div class="cb-hist-stack">
+        {{% endif %}}
+        {{% assign p_cost = r["cost"].value | default: 0.0 %}}
+        {{% assign p_pct = p_cost | times: 100.0 | divided_by: max_day_cost | round: 2 %}}
+        {{% if p_pct < 0.5 and p_cost > 0 %}}{{% assign p_pct = 0.5 %}}{{% endif %}}
+        {{% assign p_name = r["project"].value | default: "unknown" %}}
+        {{% assign p_color = "#3274D9" %}}
+        {{% for p in projects %}}
+          {{% if p == p_name %}}
+            {{% assign c_idx = forloop.index0 | modulo: 10 %}}
+            {{% assign p_color = colors[c_idx] %}}
+          {{% endif %}}
+        {{% endfor %}}
+        {liquid_money_block("p_cost", "fmt_p_cost", with_decimals=True)}
+        <div class="cb-hist-seg" style="height: {{{{ p_pct }}}}%; background: {{{{ p_color }}}};" title="{{{{ p_name }}}}: {{{{ sym }}}}{{{{ fmt_p_cost }}}} ({{{{ cur_day }}}})"></div>
+      {{% endfor %}}
+      {{% if cur_day != "" %}}
+          </div>
+          <div class="cb-hist-date">{{{{ cur_day | slice: 5, 5 }}}}</div>
+        </div>
+      {{% endif %}}
+    </div>
+  </div>
 </div>
 """
 
@@ -1174,9 +1323,10 @@ def build_billing() -> dict:
         f"""{COST_PRELUDE}
 | EVAL day = TO_STRING(DATE_TRUNC(1 day, ts))
 | STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY day, project
-| SORT day DESC, cost DESC
-| LIMIT 250
-| KEEP day, project, cost, currency_symbol, unit""",
+| INLINE STATS day_cost = SUM(cost) BY day
+| SORT day ASC, cost DESC
+| LIMIT 500
+| KEEP day, project, cost, day_cost, currency_symbol, unit""",
         0,
         8,
         48,
@@ -1520,8 +1670,9 @@ def build_usage() -> dict:
     )
     panels.append(p)
 
-    ai_kpi_esql = f"""FROM {BILLING}
+    ai_kpi_esql = f"""FROM {AI_CONTRIB}
 | EVAL ts = @timestamp
+| LOOKUP JOIN {POOL} ON composite_key
 | LOOKUP JOIN {CONF} ON ts >= conf_start_date AND ts <= conf_end_date
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
 | EVAL unit = COALESCE(conf_chargeable_unit_rate_unit, "ECU")
@@ -1541,13 +1692,9 @@ def build_usage() -> dict:
     conf_chargeable_unit_rate_unit IS NOT NULL AND conf_chargeable_unit_rate_unit != "", conf_chargeable_unit_rate_unit,
     "ECU"
   )
-| EVAL cost = COALESCE(total_ecu, 0.0) * rate
-| EVAL is_ai = CASE(cost_type IN ("ml-vcu", "inference") OR sku LIKE "*ml-vcu*" OR sku LIKE "*inference*", true, false)
-| WHERE is_ai == true
-| STATS ai_spend = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit)
-| EVAL dummy = 1
-| LOOKUP JOIN {AI_CONTRIB} ON dummy == 1
-| STATS ai_spend = MAX(ai_spend), total_inferences = SUM(inference_count), avg_latency_ms = ROUND(AVG(average_inference_time_ms), 1), currency_symbol = MAX(currency_symbol), unit = MAX(unit)
+| EVAL ai_pool_cost = COALESCE(ai_ecu, query_ecu, 0.0) * rate
+| STATS proj_spend = MAX(ai_pool_cost), proj_inf = SUM(inference_count), proj_latency = AVG(average_inference_time_ms), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY composite_key
+| STATS ai_spend = SUM(proj_spend), total_inferences = SUM(proj_inf), avg_latency_ms = ROUND(AVG(proj_latency), 1), currency_symbol = MAX(currency_symbol), unit = MAX(unit)
 | EVAL cost_per_1k = CASE(total_inferences > 0, ai_spend * 1000.0 / total_inferences, 0.0)
 | KEEP unit, currency_symbol, ai_spend, total_inferences, avg_latency_ms, cost_per_1k"""
 
@@ -1588,7 +1735,8 @@ def build_usage() -> dict:
 | EVAL compute_time = COALESCE(total_inference_time_ms, 0)
 | EVAL ai_pool_cost = COALESCE(ai_ecu, query_ecu, 0.0) * rate
 | STATS total_compute = SUM(compute_time), total_inf = SUM(inference_count), ai_pool = MAX(ai_pool_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY model_id, task_type
-| EVAL share = CASE(SUM(total_compute) > 0, total_compute * 1.0 / SUM(total_compute), 0.0)
+| INLINE STATS all_compute = SUM(total_compute)
+| EVAL share = CASE(all_compute > 0, total_compute * 1.0 / all_compute, 0.0)
 | EVAL attributed_cost = share * ai_pool
 | SORT total_compute DESC
 | LIMIT 25

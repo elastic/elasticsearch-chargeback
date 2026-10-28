@@ -54,16 +54,16 @@ ES_CURL_TLS_FLAG="$(curl_tls_args_for "$ES_URL")"
 KBN_CURL_TLS_FLAG="$(curl_tls_args_for "$KIBANA_URL")"
 es_curl() {
   if [[ -n "$ES_CURL_TLS_FLAG" ]]; then
-    curl -sS "$ES_CURL_TLS_FLAG" "$@"
+    curl -sS --retry 3 --retry-connrefused "$ES_CURL_TLS_FLAG" "$@"
   else
-    curl -sS "$@"
+    curl -sS --retry 3 --retry-connrefused "$@"
   fi
 }
 kbn_curl() {
   if [[ -n "$KBN_CURL_TLS_FLAG" ]]; then
-    curl -sS "$KBN_CURL_TLS_FLAG" "$@"
+    curl -sS --retry 3 --retry-connrefused "$KBN_CURL_TLS_FLAG" "$@"
   else
-    curl -sS "$@"
+    curl -sS --retry 3 --retry-connrefused "$@"
   fi
 }
 

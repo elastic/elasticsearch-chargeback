@@ -190,17 +190,17 @@ KBN_CURL_TLS="$(curl_tls_args_for "$KIBANA_URL")"
 
 es_curl() {
   if [[ -n "$ES_CURL_TLS" ]]; then
-    curl -sS "$ES_CURL_TLS" "$@"
+    curl -sS --retry 3 --retry-connrefused "$ES_CURL_TLS" "$@"
   else
-    curl -sS "$@"
+    curl -sS --retry 3 --retry-connrefused "$@"
   fi
 }
 
 kbn_curl() {
   if [[ -n "$KBN_CURL_TLS" ]]; then
-    curl -sS "$KBN_CURL_TLS" "$@"
+    curl -sS --retry 3 --retry-connrefused "$KBN_CURL_TLS" "$@"
   else
-    curl -sS "$@"
+    curl -sS --retry 3 --retry-connrefused "$@"
   fi
 }
 
