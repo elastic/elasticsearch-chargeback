@@ -1,0 +1,33 @@
+{
+  "settings": {
+    "index": {
+      "mode": "standard",
+      "codec": "best_compression"
+    }
+  },
+  "mappings": {
+    "dynamic": true,
+    "properties": {
+      "project_id": { "type": "keyword" },
+      "project_type": { "type": "keyword" },
+      "project_name": { "type": "keyword" },
+      "optimized_for": { "type": "keyword" },
+      "es_url": { "type": "keyword" },
+      "day": { "type": "keyword" },
+      "@timestamp": {
+        "type": "alias",
+        "path": "updated_at"
+      },
+      "meta_refreshed_at": { "type": "date" },
+      "updated_at": { "type": "date" },
+      "last_success_at": { "type": "date" },
+      "last_status": { "type": "keyword" },
+      "index_count": { "type": "long" },
+      "indices": { "type": "flattened" },
+      "acc": { "type": "flattened" },
+      "acc_list": { "type": "object", "enabled": false },
+      "totals": { "type": "object", "enabled": false },
+      "closed": { "type": "object", "enabled": false }
+    }
+  }
+}

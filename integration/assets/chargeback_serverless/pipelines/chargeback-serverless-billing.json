@@ -1,0 +1,63 @@
+{
+  "description": "Chargeback Serverless: build composite_key, classify Serverless SKUs, and set allocation_driver (indexing | query | storage | none) for showback.",
+  "processors": [
+    {
+      "script": {
+        "ignore_failure": true,
+        "lang": "painless",
+        "tag": "project_fields_and_composite_key",
+        "source": "if (ctx.deployment_id == null && ctx.project_id != null) {\n  ctx.deployment_id = ctx.project_id;\n}\nif ((ctx.deployment_name == null || ctx.deployment_name == '') && ctx.project_name != null && ctx.project_name != '') {\n  ctx.deployment_name = ctx.project_name;\n}\nif (ctx.deployment_type == null && ctx.project_type != null) {\n  ctx.deployment_type = ctx.project_type;\n}\nif (ctx.total_ecu == null && ctx.total_chargeable_units != null) {\n  ctx.total_ecu = ctx.total_chargeable_units;\n}\nctx.remove('project_id');\nctx.remove('project_name');\nctx.remove('project_type');\nctx.remove('total_chargeable_units');\nif (ctx['@timestamp'] != null && ctx.deployment_id != null) {\n  ctx.composite_key = ZonedDateTime.parse(ctx['@timestamp']).toLocalDate().toString() + '_' + ctx.deployment_id;\n}\n"
+      }
+    },
+    {
+      "set": {
+        "field": "cost_type",
+        "value": "data-transfer",
+        "if": "ctx.sku != null && ctx.sku =~ /^(aws|gcp|azure)\\.(data-transfer|data-out).*/"
+      }
+    },
+    {
+      "set": {
+        "field": "cost_type",
+        "value": "snapshots",
+        "if": "ctx.sku != null && ctx.sku =~ /^(aws|gcp|azure)\\.snapshot-storage.*/"
+      }
+    },
+    {
+      "set": {
+        "field": "cost_type",
+        "value": "inference",
+        "if": "ctx.sku == 'global.inference-chat-input'"
+      }
+    },
+    {
+      "script": {
+        "ignore_failure": true,
+        "lang": "painless",
+        "description": "Serverless-only classification. Sets cost_type, cost_category, is_allocatable, and allocation_driver. Drivers: indexing (ingest VCU / Observability-Security ingest GB), query (search VCU), storage (retained), none (unallocated).",
+        "source": "def sku = ctx.sku;\nif (sku == null) {\n  ctx.cost_type = 'other';\n  ctx.cost_category = 'other';\n  ctx.is_allocatable = false;\n  ctx.allocation_driver = 'none';\n  return;\n}\n\n// Observability / Security SKUs (ingest GB vs retained storage).\nif (sku.startsWith('observability.') || sku.startsWith('security.')) {\n  if (sku.contains('retained') || sku.contains('storage') || sku.contains('retention')) {\n    ctx.cost_type = 'retained';\n    ctx.cost_category = 'data_tier';\n    ctx.is_allocatable = true;\n    ctx.allocation_driver = 'storage';\n    return;\n  }\n  if (sku.contains('ingest') || sku.contains('logs') || sku.contains('metrics')\n      || sku.contains('traces') || sku.contains('apm') || sku.contains('siem')) {\n    ctx.cost_type = 'ingest';\n    ctx.cost_category = 'data_tier';\n    ctx.is_allocatable = true;\n    ctx.allocation_driver = 'indexing';\n    return;\n  }\n}\n\n// Elasticsearch and Vector Database capacity (VCU + retained).\nif (sku.startsWith('elasticsearch.') || sku.startsWith('vector.')\n    || sku.startsWith('elasticsearch-vector.')) {\n  if (sku.contains('-ingest-vcu_') || sku.contains('ingest-vcu')) {\n    ctx.cost_type = 'ingest-vcu';\n    ctx.cost_category = 'data_tier';\n    ctx.is_allocatable = true;\n    ctx.allocation_driver = 'indexing';\n    return;\n  }\n  if (sku.contains('-search-vcu_') || sku.contains('search-vcu')) {\n    ctx.cost_type = 'search-vcu';\n    ctx.cost_category = 'data_tier';\n    ctx.is_allocatable = true;\n    ctx.allocation_driver = 'query';\n    return;\n  }\n  if (sku.startsWith('elasticsearch.retained_') || sku.contains('retained_')\n      || sku.contains('storage')) {\n    ctx.cost_type = 'retained';\n    ctx.cost_category = 'data_tier';\n    ctx.is_allocatable = true;\n    ctx.allocation_driver = 'storage';\n    return;\n  }\n  if (sku.contains('-ml-vcu_') || sku.contains('ml-vcu')) {\n    ctx.cost_type = 'ml-vcu';\n    ctx.cost_category = 'platform';\n    ctx.is_allocatable = false;\n    ctx.allocation_driver = 'none';\n    return;\n  }\n}\n\nif (sku.startsWith('serverless.support-')) {\n  ctx.cost_type = 'serverless_premium_support';\n  ctx.cost_category = 'support';\n  ctx.is_allocatable = false;\n  ctx.allocation_driver = 'none';\n  return;\n}\n\nif (ctx.cost_type == 'data-transfer' || sku.contains('data-transfer')\n    || sku.contains('data-out') || sku.contains('egress')) {\n  ctx.cost_type = 'data-transfer';\n  ctx.cost_category = 'transfer';\n  ctx.is_allocatable = false;\n  ctx.allocation_driver = 'none';\n  return;\n}\nif (ctx.cost_type == 'snapshots' || sku.contains('snapshot')) {\n  ctx.cost_type = 'snapshots';\n  ctx.cost_category = 'snapshot';\n  ctx.is_allocatable = false;\n  ctx.allocation_driver = 'none';\n  return;\n}\nif (ctx.cost_type == 'inference' || sku.contains('inference') || sku.contains('llm')) {\n  ctx.cost_type = 'inference';\n  ctx.cost_category = 'platform';\n  ctx.is_allocatable = false;\n  ctx.allocation_driver = 'none';\n  return;\n}\nif (sku.contains('synthetics')) {\n  ctx.cost_type = 'synthetics';\n  ctx.cost_category = 'platform';\n  ctx.is_allocatable = false;\n  ctx.allocation_driver = 'none';\n  return;\n}\nif (sku.contains('workflow')) {\n  ctx.cost_type = 'workflows';\n  ctx.cost_category = 'platform';\n  ctx.is_allocatable = false;\n  ctx.allocation_driver = 'none';\n  return;\n}\nif (sku.contains('agent-builder')) {\n  ctx.cost_type = 'agent-builder';\n  ctx.cost_category = 'platform';\n  ctx.is_allocatable = false;\n  ctx.allocation_driver = 'none';\n  return;\n}\nif (sku.contains('cross-project') || sku.contains('cps')) {\n  ctx.cost_type = 'cross-project-search';\n  ctx.cost_category = 'platform';\n  ctx.is_allocatable = false;\n  ctx.allocation_driver = 'none';\n  return;\n}\n\nctx.cost_category = 'other';\nctx.is_allocatable = false;\nctx.allocation_driver = 'none';\n"
+      }
+    },
+    {
+      "grok": {
+        "field": "sku",
+        "ignore_failure": true,
+        "patterns": [
+          "%{WORD}.es.%{WORD:cost_type}.%{GREEDYDATA}",
+          "%{WORD}.%{DATA:cost_type}-vcu_%{GREEDYDATA}",
+          "%{WORD}.%{WORD:cost_type}.%{GREEDYDATA}",
+          "%{WORD}.%{DATA:cost_type}_%{GREEDYDATA}"
+        ],
+        "description": "Derive a readable fallback cost_type from unknown SKUs",
+        "if": "ctx.cost_type == null && ctx.sku != null"
+      }
+    },
+    {
+      "set": {
+        "field": "event.ingested",
+        "value": "{{{_ingest.timestamp}}}",
+        "tag": "set_event_ingested"
+      }
+    }
+  ]
+}

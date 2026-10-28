@@ -1,0 +1,43 @@
+{
+  "settings": {
+    "index": {
+      "mode": "standard",
+      "codec": "best_compression",
+      "mapping": {
+        "source": {
+          "mode": "synthetic"
+        }
+      }
+    }
+  },
+  "mappings": {
+    "dynamic": "strict",
+    "properties": {
+      "organization_id": { "type": "keyword" },
+      "billing_api_base": { "type": "keyword" },
+      "cloud_api_base": { "type": "keyword" },
+      "billing_api_key": {
+        "type": "keyword",
+        "index": false,
+        "doc_values": false
+      },
+      "usage_api_key": {
+        "type": "keyword",
+        "index": false,
+        "doc_values": false
+      },
+      "hub_es_api_key": {
+        "type": "keyword",
+        "index": false,
+        "doc_values": false
+      },
+      "include_project_ids": { "type": "keyword" },
+      "exclude_project_ids": { "type": "keyword" },
+      "project_api_keys": {
+        "type": "object",
+        "enabled": false
+      },
+      "updated_at": { "type": "date" }
+    }
+  }
+}

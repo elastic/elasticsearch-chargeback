@@ -1,0 +1,24 @@
+{
+  "settings": {
+    "index": {
+      "mode": "lookup",
+      "codec": "best_compression",
+      "mapping": {
+        "source": {
+          "mode": "synthetic"
+        }
+      }
+    }
+  },
+  "mappings": {
+    "dynamic": "strict",
+    "properties": {
+      "project_id": { "type": "keyword" },
+      "project_type": { "type": "keyword" },
+      "project_name": { "type": "keyword" },
+      "optimized_for": { "type": "keyword" },
+      "es_url": { "type": "keyword" },
+      "updated_at": { "type": "date" }
+    }
+  }
+}

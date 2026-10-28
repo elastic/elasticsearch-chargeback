@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Native Chargeback Serverless hub** ([#123](https://github.com/elastic/elasticsearch-chargeback/issues/123)): [`integration/assets/chargeback_serverless/`](integration/assets/chargeback_serverless/README.md) with lean lookup indices, billing classification pipeline, usage and billing workflows, and [`scripts/install_chargeback_serverless.sh`](scripts/install_chargeback_serverless.sh). Companion Fleet package `chargeback_serverless` lives on integrations branch `wip-johannes-chargeback-serverless`.
+
 ---
 
 ## Integration Releases

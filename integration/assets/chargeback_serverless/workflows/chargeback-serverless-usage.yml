@@ -1,0 +1,241 @@
+version: "1"
+name: Chargeback Serverless - Usage
+description: >-
+  Hourly: discover Serverless projects, call each project's _cat/indices (four
+  columns), accumulate deltas in chargeback-serverless-state, flush closed-day
+  contribution rows. HTTP JSON bodies are under steps.*.output.data.
+enabled: true
+triggers:
+  - type: manual
+  - type: scheduled
+    with:
+      every: 1h
+consts:
+  config_index: "chargeback-serverless-config"
+  config_id: "config"
+  state_index: "chargeback-serverless-state"
+  projects_index: "chargeback-serverless-projects"
+  ds_lookup: "cluster_datastream_contribution_lookup"
+  dep_lookup: "cluster_deployment_contribution_lookup"
+  cat_cols: "index,dataset.size,indexing.index_time,search.query_time"
+  cloud_api_base: "https://api.elastic-cloud.com"
+steps:
+  - name: load_config
+    type: elasticsearch.request
+    with:
+      method: GET
+      path: "/{{consts.config_index}}/_doc/{{consts.config_id}}"
+
+  - name: ensure_projects_mapping
+    type: elasticsearch.request
+    on-failure:
+      continue: true
+    with:
+      method: PUT
+      path: "/{{consts.projects_index}}/_mapping"
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "properties": {
+            "updated_at": { "type": "date" }
+          }
+        }
+
+  - name: ensure_dep_mapping
+    type: elasticsearch.request
+    on-failure:
+      continue: true
+    with:
+      method: PUT
+      path: "/{{consts.dep_lookup}}/_mapping"
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "properties": {
+            "project_id": { "type": "keyword" },
+            "project_name": { "type": "keyword" },
+            "project_type": { "type": "keyword" }
+          }
+        }
+
+  - name: ensure_ds_mapping
+    type: elasticsearch.request
+    on-failure:
+      continue: true
+    with:
+      method: PUT
+      path: "/{{consts.ds_lookup}}/_mapping"
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {
+          "properties": {
+            "project_id": { "type": "keyword" },
+            "project_name": { "type": "keyword" },
+            "project_type": { "type": "keyword" }
+          }
+        }
+
+  - name: list_elasticsearch
+    type: http
+    timeout: "60s"
+    with:
+      method: GET
+      url: "{{ steps.load_config.output._source.cloud_api_base | default: consts.cloud_api_base }}/api/v1/serverless/projects/elasticsearch"
+      headers:
+        Authorization: "ApiKey {{ steps.load_config.output._source.usage_api_key }}"
+
+  - name: list_observability
+    type: http
+    timeout: "60s"
+    with:
+      method: GET
+      url: "{{ steps.load_config.output._source.cloud_api_base | default: consts.cloud_api_base }}/api/v1/serverless/projects/observability"
+      headers:
+        Authorization: "ApiKey {{ steps.load_config.output._source.usage_api_key }}"
+
+  - name: list_security
+    type: http
+    timeout: "60s"
+    with:
+      method: GET
+      url: "{{ steps.load_config.output._source.cloud_api_base | default: consts.cloud_api_base }}/api/v1/serverless/projects/security"
+      headers:
+        Authorization: "ApiKey {{ steps.load_config.output._source.usage_api_key }}"
+
+  - name: upsert_projects
+    type: elasticsearch.request
+    with:
+      method: POST
+      path: "/_bulk?refresh=true"
+      headers:
+        Content-Type: "application/x-ndjson"
+      body: |
+        {% assign ts = 'now' | date: '%Y-%m-%dT%H:%M:%SZ' -%}
+        {% for p in steps.list_elasticsearch.output.data.items -%}
+        {"index":{"_index":"{{consts.projects_index}}","_id":"{{ p.id }}"}}
+        {"project_id":"{{ p.id }}","project_type":"elasticsearch","project_name":{{ p.name | json }},"optimized_for":{{ p.optimized_for | default: "general_purpose" | json }},"es_url":{{ p.endpoints.elasticsearch | json }},"updated_at":"{{ ts }}"}
+        {% endfor -%}
+        {% for p in steps.list_observability.output.data.items -%}
+        {"index":{"_index":"{{consts.projects_index}}","_id":"{{ p.id }}"}}
+        {"project_id":"{{ p.id }}","project_type":"observability","project_name":{{ p.name | json }},"optimized_for":"","es_url":{{ p.endpoints.elasticsearch | json }},"updated_at":"{{ ts }}"}
+        {% endfor -%}
+        {% for p in steps.list_security.output.data.items -%}
+        {"index":{"_index":"{{consts.projects_index}}","_id":"{{ p.id }}"}}
+        {"project_id":"{{ p.id }}","project_type":"security","project_name":{{ p.name | json }},"optimized_for":"","es_url":{{ p.endpoints.elasticsearch | json }},"updated_at":"{{ ts }}"}
+        {% endfor -%}
+
+  - name: list_projects
+    type: elasticsearch.request
+    with:
+      method: POST
+      path: "/{{consts.projects_index}}/_search"
+      headers:
+        Content-Type: "application/json"
+      body: |
+        {% assign inc = steps.load_config.output._source.include_project_ids | default: empty -%}
+        {% assign exc = steps.load_config.output._source.exclude_project_ids | default: empty -%}
+        {
+          "size": 500,
+          "track_total_hits": true,
+          "query": {
+            "bool": {
+              "filter": [
+                {% if inc.size > 0 %}{ "terms": { "project_id": {{ inc | json }} } }{% else %}{ "match_all": {} }{% endif %}
+              ],
+              "must_not": [
+                {% if exc.size > 0 %}{ "terms": { "project_id": {{ exc | json }} } }{% endif %}
+              ]
+            }
+          }
+        }
+
+  - name: for_each_project
+    type: foreach
+    foreach: "{{ steps.list_projects.output.hits.hits }}"
+    on-failure:
+      continue: true
+    steps:
+      - name: fetch_cat_indices
+        type: http
+        timeout: "60s"
+        on-failure:
+          continue: true
+          retry:
+            max-attempts: 1
+        with:
+          method: GET
+          url: "{{ foreach.item._source.es_url }}/_cat/indices?h={{consts.cat_cols}}&format=json&bytes=b&time=ms&expand_wildcards=open,hidden"
+          headers:
+            # Prefer per-project ES API key from project_api_keys[project_id], then hub_es_api_key, then usage_api_key.
+            Authorization: "{% assign pid = foreach.item._source.project_id %}{% assign pkeys = steps.load_config.output._source.project_api_keys %}{% assign pkey = nil %}{% if pkeys %}{% assign pkey = pkeys[pid] %}{% endif %}ApiKey {{ pkey | default: steps.load_config.output._source.hub_es_api_key | default: steps.load_config.output._source.usage_api_key }}"
+
+      - name: accumulate
+        type: elasticsearch.request
+        on-failure:
+          continue: true
+        with:
+          method: POST
+          path: "/{{consts.state_index}}/_update/{{ foreach.item._source.project_id }}?_source=true&refresh=true"
+          headers:
+            Content-Type: "application/json"
+          # Body as Liquid JSON so rows stays a real array (YAML "{{ x }}" stringifies lists).
+          body: |
+            {
+              "scripted_upsert": true,
+              "upsert": {
+                "project_id": {{ foreach.item._source.project_id | json }},
+                "day": "",
+                "indices": {},
+                "acc": {},
+                "acc_list": [],
+                "totals": { "indexing": 0, "query": 0, "store_size": 0 }
+              },
+              "script": {
+                "lang": "painless",
+                "source": "Instant now = Instant.ofEpochMilli(System.currentTimeMillis()); String today = ZonedDateTime.ofInstant(now, ZoneOffset.UTC).toLocalDate().toString(); if (ctx._source.day == null || ctx._source.day == '') { ctx._source.day = today; } if (ctx._source.indices == null) { ctx._source.indices = new HashMap(); } if (ctx._source.acc == null) { ctx._source.acc = new HashMap(); } ctx._source.project_id = params.project_id; ctx._source.project_type = params.project_type; ctx._source.project_name = params.project_name; ctx._source.optimized_for = params.optimized_for; ctx._source.es_url = params.es_url; def rows = params.rows; if (rows == null || rows.size() == 0) { ctx._source.last_status = 'empty_or_unauthorized'; ctx._source.index_count = (long)ctx._source.indices.size(); } else { ctx._source.updated_at = now.toString(); ctx._source.last_success_at = now.toString(); ctx._source.last_status = 'ok'; ctx._source.index_count = (long)rows.size(); if (!ctx._source.day.equals(today)) { List clist = new ArrayList(); long cti = 0L; long ctq = 0L; long cts = 0L; for (def entry : ctx._source.acc.entrySet()) { Map ca = (Map)entry.getValue(); long cai = 0L; long caq = 0L; long casz = 0L; long can = 0L; try { cai = Long.parseLong(ca.indexing.toString()); } catch (Exception e) {} try { caq = Long.parseLong(ca.query.toString()); } catch (Exception e) {} try { casz = Long.parseLong(ca.size_sum.toString()); } catch (Exception e) {} try { can = Long.parseLong(ca.size_n.toString()); } catch (Exception e) {} long cstore = can > 0L ? (casz / can) : 0L; cti += cai; ctq += caq; cts += cstore; clist.add(['ds': ca.ds.toString(), 'indexing': cai, 'query': caq, 'store_size': cstore]); } ctx._source.closed = ['day': ctx._source.day, 'acc_list': clist, 'totals': ['indexing': cti, 'query': ctq, 'store_size': cts]]; ctx._source.day = today; ctx._source.acc = new HashMap(); } else { ctx._source.remove('closed'); } Map poll_sizes = new HashMap(); for (def row : rows) { String idx = row['index'] != null ? row['index'].toString() : null; if (idx == null) continue; if (idx.startsWith('.') && !idx.startsWith('.ds-')) continue; if (idx.contains('metrics-ess_billing') || idx.endsWith('_lookup')) continue; if (idx.startsWith('chargeback-serverless') || idx.startsWith('logs-chargeback_serverless')) continue; long dsize = 0L; long itime = 0L; long qtime = 0L; try { dsize = Long.parseLong(row['dataset.size'].toString()); } catch (Exception e) {} try { itime = Long.parseLong(row['indexing.index_time'].toString()); } catch (Exception e) {} try { qtime = Long.parseLong(row['search.query_time'].toString()); } catch (Exception e) {} String ds = idx; String ikey = idx.replace('.', '|'); if (ctx._source.indices.containsKey(ikey) && ctx._source.indices[ikey] != null && ((Map)ctx._source.indices[ikey]).ds != null) { ds = ((Map)ctx._source.indices[ikey]).ds.toString(); } else if (idx.startsWith('.ds-')) { def m = /^\\.ds-(.+)-(\\d{4}\\.\\d{2}\\.\\d{2})-(\\d+)$/.matcher(idx); if (m.matches()) { ds = m.group(1); } } String akey = ds.replace('.', '|'); Map prev = ctx._source.indices.containsKey(ikey) ? (Map)ctx._source.indices[ikey] : null; long dI = itime; long dQ = qtime; if (prev != null) { long pI = 0L; long pQ = 0L; try { pI = Long.parseLong(prev.itime.toString()); } catch (Exception e) {} try { pQ = Long.parseLong(prev.qtime.toString()); } catch (Exception e) {} dI = (itime >= pI) ? (itime - pI) : itime; dQ = (qtime >= pQ) ? (qtime - pQ) : qtime; } if (!ctx._source.acc.containsKey(akey)) { ctx._source.acc[akey] = ['indexing': 0L, 'query': 0L, 'size_sum': 0L, 'size_n': 0L, 'store_size': 0L, 'ds': ds]; } Map a = (Map)ctx._source.acc[akey]; long ai = 0L; long aq = 0L; try { ai = Long.parseLong(a.indexing.toString()); } catch (Exception e) {} try { aq = Long.parseLong(a.query.toString()); } catch (Exception e) {} a.indexing = ai + dI; a.query = aq + dQ; a.ds = ds; long prev_ps = poll_sizes.containsKey(akey) ? (long)poll_sizes[akey] : 0L; poll_sizes[akey] = prev_ps + dsize; ctx._source.indices[ikey] = ['itime': itime, 'qtime': qtime, 'ds': ds]; } for (def ps : poll_sizes.entrySet()) { Map a = (Map)ctx._source.acc[ps.getKey()]; long asz = 0L; long an = 0L; try { asz = Long.parseLong(a.size_sum.toString()); } catch (Exception e) {} try { an = Long.parseLong(a.size_n.toString()); } catch (Exception e) {} a.size_sum = asz + (long)ps.getValue(); a.size_n = an + 1L; } } List acc_list = new ArrayList(); long tot_i = 0L; long tot_q = 0L; long tot_s = 0L; for (def entry : ctx._source.acc.entrySet()) { Map a = (Map)entry.getValue(); long ai = 0L; long aq = 0L; long asz = 0L; long an = 0L; try { ai = Long.parseLong(a.indexing.toString()); } catch (Exception e) {} try { aq = Long.parseLong(a.query.toString()); } catch (Exception e) {} try { asz = Long.parseLong(a.size_sum.toString()); } catch (Exception e) {} try { an = Long.parseLong(a.size_n.toString()); } catch (Exception e) {} long store_sz = an > 0L ? (asz / an) : 0L; a.store_size = store_sz; tot_i += ai; tot_q += aq; tot_s += store_sz; acc_list.add(['ds': a.ds.toString(), 'indexing': ai, 'query': aq, 'store_size': store_sz]); } ctx._source.acc_list = acc_list; ctx._source.totals = ['indexing': tot_i, 'query': tot_q, 'store_size': tot_s];",
+                "params": {
+                  "project_id": {{ foreach.item._source.project_id | json }},
+                  "project_type": {{ foreach.item._source.project_type | json }},
+                  "project_name": {{ foreach.item._source.project_name | json }},
+                  "optimized_for": {{ foreach.item._source.optimized_for | json }},
+                  "es_url": {{ foreach.item._source.es_url | json }},
+                  "rows": {% if steps.fetch_cat_indices.output.data %}{{ steps.fetch_cat_indices.output.data | json }}{% else %}[]{% endif %}
+                }
+              }
+            }
+
+      - name: write_contributions
+        type: elasticsearch.request
+        on-failure:
+          continue: true
+        with:
+          method: POST
+          path: "/_bulk?refresh=true"
+          headers:
+            Content-Type: "application/x-ndjson"
+          body: |
+            {% assign st = steps.accumulate.output.get._source -%}
+            {% if st.day and st.acc_list.size > 0 -%}
+            {% if st.closed and st.closed.day -%}
+            {"index":{"_index":"{{consts.dep_lookup}}","_id":"{{st.closed.day}}_{{st.project_id}}"}}
+            {"@timestamp":"{{st.closed.day}}T00:00:00.000Z","composite_key":"{{st.closed.day}}_{{st.project_id}}","cluster_name":{{ st.project_id | json }},"project_id":{{ st.project_id | json }},"project_name":{{ st.project_name | json }},"project_type":{{ st.project_type | json }},"deployment_sum_indexing_time":{{ st.closed.totals.indexing | default: 0 }},"deployment_sum_query_time":{{ st.closed.totals.query | default: 0 }},"deployment_sum_data_set_store_size":{{ st.closed.totals.store_size | default: 0 }}}
+            {% for item in st.closed.acc_list -%}
+            {"index":{"_index":"{{consts.ds_lookup}}","_id":"{{st.closed.day}}_{{st.project_id}}|{{item.ds}}"}}
+            {"@timestamp":"{{st.closed.day}}T00:00:00.000Z","composite_key":"{{st.closed.day}}_{{st.project_id}}","cluster_name":{{ st.project_id | json }},"project_id":{{ st.project_id | json }},"project_name":{{ st.project_name | json }},"project_type":{{ st.project_type | json }},"datastream":{{ item.ds | json }},"datastream_sum_indexing_time":{{ item.indexing | default: 0 }},"datastream_sum_query_time":{{ item.query | default: 0 }},"datastream_sum_data_set_store_size":{{ item.store_size | default: 0 }}}
+            {% endfor -%}
+            {% endif -%}
+            {"index":{"_index":"{{consts.dep_lookup}}","_id":"{{st.day}}_{{st.project_id}}"}}
+            {"@timestamp":"{{st.day}}T00:00:00.000Z","composite_key":"{{st.day}}_{{st.project_id}}","cluster_name":{{ st.project_id | json }},"project_id":{{ st.project_id | json }},"project_name":{{ st.project_name | json }},"project_type":{{ st.project_type | json }},"deployment_sum_indexing_time":{{ st.totals.indexing | default: 0 }},"deployment_sum_query_time":{{ st.totals.query | default: 0 }},"deployment_sum_data_set_store_size":{{ st.totals.store_size | default: 0 }}}
+            {% for item in st.acc_list -%}
+            {"index":{"_index":"{{consts.ds_lookup}}","_id":"{{st.day}}_{{st.project_id}}|{{item.ds}}"}}
+            {"@timestamp":"{{st.day}}T00:00:00.000Z","composite_key":"{{st.day}}_{{st.project_id}}","cluster_name":{{ st.project_id | json }},"project_id":{{ st.project_id | json }},"project_name":{{ st.project_name | json }},"project_type":{{ st.project_type | json }},"datastream":{{ item.ds | json }},"datastream_sum_indexing_time":{{ item.indexing | default: 0 }},"datastream_sum_query_time":{{ item.query | default: 0 }},"datastream_sum_data_set_store_size":{{ item.store_size | default: 0 }}}
+            {% endfor -%}
+            {% endif -%}
+
+  - name: summary
+    type: console
+    with:
+      message: "Chargeback Serverless usage finished for {{ steps.list_projects.output.hits.total.value }} projects"

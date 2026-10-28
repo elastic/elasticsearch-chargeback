@@ -1,0 +1,33 @@
+{
+  "settings": {
+    "index": {
+      "mode": "lookup",
+      "codec": "best_compression",
+      "mapping": {
+        "source": {
+          "mode": "synthetic"
+        }
+      }
+    }
+  },
+  "mappings": {
+    "dynamic": "strict",
+    "properties": {
+      "@timestamp": { "type": "date" },
+      "composite_key": { "type": "keyword" },
+      "cluster_name": { "type": "keyword" },
+      "project_id": { "type": "keyword" },
+      "project_name": { "type": "keyword" },
+      "project_type": { "type": "keyword" },
+      "datastream": { "type": "keyword" },
+      "datastream_sum_indexing_time": { "type": "long" },
+      "datastream_sum_query_time": { "type": "long" },
+      "datastream_sum_data_set_store_size": { "type": "long" },
+      "event": {
+        "properties": {
+          "ingested": { "type": "date" }
+        }
+      }
+    }
+  }
+}
