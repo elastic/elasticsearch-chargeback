@@ -3,7 +3,7 @@
 # E2E Deployment Script for Chargeback Serverless
 #
 # Automates:
-#   1. Environment & credential resolution (from .env or interactive prompts)
+#   1. Environment & credential resolution (from macOS Keychain or interactive prompts)
 #   2. Pre-flight health and connectivity checks (ES & Kibana)
 #   3. Dashboard generation & asset sync
 #   4. Package building with elastic-package
@@ -45,7 +45,7 @@ Options:
   --non-interactive     Fail immediately if required variables are missing instead of prompting
   -h, --help            Show this help message
 
-Environment variables (loaded from .env if present):
+Environment variables (loaded from macOS Keychain, or .env if present):
   ES_URL / sl_url       Elasticsearch URL (Hub)
   KIBANA_URL            Kibana URL (Hub, defaults to sl_url with .kb. instead of .es.)
   ES_API_KEY            Elasticsearch Hub API key (or HUB_KIBANA_API_KEY / HUB_ES_API_KEY)
@@ -78,8 +78,15 @@ echo "       Chargeback Serverless E2E Deployment Automation           "
 echo "================================================================="
 
 # ------------------------------------------------------------------------------
-# 1. Load .env and resolve configuration variables
+# 1. Resolve credentials (macOS Keychain or environment)
 # ------------------------------------------------------------------------------
+if [[ -f "$REPO_ROOT/scripts/keychain.sh" ]]; then
+  # shellcheck source=scripts/keychain.sh
+  source "$REPO_ROOT/scripts/keychain.sh"
+  keychain_load_env
+fi
+
+# Fallback: load .env only if present
 ENV_FILE="$REPO_ROOT/.env"
 if [[ -f "$ENV_FILE" ]]; then
   echo "Loading environment from .env..."
@@ -157,6 +164,9 @@ prompt_var() {
     exit 1
   fi
   export "$var_name"="$input_val"
+  if type keychain_set >/dev/null 2>&1 && keychain_is_macos; then
+    keychain_set "$var_name" "$input_val" >/dev/null 2>&1 || true
+  fi
 }
 
 prompt_var "ES_URL" "Enter Hub Elasticsearch URL (e.g. https://<id>.es.<region>.<cloud>.elastic.cloud)"

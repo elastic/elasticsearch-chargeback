@@ -14,10 +14,10 @@ Install on a **Serverless hub** (Observability Complete recommended). Do not ins
 
 ### Automated E2E Deployment (One-Command Deploy)
 
-Builds package with `elastic-package`, loads `.env` or prompts for credentials, uploads to Kibana Fleet EPM, installs infrastructure, syncs configuration, and executes workflows:
+Builds package with `elastic-package`, loads credentials from macOS Keychain or prompts interactively, uploads to Kibana Fleet EPM, installs infrastructure, syncs configuration, and executes workflows:
 
 ```bash
-# Deploys latest build to test/target environment using .env or interactive prompts
+# Deploys latest build to test/target environment using macOS Keychain or interactive prompts
 ./scripts/deploy_chargeback_serverless.sh
 
 # Options:

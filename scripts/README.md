@@ -16,7 +16,7 @@ Scripts for running Chargeback integration tests locally. **Use the automated E2
 For deploying and verifying the **native Chargeback Serverless hub integration** (`chargeback_serverless` package 0.1.6+ with Kibana Workflows, EPM API, and least-privileged harvesting keys):
 
 ```bash
-# Full E2E deployment to test env (uses .env or prompts for credentials)
+# Full E2E deployment to test env (uses macOS Keychain or prompts for credentials)
 ./scripts/deploy_chargeback_serverless.sh
 
 # Fast deployment skipping build step (uses existing package zip in dist/)
@@ -27,9 +27,30 @@ For deploying and verifying the **native Chargeback Serverless hub integration**
 ```
 
 Modular components:
+- [`keychain.sh`](keychain.sh): macOS Keychain credential manager. Securely stores, loads, lists, and manages environment variables in Keychain (`elasticsearch-chargeback` service) instead of plaintext `.env`.
 - [`deploy_chargeback_serverless.sh`](deploy_chargeback_serverless.sh): Orchestrates dashboard generation, `elastic-package build`, Fleet package upload, infrastructure install, credentials sync, workflow triggering, and verification queries.
 - [`install_chargeback_serverless.sh`](install_chargeback_serverless.sh): Installs ingest pipeline, sets up 8 core lean index mappings, imports Workflows, and calls configuration.
 - [`configure_chargeback_serverless.sh`](configure_chargeback_serverless.sh): Configures `chargeback-serverless-config` (Cloud Org ID, Billing/Usage API keys, Hub ES API key, remote project harvesting keys) and `chargeback_conf_lookup` (currency rate, unit, currency symbol).
+
+### Managing Credentials with macOS Keychain
+
+Instead of storing credentials in a plaintext `.env` file, credentials can be stored in the macOS Keychain:
+
+```bash
+# Store or update a credential (prompts securely for value)
+./scripts/keychain.sh set BILLING_API_KEY
+./scripts/keychain.sh set USAGE_API_KEY
+./scripts/keychain.sh set ORGANIZATION_ID 2001809318
+
+# List stored credentials
+./scripts/keychain.sh list
+
+# Inspect a credential
+./scripts/keychain.sh get ORGANIZATION_ID
+
+# Load credentials into your current shell session
+source scripts/keychain.sh
+```
 
 ---
 

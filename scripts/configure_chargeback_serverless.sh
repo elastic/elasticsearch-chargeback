@@ -20,7 +20,14 @@
 
 set -euo pipefail
 
-ES_URL="${ES_URL:-${ES_HOST:-https://127.0.0.1:9200}}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "$SCRIPT_DIR/keychain.sh" ]]; then
+  # shellcheck source=scripts/keychain.sh
+  source "$SCRIPT_DIR/keychain.sh"
+  keychain_load_env
+fi
+
+ES_URL="${ES_URL:-${sl_url:-${ES_HOST:-https://127.0.0.1:9200}}}"
 ES_API_KEY="${ES_API_KEY:-${HUB_ES_API_KEY:-${HUB_KIBANA_API_KEY:-}}}"
 HUB_ES_API_KEY="${HUB_ES_API_KEY:-$ES_API_KEY}"
 ORGANIZATION_ID="${ORGANIZATION_ID:-}"
