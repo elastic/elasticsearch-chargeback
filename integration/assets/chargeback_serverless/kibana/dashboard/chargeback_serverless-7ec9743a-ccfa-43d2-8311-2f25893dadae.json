@@ -105,7 +105,7 @@
                                     "name": "chargeback_conf_lookup",
                                     "runtimeFieldMap": {},
                                     "sourceFilters": [],
-                                    "timeFieldName": "conf_start_date",
+                                    "timeFieldName": null,
                                     "title": "chargeback_conf_lookup",
                                     "type": "esql"
                                 }
@@ -115,7 +115,7 @@
                                     "indexPatternRefs": [
                                         {
                                             "id": "6a4f7eba9ea0f9ab52eeba32fcc712df646596507d47b8c892451b6400029d6b",
-                                            "timeField": "conf_start_date",
+                                            "timeField": null,
                                             "title": "chargeback_conf_lookup"
                                         }
                                     ],
@@ -183,7 +183,7 @@
                                             "query": {
                                                 "esql": "FROM chargeback_conf_lookup\n| KEEP conf_start_date, conf_end_date, conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_currency_symbol\n| SORT conf_start_date DESC"
                                             },
-                                            "timeField": "conf_start_date"
+                                            "timeField": null
                                         }
                                     }
                                 }
@@ -260,7 +260,7 @@
                                     "name": "chargeback-serverless-projects",
                                     "runtimeFieldMap": {},
                                     "sourceFilters": [],
-                                    "timeFieldName": "updated_at",
+                                    "timeFieldName": null,
                                     "title": "chargeback-serverless-projects",
                                     "type": "esql"
                                 }
@@ -270,7 +270,7 @@
                                     "indexPatternRefs": [
                                         {
                                             "id": "dda14876d0db9f8c0c854499c13077c0ee010585c18afbde345cd5c8de3f7e61",
-                                            "timeField": "updated_at",
+                                            "timeField": null,
                                             "title": "chargeback-serverless-projects"
                                         }
                                     ],
@@ -332,7 +332,7 @@
                                             "query": {
                                                 "esql": "FROM chargeback-serverless-projects\n| KEEP project_name, project_id, project_type, optimized_for, es_url\n| RENAME project_name AS `Project`, project_id AS `Project ID`, project_type AS `Type`, optimized_for AS `Optimized for`, es_url AS `Elasticsearch endpoint`\n| SORT `Project` ASC\n| LIMIT 200"
                                             },
-                                            "timeField": "updated_at"
+                                            "timeField": null
                                         }
                                     }
                                 }

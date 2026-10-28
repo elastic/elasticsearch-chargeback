@@ -18,8 +18,9 @@ import sys
 import uuid
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
-KIBANA = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else ROOT / "kibana"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_KIBANA = REPO_ROOT / "integration" / "assets" / "chargeback_serverless" / "kibana"
+KIBANA = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else DEFAULT_KIBANA
 
 DASH_BILLING = "chargeback_serverless-b6cecac0-ebe7-43de-bfc6-1ff287ad860a"
 DASH_USAGE = "chargeback_serverless-21588d0e-fb6a-4f76-ad2f-cd7b3d7a3d7c"
@@ -163,7 +164,7 @@ def lens_esql(
     w: int,
     h: int,
     index: str = BILLING,
-    time_field: str = "@timestamp",
+    time_field: str | None = "@timestamp",
 ) -> tuple[dict, list]:
     adhoc = adhoc_id(f"esql|{title}|{index}")
     layer_id = stable_uuid(f"layer:{panel_id}")
@@ -1264,7 +1265,7 @@ def build_config() -> dict:
         20,
         10,
         index=CONF,
-        time_field="conf_start_date",
+        time_field=None,
     )
     panels.append(p)
 
@@ -1299,7 +1300,7 @@ def build_config() -> dict:
         28,
         10,
         index=PROJECTS,
-        time_field="updated_at",
+        time_field=None,
     )
     panels.append(p)
 
