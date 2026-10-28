@@ -28,7 +28,7 @@ In Elastic Cloud Serverless, a Cloud Organization API key can list projects via 
 The key created on remote projects requires **only cluster and index metadata permissions**. It has **no access to documents, indices data, or search**:
 
 * **Cluster:** `monitor` (allows reading `_cat/indices` metrics: shard sizes, indexing time, query time)
-* **Indices:** `view_index_metadata` on `*`
+* **Indices:** `monitor` on `*`
 * **Data:** *None* (cannot search, query, read, write, or delete documents)
 
 Even if an unauthorized user inspects the workflow config document or execution history, this key cannot access any business data.
@@ -42,12 +42,12 @@ POST _security/api_key
 {
   "name": "chargeback-usage-harvesting",
   "role_descriptors": {
-    "chargeback_harvest": {
+    "chargeback_usage": {
       "cluster": ["monitor"],
       "indices": [
         {
           "names": ["*"],
-          "privileges": ["view_index_metadata"]
+          "privileges": ["monitor"]
         }
       ]
     }

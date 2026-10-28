@@ -1194,12 +1194,12 @@ def build_config() -> dict:
 {
   "name": "chargeback-usage-harvesting",
   "role_descriptors": {
-    "chargeback_harvest": {
+    "chargeback_usage": {
       "cluster": ["monitor"],
       "indices": [
         {
           "names": ["*"],
-          "privileges": ["view_index_metadata"]
+          "privileges": ["monitor"]
         }
       ]
     }

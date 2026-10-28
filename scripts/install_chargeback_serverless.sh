@@ -9,7 +9,7 @@
 #   KIBANA_API_KEY      Hub Kibana API key (create/update workflows)
 #   ORGANIZATION_ID     Elastic Cloud organization ID (billing)
 #   BILLING_API_KEY     Elastic Cloud API key with billing read
-#   USAGE_API_KEY       Elastic Cloud API key with project list + ES monitor/view_index_metadata
+#   USAGE_API_KEY       Elastic Cloud API key with project list + ES monitor
 #
 # Optional:
 #   BILLING_API_BASE    default https://billing.elastic-cloud.com

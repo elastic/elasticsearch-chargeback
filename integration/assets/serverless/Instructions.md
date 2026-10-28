@@ -20,7 +20,7 @@ Prefer [`scripts/install_serverless_usage.sh`](../../../scripts/install_serverle
   }
   ```
 
-- An API key **on each Serverless project** with cluster `monitor` and index `read` + `view_index_metadata`.
+- An API key **on each Serverless project** with cluster `monitor` and index `monitor` on `*`.
 
 ## Install with the script
 

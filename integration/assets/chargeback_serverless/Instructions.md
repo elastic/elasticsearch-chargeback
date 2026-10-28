@@ -66,12 +66,12 @@ To break down usage per data stream across projects outside this hub:
    {
      "name": "chargeback-usage-harvesting",
      "role_descriptors": {
-       "chargeback_harvest": {
+       "chargeback_usage": {
          "cluster": ["monitor"],
          "indices": [
            {
              "names": ["*"],
-             "privileges": ["view_index_metadata"]
+             "privileges": ["monitor"]
            }
          ]
        }
@@ -125,6 +125,6 @@ Filter tag **Chargeback**. Wording is **project** (Serverless), not deployment.
 
 ## Security & Architecture Notes
 
-- Remote project `_cat/indices` requires a per-project Elasticsearch API key (`project_api_keys[project_id]`) with `monitor` and `view_index_metadata` privileges.
+- Remote project `_cat/indices` requires a per-project Elasticsearch API key (`project_api_keys[project_id]`) with `monitor` privileges (cluster `monitor` and index `monitor` on `*`).
 - Restrict read access to `chargeback-serverless-config` using Kibana RBAC so standard dashboard users cannot inspect configuration credentials.
 - Indexing time is a proxy for Observability and Security ingest GB.
