@@ -284,31 +284,51 @@ def custom_panel(
     return panel, []
 
 
-CLIENT_FORMAT_SCRIPT = """\
-<script>
-  (function() {
-    try {
-      var nf = new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      var els = document.querySelectorAll('.cb-money');
-      for (var i = 0; i < els.length; i++) {
-        var num = parseFloat(els[i].getAttribute('data-val'));
-        if (!isNaN(num)) {
-          els[i].textContent = nf.format(num);
-        }
-      }
-    } catch(e) {}
-  })();
-</script>"""
-
-
-def liquid_money_block(val_var: str, out_var: str) -> str:
-    """Liquid snippet to format a number with thousands separators (e.g. 1,234.56)."""
+def liquid_money_block(val_var: str, out_var: str, with_decimals: bool = True) -> str:
+    """Liquid snippet to format a number with thousands and millions comma separators (e.g. 1,234 or 1,234.56)."""
     p = f"_{out_var}"
+    if not with_decimals:
+        return f"""\
+{{% assign {p}_iv = {val_var} | round %}}
+{{% if {p}_iv >= 1000000000 %}}
+  {{% assign {p}_b = {p}_iv | divided_by: 1000000000 %}}
+  {{% assign {p}_m = {p}_iv | modulo: 1000000000 | divided_by: 1000000 %}}
+  {{% assign {p}_k = {p}_iv | modulo: 1000000 | divided_by: 1000 %}}
+  {{% assign {p}_u = {p}_iv | modulo: 1000 %}}
+  {{% if {p}_m < 10 %}}{{% assign {p}_ms = "00" | append: {p}_m %}}{{% elsif {p}_m < 100 %}}{{% assign {p}_ms = "0" | append: {p}_m %}}{{% else %}}{{% assign {p}_ms = {p}_m %}}{{% endif %}}
+  {{% if {p}_k < 10 %}}{{% assign {p}_ks = "00" | append: {p}_k %}}{{% elsif {p}_k < 100 %}}{{% assign {p}_ks = "0" | append: {p}_k %}}{{% else %}}{{% assign {p}_ks = {p}_k %}}{{% endif %}}
+  {{% if {p}_u < 10 %}}{{% assign {p}_us = "00" | append: {p}_u %}}{{% elsif {p}_u < 100 %}}{{% assign {p}_us = "0" | append: {p}_u %}}{{% else %}}{{% assign {p}_us = {p}_u %}}{{% endif %}}
+  {{% assign {out_var} = {p}_b | append: "," | append: {p}_ms | append: "," | append: {p}_ks | append: "," | append: {p}_us %}}
+{{% elsif {p}_iv >= 1000000 %}}
+  {{% assign {p}_m = {p}_iv | divided_by: 1000000 %}}
+  {{% assign {p}_k = {p}_iv | modulo: 1000000 | divided_by: 1000 %}}
+  {{% assign {p}_u = {p}_iv | modulo: 1000 %}}
+  {{% if {p}_k < 10 %}}{{% assign {p}_ks = "00" | append: {p}_k %}}{{% elsif {p}_k < 100 %}}{{% assign {p}_ks = "0" | append: {p}_k %}}{{% else %}}{{% assign {p}_ks = {p}_k %}}{{% endif %}}
+  {{% if {p}_u < 10 %}}{{% assign {p}_us = "00" | append: {p}_u %}}{{% elsif {p}_u < 100 %}}{{% assign {p}_us = "0" | append: {p}_u %}}{{% else %}}{{% assign {p}_us = {p}_u %}}{{% endif %}}
+  {{% assign {out_var} = {p}_m | append: "," | append: {p}_ks | append: "," | append: {p}_us %}}
+{{% elsif {p}_iv >= 1000 %}}
+  {{% assign {p}_k = {p}_iv | divided_by: 1000 %}}
+  {{% assign {p}_u = {p}_iv | modulo: 1000 %}}
+  {{% if {p}_u < 10 %}}{{% assign {p}_us = "00" | append: {p}_u %}}{{% elsif {p}_u < 100 %}}{{% assign {p}_us = "0" | append: {p}_u %}}{{% else %}}{{% assign {p}_us = {p}_u %}}{{% endif %}}
+  {{% assign {out_var} = {p}_k | append: "," | append: {p}_us %}}
+{{% else %}}
+  {{% assign {out_var} = {p}_iv %}}
+{{% endif %}}"""
+
     return f"""\
 {{% assign {p}_iv = {val_var} | floor %}}
 {{% assign {p}_dv = {val_var} | minus: {p}_iv | times: 100 | round %}}
 {{% if {p}_dv < 10 %}}{{% assign {p}_ds = "0" | append: {p}_dv %}}{{% else %}}{{% assign {p}_ds = {p}_dv | append: "" %}}{{% endif %}}
-{{% if {p}_iv >= 1000000 %}}
+{{% if {p}_iv >= 1000000000 %}}
+  {{% assign {p}_b = {p}_iv | divided_by: 1000000000 %}}
+  {{% assign {p}_m = {p}_iv | modulo: 1000000000 | divided_by: 1000000 %}}
+  {{% assign {p}_k = {p}_iv | modulo: 1000000 | divided_by: 1000 %}}
+  {{% assign {p}_u = {p}_iv | modulo: 1000 %}}
+  {{% if {p}_m < 10 %}}{{% assign {p}_ms = "00" | append: {p}_m %}}{{% elsif {p}_m < 100 %}}{{% assign {p}_ms = "0" | append: {p}_m %}}{{% else %}}{{% assign {p}_ms = {p}_m %}}{{% endif %}}
+  {{% if {p}_k < 10 %}}{{% assign {p}_ks = "00" | append: {p}_k %}}{{% elsif {p}_k < 100 %}}{{% assign {p}_ks = "0" | append: {p}_k %}}{{% else %}}{{% assign {p}_ks = {p}_k %}}{{% endif %}}
+  {{% if {p}_u < 10 %}}{{% assign {p}_us = "00" | append: {p}_u %}}{{% elsif {p}_u < 100 %}}{{% assign {p}_us = "0" | append: {p}_u %}}{{% else %}}{{% assign {p}_us = {p}_u %}}{{% endif %}}
+  {{% assign {out_var} = {p}_b | append: "," | append: {p}_ms | append: "," | append: {p}_ks | append: "," | append: {p}_us | append: "." | append: {p}_ds %}}
+{{% elsif {p}_iv >= 1000000 %}}
   {{% assign {p}_m = {p}_iv | divided_by: 1000000 %}}
   {{% assign {p}_k = {p}_iv | modulo: 1000000 | divided_by: 1000 %}}
   {{% assign {p}_u = {p}_iv | modulo: 1000 %}}
@@ -327,44 +347,45 @@ def liquid_money_block(val_var: str, out_var: str) -> str:
 
 BILLING_KPI_TEMPLATE = f"""\
 <style>
-  .cb-kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--cc-space-s, 8px); margin: 0; padding: 0; }}
+  .cb-kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--cc-space-s, 8px); margin: 0 0 14px 0; padding: 0 0 8px 0; }}
   .cb-kpi {{
     background: var(--cc-color-surface);
     border: 1px solid var(--cc-color-border);
     border-radius: var(--cc-radius);
-    padding: 8px 12px;
+    padding: 10px 14px 12px 14px;
   }}
   .cb-kpi-label {{ color: var(--cc-color-text); opacity: 0.72; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; line-height: 1.1; }}
-  .cb-kpi-value {{ font-size: 1.45rem; font-weight: 600; margin-top: 3px; line-height: 1.1; font-variant-numeric: tabular-nums; display: flex; align-items: baseline; }}
+  .cb-kpi-value {{ font-size: 1.45rem; font-weight: 600; margin-top: 4px; line-height: 1.1; font-variant-numeric: tabular-nums; display: flex; align-items: baseline; }}
   .cb-sym {{ font-size: 1.05rem; opacity: 0.85; margin-right: 4px; font-weight: 500; }}
-  .cb-kpi-sub {{ font-size: 0.75rem; opacity: 0.68; margin-top: 3px; line-height: 1.1; }}
+  .cb-kpi-sub {{ font-size: 0.75rem; opacity: 0.68; margin-top: 4px; line-height: 1.1; }}
 </style>
 {{% assign r = rows[0] %}}
 {{% assign total = r["total_spend"].value | default: 0.0 %}}
 {{% assign alloc = r["allocatable_spend"].value | default: 0.0 %}}
 {{% assign unalloc = r["unallocatable_spend"].value | default: 0.0 %}}
-{{% assign sym = r["currency_symbol"].value | default: r["unit"].value | default: "ECU" %}}
+{{% assign unit = r["unit"].value | default: "ECU" %}}
+{{% assign sym = r["currency_symbol"].value | default: unit %}}
 {{% assign denom = total %}}
 {{% if denom <= 0 %}}{{% assign denom = 1.0 %}}{{% endif %}}
-{{% assign alloc_pct = alloc | times: 100.0 | divided_by: denom | round: 1 %}}
-{{% assign unalloc_pct = unalloc | times: 100.0 | divided_by: denom | round: 1 %}}
-{liquid_money_block("total", "fmt_total")}
-{liquid_money_block("alloc", "fmt_alloc")}
-{liquid_money_block("unalloc", "fmt_unalloc")}
+{{% assign alloc_pct = alloc | times: 100.0 | divided_by: denom | round %}}
+{{% assign unalloc_pct = unalloc | times: 100.0 | divided_by: denom | round %}}
+{liquid_money_block("total", "fmt_total", with_decimals=False)}
+{liquid_money_block("alloc", "fmt_alloc", with_decimals=False)}
+{liquid_money_block("unalloc", "fmt_unalloc", with_decimals=False)}
 <div class="cb-kpis">
   <div class="cb-kpi">
-    <div class="cb-kpi-label">Total Spend</div>
-    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money" data-val="{{{{ total }}}}">{{{{ fmt_total }}}}</span></div>
+    <div class="cb-kpi-label">Total Spend ({{{{ unit }}}})</div>
+    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_total }}}}</span></div>
     <div class="cb-kpi-sub">All Serverless line items</div>
   </div>
   <div class="cb-kpi">
-    <div class="cb-kpi-label">Allocatable Pool</div>
-    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money" data-val="{{{{ alloc }}}}">{{{{ fmt_alloc }}}}</span></div>
+    <div class="cb-kpi-label">Allocatable Pool ({{{{ unit }}}})</div>
+    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_alloc }}}}</span></div>
     <div class="cb-kpi-sub">{{{{ alloc_pct }}}}% of total spend</div>
   </div>
   <div class="cb-kpi">
-    <div class="cb-kpi-label">Unallocatable Spend</div>
-    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money" data-val="{{{{ unalloc }}}}">{{{{ fmt_unalloc }}}}</span></div>
+    <div class="cb-kpi-label">Unallocatable Spend ({{{{ unit }}}})</div>
+    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_unalloc }}}}</span></div>
     <div class="cb-kpi-sub">{{{{ unalloc_pct }}}}% pass-through / org-wide</div>
   </div>
   <div class="cb-kpi">
@@ -378,62 +399,63 @@ BILLING_KPI_TEMPLATE = f"""\
     <div class="cb-kpi-sub">UTC invoice snapshot</div>
   </div>
 </div>
-{CLIENT_FORMAT_SCRIPT}
 """
+
 
 USAGE_KPI_TEMPLATE = f"""\
 <style>
-  .cb-kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--cc-space-s, 8px); margin: 0; padding: 0; }}
+  .cb-kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--cc-space-s, 8px); margin: 0 0 14px 0; padding: 0 0 8px 0; }}
   .cb-kpi {{
     background: var(--cc-color-surface);
     border: 1px solid var(--cc-color-border);
     border-radius: var(--cc-radius);
-    padding: 8px 12px;
+    padding: 10px 14px 12px 14px;
   }}
   .cb-kpi-label {{ color: var(--cc-color-text); opacity: 0.72; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; line-height: 1.1; }}
-  .cb-kpi-value {{ font-size: 1.45rem; font-weight: 600; margin-top: 3px; line-height: 1.1; font-variant-numeric: tabular-nums; display: flex; align-items: baseline; }}
+  .cb-kpi-value {{ font-size: 1.45rem; font-weight: 600; margin-top: 4px; line-height: 1.1; font-variant-numeric: tabular-nums; display: flex; align-items: baseline; }}
   .cb-sym {{ font-size: 1.05rem; opacity: 0.85; margin-right: 4px; font-weight: 500; }}
-  .cb-kpi-sub {{ font-size: 0.75rem; opacity: 0.68; margin-top: 3px; line-height: 1.1; }}
+  .cb-kpi-sub {{ font-size: 0.75rem; opacity: 0.68; margin-top: 4px; line-height: 1.1; }}
 </style>
 {{% assign r = rows[0] %}}
 {{% assign pool = r["pool_spend"].value | default: 0.0 %}}
 {{% assign idx_s = r["indexing_spend"].value | default: 0.0 %}}
 {{% assign qry_s = r["query_spend"].value | default: 0.0 %}}
 {{% assign stg_s = r["storage_spend"].value | default: 0.0 %}}
-{{% assign sym = r["currency_symbol"].value | default: r["unit"].value | default: "ECU" %}}
+{{% assign unit = r["unit"].value | default: "ECU" %}}
+{{% assign sym = r["currency_symbol"].value | default: unit %}}
 {{% assign denom = pool %}}
 {{% if denom <= 0 %}}{{% assign denom = 1.0 %}}{{% endif %}}
-{{% assign idx_pct = idx_s | times: 100.0 | divided_by: denom | round: 1 %}}
-{{% assign qry_pct = qry_s | times: 100.0 | divided_by: denom | round: 1 %}}
-{{% assign stg_pct = stg_s | times: 100.0 | divided_by: denom | round: 1 %}}
-{liquid_money_block("pool", "fmt_pool")}
-{liquid_money_block("idx_s", "fmt_idx_s")}
-{liquid_money_block("qry_s", "fmt_qry_s")}
-{liquid_money_block("stg_s", "fmt_stg_s")}
+{{% assign idx_pct = idx_s | times: 100.0 | divided_by: denom | round %}}
+{{% assign qry_pct = qry_s | times: 100.0 | divided_by: denom | round %}}
+{{% assign stg_pct = stg_s | times: 100.0 | divided_by: denom | round %}}
+{liquid_money_block("pool", "fmt_pool", with_decimals=False)}
+{liquid_money_block("idx_s", "fmt_idx_s", with_decimals=False)}
+{liquid_money_block("qry_s", "fmt_qry_s", with_decimals=False)}
+{liquid_money_block("stg_s", "fmt_stg_s", with_decimals=False)}
 <div class="cb-kpis">
   <div class="cb-kpi">
-    <div class="cb-kpi-label">Total Allocatable Pool</div>
-    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money" data-val="{{{{ pool }}}}">{{{{ fmt_pool }}}}</span></div>
+    <div class="cb-kpi-label">Total Allocatable Pool ({{{{ unit }}}})</div>
+    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_pool }}}}</span></div>
     <div class="cb-kpi-sub">100% workload-attributable spend</div>
   </div>
   <div class="cb-kpi">
-    <div class="cb-kpi-label">Indexing Pool</div>
-    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money" data-val="{{{{ idx_s }}}}">{{{{ fmt_idx_s }}}}</span></div>
+    <div class="cb-kpi-label">Indexing Pool ({{{{ unit }}}})</div>
+    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_idx_s }}}}</span></div>
     <div class="cb-kpi-sub">{{{{ idx_pct }}}}% · ingest-vcu + ingest</div>
   </div>
   <div class="cb-kpi">
-    <div class="cb-kpi-label">Search &amp; Query Pool</div>
-    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money" data-val="{{{{ qry_s }}}}">{{{{ fmt_qry_s }}}}</span></div>
+    <div class="cb-kpi-label">Search &amp; Query Pool ({{{{ unit }}}})</div>
+    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_qry_s }}}}</span></div>
     <div class="cb-kpi-sub">{{{{ qry_pct }}}}% · search-vcu + ml-vcu</div>
   </div>
   <div class="cb-kpi">
-    <div class="cb-kpi-label">Storage Pool</div>
-    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money" data-val="{{{{ stg_s }}}}">{{{{ fmt_stg_s }}}}</span></div>
+    <div class="cb-kpi-label">Storage Pool ({{{{ unit }}}})</div>
+    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_stg_s }}}}</span></div>
     <div class="cb-kpi-sub">{{{{ stg_pct }}}}% · retained storage</div>
   </div>
 </div>
-{CLIENT_FORMAT_SCRIPT}
 """
+
 
 SANKEY_TEMPLATE = f"""\
 <style>
@@ -453,24 +475,209 @@ SANKEY_TEMPLATE = f"""\
   .cb-cost {{ text-align: right; font-variant-numeric: tabular-nums; font-size: 0.88rem; white-space: nowrap; }}
   .cb-sym {{ font-weight: 500; opacity: 0.85; margin-right: 2px; }}
 </style>
+{{% assign unit = rows[0]["unit"].value | default: "ECU" %}}
+{{% assign sym = rows[0]["currency_symbol"].value | default: unit %}}
 {{% assign max_cost = rows[0]["cost"].value | default: 1.0 %}}
 {{% if max_cost <= 0 %}}{{% assign max_cost = 1.0 %}}{{% endif %}}
 <div class="cb-flow">
 {{% for row in rows %}}
   {{% assign cost = row["cost"].value | default: 0.0 %}}
-  {{% assign sym = row["currency_symbol"].value | default: row["unit"].value | default: "ECU" %}}
   {{% assign bar_pct = cost | times: 100.0 | divided_by: max_cost | round: 1 %}}
-{liquid_money_block("cost", "fmt_cost")}
+{liquid_money_block("cost", "fmt_cost", with_decimals=True)}
   <div class="cb-row">
     <div class="cb-stage"><strong>{{{{ row["category"].value }}}}</strong></div>
     <div class="cb-stage">→ {{{{ row["cost_type"].value }}}}</div>
     <div class="cb-stage">→ {{{{ row["project_type"].value }}}}</div>
     <div class="cb-bar-track"><div class="cb-bar" style="width: {{{{ bar_pct }}}}%;"></div></div>
-    <div class="cb-cost"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money" data-val="{{{{ cost }}}}">{{{{ fmt_cost }}}}</span></div>
+    <div class="cb-cost"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_cost }}}}</span></div>
   </div>
 {{% endfor %}}
 </div>
-{CLIENT_FORMAT_SCRIPT}
+"""
+
+
+def make_bar_template(label_key: str, label_header: str) -> str:
+    return f"""\
+<style>
+  .cb-bars {{ display: flex; flex-direction: column; gap: 6px; padding: 4px 6px; max-height: 100%; overflow-y: auto; }}
+  .cb-bar-head {{
+    display: grid;
+    grid-template-columns: minmax(110px, 1.4fr) 2fr minmax(90px, 1fr);
+    gap: var(--cc-space-s, 8px);
+    font-size: 0.78rem; font-weight: 600; opacity: 0.75;
+    text-transform: uppercase; letter-spacing: 0.03em;
+    padding-bottom: 4px; border-bottom: 1px solid var(--cc-color-border);
+  }}
+  .cb-bar-head .num {{ text-align: right; }}
+  .cb-bar-row {{
+    display: grid;
+    grid-template-columns: minmax(110px, 1.4fr) 2fr minmax(90px, 1fr);
+    gap: var(--cc-space-s, 8px);
+    align-items: center; font-size: 0.85rem; padding: 2px 0;
+  }}
+  .cb-bar-label {{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }}
+  .cb-bar-track {{
+    height: 12px; background: var(--cc-color-border);
+    border-radius: var(--cc-radius-s, 4px); overflow: hidden;
+  }}
+  .cb-bar-fill {{ height: 100%; background: var(--cc-vis-0, #3274D9); min-width: 2px; }}
+  .cb-bar-val {{ text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }}
+  .cb-sym {{ font-weight: 500; opacity: 0.85; margin-right: 2px; }}
+</style>
+{{% assign unit = rows[0]["unit"].value | default: "ECU" %}}
+{{% assign sym = rows[0]["currency_symbol"].value | default: unit %}}
+{{% assign max_cost = rows[0]["cost"].value | default: 1.0 %}}
+{{% if max_cost <= 0 %}}{{% assign max_cost = 1.0 %}}{{% endif %}}
+<div class="cb-bars">
+  <div class="cb-bar-head">
+    <div>{label_header}</div>
+    <div>Share</div>
+    <div class="num">Cost ({{{{ unit }}}})</div>
+  </div>
+{{% for row in rows %}}
+  {{% assign cost = row["cost"].value | default: 0.0 %}}
+  {{% assign bar_pct = cost | times: 100.0 | divided_by: max_cost | round: 1 %}}
+{liquid_money_block("cost", "fmt_cost", with_decimals=True)}
+  <div class="cb-bar-row">
+    <div class="cb-bar-label" title="{{{{ row["{label_key}"].value }}}}">{{{{ row["{label_key}"].value }}}}</div>
+    <div class="cb-bar-track"><div class="cb-bar-fill" style="width: {{{{ bar_pct }}}}%;"></div></div>
+    <div class="cb-bar-val"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_cost }}}}</span></div>
+  </div>
+{{% endfor %}}
+</div>
+"""
+
+
+UNALLOC_TABLE_TEMPLATE = f"""\
+<style>
+  .cb-tbl-wrap {{ max-height: 100%; overflow: auto; }}
+  table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; }}
+  table.cb-t th {{
+    position: sticky; top: 0; background: var(--cc-color-surface); z-index: 1;
+    text-align: left; padding: 6px 8px; border-bottom: 2px solid var(--cc-color-border);
+    font-weight: 600; opacity: 0.75; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em;
+  }}
+  table.cb-t td {{ padding: 6px 8px; border-bottom: 1px solid var(--cc-color-border); }}
+  table.cb-t th.num, table.cb-t td.num {{ text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }}
+  .cb-sym {{ font-weight: 500; opacity: 0.85; margin-right: 2px; }}
+</style>
+{{% assign unit = rows[0]["unit"].value | default: "ECU" %}}
+{{% assign sym = rows[0]["currency_symbol"].value | default: unit %}}
+<div class="cb-tbl-wrap">
+<table class="cb-t">
+  <thead>
+    <tr><th>Category</th><th>Cost Type</th><th>SKU</th><th>Project</th><th class="num">Units (ECU)</th><th class="num">Cost ({{{{ unit }}}})</th></tr>
+  </thead>
+  <tbody>
+  {{% for row in rows %}}
+    {{% assign cost = row["cost"].value | default: 0.0 %}}
+    {{% assign ecu = row["ecu"].value | default: 0.0 %}}
+{liquid_money_block("cost", "fmt_cost", with_decimals=True)}
+{liquid_money_block("ecu", "fmt_ecu", with_decimals=True)}
+    <tr>
+      <td><strong>{{{{ row["category"].value }}}}</strong></td>
+      <td>{{{{ row["cost_type"].value }}}}</td>
+      <td><code>{{{{ row["sku"].value }}}}</code></td>
+      <td>{{{{ row["project"].value }}}}</td>
+      <td class="num">{{{{ fmt_ecu }}}}</td>
+      <td class="num"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_cost }}}}</span></td>
+    </tr>
+  {{% endfor %}}
+  </tbody>
+</table>
+</div>
+"""
+
+
+INVOICE_TABLE_TEMPLATE = f"""\
+<style>
+  .cb-tbl-wrap {{ max-height: 100%; overflow: auto; }}
+  table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; }}
+  table.cb-t th {{
+    position: sticky; top: 0; background: var(--cc-color-surface); z-index: 1;
+    text-align: left; padding: 6px 8px; border-bottom: 2px solid var(--cc-color-border);
+    font-weight: 600; opacity: 0.75; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em;
+  }}
+  table.cb-t td {{ padding: 6px 8px; border-bottom: 1px solid var(--cc-color-border); }}
+  table.cb-t th.num, table.cb-t td.num {{ text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }}
+  .cb-sym {{ font-weight: 500; opacity: 0.85; margin-right: 2px; }}
+</style>
+{{% assign unit = rows[0]["unit"].value | default: "ECU" %}}
+{{% assign sym = rows[0]["currency_symbol"].value | default: unit %}}
+<div class="cb-tbl-wrap">
+<table class="cb-t">
+  <thead>
+    <tr><th>Project</th><th>Type</th><th>Category</th><th>Cost Type</th><th>SKU</th><th>Driver</th><th class="num">Quantity</th><th class="num">Units (ECU)</th><th class="num">Cost ({{{{ unit }}}})</th></tr>
+  </thead>
+  <tbody>
+  {{% for row in rows %}}
+    {{% assign cost = row["cost"].value | default: 0.0 %}}
+    {{% assign ecu = row["ecu"].value | default: 0.0 %}}
+    {{% assign qty = row["qty"].value | default: 0.0 %}}
+{liquid_money_block("cost", "fmt_cost", with_decimals=True)}
+{liquid_money_block("ecu", "fmt_ecu", with_decimals=True)}
+{liquid_money_block("qty", "fmt_qty", with_decimals=True)}
+    <tr>
+      <td><strong>{{{{ row["project"].value }}}}</strong></td>
+      <td>{{{{ row["project_type"].value }}}}</td>
+      <td>{{{{ row["category"].value }}}}</td>
+      <td>{{{{ row["cost_type"].value }}}}</td>
+      <td><code>{{{{ row["sku"].value }}}}</code></td>
+      <td>{{{{ row["driver"].value }}}}</td>
+      <td class="num">{{{{ fmt_qty }}}}</td>
+      <td class="num">{{{{ fmt_ecu }}}}</td>
+      <td class="num"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_cost }}}}</span></td>
+    </tr>
+  {{% endfor %}}
+  </tbody>
+</table>
+</div>
+"""
+
+
+DATASTREAM_COST_TABLE_TEMPLATE = f"""\
+<style>
+  .cb-tbl-wrap {{ max-height: 100%; overflow: auto; }}
+  table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; }}
+  table.cb-t th {{
+    position: sticky; top: 0; background: var(--cc-color-surface); z-index: 1;
+    text-align: left; padding: 6px 8px; border-bottom: 2px solid var(--cc-color-border);
+    font-weight: 600; opacity: 0.75; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em;
+  }}
+  table.cb-t td {{ padding: 6px 8px; border-bottom: 1px solid var(--cc-color-border); }}
+  table.cb-t th.num, table.cb-t td.num {{ text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }}
+  .cb-sym {{ font-weight: 500; opacity: 0.85; margin-right: 2px; }}
+</style>
+{{% assign unit = rows[0]["unit"].value | default: "ECU" %}}
+{{% assign sym = rows[0]["currency_symbol"].value | default: unit %}}
+<div class="cb-tbl-wrap">
+<table class="cb-t">
+  <thead>
+    <tr><th>Project</th><th>Type</th><th>Data Stream</th><th class="num">Indexing ({{{{ sym }}}})</th><th class="num">Search ({{{{ sym }}}})</th><th class="num">Storage ({{{{ sym }}}})</th><th class="num">Attributed Cost ({{{{ unit }}}})</th></tr>
+  </thead>
+  <tbody>
+  {{% for row in rows %}}
+    {{% assign idx = row["indexing_cost"].value | default: 0.0 %}}
+    {{% assign qry = row["query_cost"].value | default: 0.0 %}}
+    {{% assign stg = row["storage_cost"].value | default: 0.0 %}}
+    {{% assign total = row["attributed_cost"].value | default: 0.0 %}}
+{liquid_money_block("idx", "fmt_idx", with_decimals=True)}
+{liquid_money_block("qry", "fmt_qry", with_decimals=True)}
+{liquid_money_block("stg", "fmt_stg", with_decimals=True)}
+{liquid_money_block("total", "fmt_total", with_decimals=True)}
+    <tr>
+      <td><strong>{{{{ row["project"].value }}}}</strong></td>
+      <td>{{{{ row["project_type"].value }}}}</td>
+      <td><code>{{{{ row["datastream"].value }}}}</code></td>
+      <td class="num"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_idx }}}}</span></td>
+      <td class="num"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_qry }}}}</span></td>
+      <td class="num"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_stg }}}}</span></td>
+      <td class="num"><strong><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_total }}}}</span></strong></td>
+    </tr>
+  {{% endfor %}}
+  </tbody>
+</table>
+</div>
 """
 
 STATUS_BOARD_TEMPLATE = """\
@@ -506,13 +713,15 @@ STATUS_BOARD_TEMPLATE = """\
 
 ALLOC_TABLE_TEMPLATE = f"""\
 <style>
-  table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.88rem; }}
-  table.cb-t th, table.cb-t td {{
-    text-align: left; padding: var(--cc-space-xs) var(--cc-space-s);
-    border-bottom: 1px solid var(--cc-color-border);
+  .cb-tbl-wrap {{ max-height: 100%; overflow: auto; }}
+  table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; }}
+  table.cb-t th {{
+    position: sticky; top: 0; background: var(--cc-color-surface); z-index: 1;
+    text-align: left; padding: 6px 8px; border-bottom: 2px solid var(--cc-color-border);
+    font-weight: 600; opacity: 0.75; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em;
   }}
-  table.cb-t th {{ opacity: 0.72; font-weight: 600; }}
-  table.cb-t td.num {{ text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }}
+  table.cb-t td {{ padding: 6px 8px; border-bottom: 1px solid var(--cc-color-border); }}
+  table.cb-t th.num, table.cb-t td.num {{ text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }}
   .cb-sym {{ font-weight: 500; opacity: 0.85; margin-right: 2px; }}
   .cb-bar-track {{
     height: 10px; background: var(--cc-color-border);
@@ -520,30 +729,32 @@ ALLOC_TABLE_TEMPLATE = f"""\
   }}
   .cb-bar {{ height: 100%; background: var(--cc-vis-0); min-width: 2px; }}
 </style>
+{{% assign unit = rows[0]["unit"].value | default: "ECU" %}}
+{{% assign sym = rows[0]["currency_symbol"].value | default: unit %}}
 {{% assign max_cost = rows[0]["cost"].value | default: 1.0 %}}
 {{% if max_cost <= 0 %}}{{% assign max_cost = 1.0 %}}{{% endif %}}
+<div class="cb-tbl-wrap">
 <table class="cb-t">
   <thead>
-    <tr><th>Project</th><th>Type</th><th>Cost Type</th><th>Driver</th><th class="num">Cost</th><th>Share</th></tr>
+    <tr><th>Project</th><th>Type</th><th>Cost Type</th><th>Driver</th><th class="num">Cost ({{{{ unit }}}})</th><th>Share</th></tr>
   </thead>
   <tbody>
   {{% for row in rows %}}
     {{% assign cost = row["cost"].value | default: 0.0 %}}
-    {{% assign sym = row["currency_symbol"].value | default: row["unit"].value | default: "ECU" %}}
     {{% assign bar_pct = cost | times: 100.0 | divided_by: max_cost | round: 1 %}}
-{liquid_money_block("cost", "fmt_cost")}
+{liquid_money_block("cost", "fmt_cost", with_decimals=True)}
     <tr>
       <td><strong>{{{{ row["project"].value }}}}</strong></td>
       <td>{{{{ row["project_type_label"].value }}}}</td>
       <td>{{{{ row["cost_type_label"].value }}}}</td>
       <td>{{{{ row["scope"].value }}}}</td>
-      <td class="num"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money" data-val="{{{{ cost }}}}">{{{{ fmt_cost }}}}</span></td>
+      <td class="num"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_cost }}}}</span></td>
       <td><div class="cb-bar-track"><div class="cb-bar" style="width: {{{{ bar_pct }}}}%;"></div></div></td>
     </tr>
   {{% endfor %}}
   </tbody>
 </table>
-{CLIENT_FORMAT_SCRIPT}
+</div>
 """
 
 
@@ -673,7 +884,7 @@ def build_billing() -> dict:
 
     p, _ = custom_panel(
         stable_uuid("cc-billing-kpi"),
-        "Billing Summary (local currency)",
+        "Billing Summary",
         BILLING_KPI_TEMPLATE,
         f"""{COST_PRELUDE}
 | EVAL alloc_cost = CASE(COALESCE(is_allocatable, false) == true AND allocation_driver != "none", cost, 0.0)
@@ -682,51 +893,38 @@ def build_billing() -> dict:
         0,
         2,
         48,
-        5,
+        6,
     )
     panels.append(p)
 
-    esql = f"""{COST_PRELUDE}
-| STATS `Normalized cost` = SUM(cost) BY ts, project
-| RENAME ts AS `@timestamp`
-| SORT `@timestamp` DESC
-| LIMIT 5000"""
-    p, _ = lens_esql(
-        stable_uuid("lens-billing-project"),
-        "Daily cost by project",
-        esql,
-        [
-            col("@timestamp", "date"),
-            col("project", "keyword", "Project"),
-            col("Normalized cost", "double"),
-        ],
-        "lnsXY",
-        xy_vis("Normalized cost", "project"),
+    p, _ = custom_panel(
+        stable_uuid("cc-billing-project"),
+        "Cost by project",
+        make_bar_template("project", "Project"),
+        f"""{COST_PRELUDE}
+| STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project
+| SORT cost DESC
+| LIMIT 25
+| KEEP project, cost, currency_symbol, unit""",
         0,
-        7,
+        8,
         24,
         14,
     )
     panels.append(p)
 
-    esql = f"""{COST_PRELUDE}
-| STATS `Normalized cost` = SUM(cost) BY ts, category_label
-| RENAME ts AS `@timestamp`, category_label AS `Cost category`
-| SORT `@timestamp` DESC
-| LIMIT 5000"""
-    p, _ = lens_esql(
-        stable_uuid("lens-billing-type"),
-        "Daily cost by cost category",
-        esql,
-        [
-            col("@timestamp", "date"),
-            col("Cost category", "keyword"),
-            col("Normalized cost", "double"),
-        ],
-        "lnsXY",
-        xy_vis("Normalized cost", "Cost category"),
+    p, _ = custom_panel(
+        stable_uuid("cc-billing-type"),
+        "Cost by cost category",
+        make_bar_template("category", "Cost category"),
+        f"""{COST_PRELUDE}
+| STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY category_label
+| RENAME category_label AS category
+| SORT cost DESC
+| LIMIT 25
+| KEEP category, cost, currency_symbol, unit""",
         24,
-        7,
+        8,
         24,
         14,
     )
@@ -743,84 +941,42 @@ def build_billing() -> dict:
 | RENAME category_label AS category, cost_type_label AS cost_type, project_type_label AS project_type
 | KEEP category, cost_type, project_type, cost, currency_symbol, unit""",
         0,
-        21,
+        22,
         28,
         14,
     )
     panels.append(p)
 
-    esql = f"""{COST_PRELUDE}
-| WHERE COALESCE(is_allocatable, false) == false OR allocation_driver == "none"
-| STATS `Normalized cost` = SUM(cost), `Chargeable units (ECU)` = SUM(units) BY category_label, cost_type_label, sku, project
-| RENAME category_label AS `Cost category`, cost_type_label AS `Cost type`, sku AS `SKU`, project AS `Project`
-| SORT `Normalized cost` DESC
-| LIMIT 50"""
-    p, _ = lens_esql(
-        stable_uuid("lens-billing-unallocatable"),
+    p, _ = custom_panel(
+        stable_uuid("cc-billing-unallocatable"),
         "Unallocatable & pass-through charges",
-        esql,
-        [
-            col("Cost category", "keyword"),
-            col("Cost type", "keyword"),
-            col("SKU", "keyword"),
-            col("Project", "keyword"),
-            col("Chargeable units (ECU)", "double"),
-            col("Normalized cost", "double"),
-        ],
-        "lnsDatatable",
-        table_vis(
-            [
-                "Cost category",
-                "Cost type",
-                "SKU",
-                "Project",
-                "Chargeable units (ECU)",
-                "Normalized cost",
-            ]
-        ),
+        UNALLOC_TABLE_TEMPLATE,
+        f"""{COST_PRELUDE}
+| WHERE COALESCE(is_allocatable, false) == false OR allocation_driver == "none"
+| STATS cost = SUM(cost), ecu = SUM(units), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY category_label, cost_type_label, sku, project
+| RENAME category_label AS category, cost_type_label AS cost_type
+| SORT cost DESC
+| LIMIT 50
+| KEEP category, cost_type, sku, project, ecu, cost, currency_symbol, unit""",
         28,
-        21,
+        22,
         20,
         14,
     )
     panels.append(p)
 
-    esql = f"""{COST_PRELUDE}
-| STATS `Quantity` = SUM(COALESCE(quantity_value, 0.0)), `Chargeable units (ECU)` = SUM(units), `Normalized cost` = SUM(cost) BY project, project_type_label, category_label, cost_type_label, sku, allocation_driver
-| RENAME project AS `Project`, project_type_label AS `Project type`, category_label AS `Cost category`, cost_type_label AS `Cost type`, sku AS `SKU`, allocation_driver AS `Allocation driver`
-| SORT `Normalized cost` DESC
-| LIMIT 200"""
-    p, _ = lens_esql(
-        stable_uuid("lens-billing-table"),
-        "Invoice reconciliation detail (local currency)",
-        esql,
-        [
-            col("Project", "keyword"),
-            col("Project type", "keyword"),
-            col("Cost category", "keyword"),
-            col("Cost type", "keyword"),
-            col("SKU", "keyword"),
-            col("Allocation driver", "keyword"),
-            col("Quantity", "double"),
-            col("Chargeable units (ECU)", "double"),
-            col("Normalized cost", "double"),
-        ],
-        "lnsDatatable",
-        table_vis(
-            [
-                "Project",
-                "Project type",
-                "Cost category",
-                "Cost type",
-                "SKU",
-                "Allocation driver",
-                "Quantity",
-                "Chargeable units (ECU)",
-                "Normalized cost",
-            ]
-        ),
+    p, _ = custom_panel(
+        stable_uuid("cc-billing-table"),
+        "Invoice reconciliation detail",
+        INVOICE_TABLE_TEMPLATE,
+        f"""{COST_PRELUDE}
+| STATS qty = SUM(COALESCE(quantity_value, 0.0)), ecu = SUM(units), cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project, project_type_label, category_label, cost_type_label, sku, allocation_driver
+| RENAME project_type_label AS project_type, category_label AS category, cost_type_label AS cost_type, allocation_driver AS driver
+| SORT cost DESC
+| LIMIT 200
+| KEEP project, project_type, category, cost_type, sku, driver, qty, ecu, cost, currency_symbol, unit""",
         0,
-        35,
+        36,
         48,
         14,
     )
@@ -846,7 +1002,7 @@ def build_usage() -> dict:
 
     p, _ = custom_panel(
         stable_uuid("cc-usage-kpi"),
-        "Workload Pool Summary (local currency)",
+        "Workload Pool Summary",
         USAGE_KPI_TEMPLATE,
         f"""{COST_PRELUDE}
 | WHERE COALESCE(is_allocatable, false) == true AND allocation_driver != "none"
@@ -857,30 +1013,23 @@ def build_usage() -> dict:
         0,
         2,
         48,
-        5,
+        6,
     )
     panels.append(p)
 
-    esql = f"""{COST_PRELUDE}
+    p, _ = custom_panel(
+        stable_uuid("cc-usage-driver"),
+        "Allocatable cost by workload driver",
+        make_bar_template("driver", "Workload driver"),
+        f"""{COST_PRELUDE}
 | WHERE COALESCE(is_allocatable, false) == true AND allocation_driver != "none"
-| EVAL `Workload driver` = CASE(cost_type_label IN ("ingest-vcu", "ingest"), "Indexing (ingest-vcu + ingest)", cost_type_label IN ("search-vcu", "ml-vcu"), "Search & Query (search-vcu + ml-vcu)", cost_type_label == "retained", "Storage (retained)", cost_type_label)
-| STATS `Normalized cost` = SUM(cost) BY ts, `Workload driver`
-| RENAME ts AS `@timestamp`
-| SORT `@timestamp` DESC
-| LIMIT 5000"""
-    p, _ = lens_esql(
-        stable_uuid("lens-usage-driver"),
-        "Daily allocatable cost by workload driver",
-        esql,
-        [
-            col("@timestamp", "date"),
-            col("Workload driver", "keyword"),
-            col("Normalized cost", "double"),
-        ],
-        "lnsXY",
-        xy_vis("Normalized cost", "Workload driver"),
+| EVAL driver = CASE(cost_type_label IN ("ingest-vcu", "ingest"), "Indexing (ingest-vcu + ingest)", cost_type_label IN ("search-vcu", "ml-vcu"), "Search & Query (search-vcu + ml-vcu)", cost_type_label == "retained", "Storage (retained)", cost_type_label)
+| STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY driver
+| SORT cost DESC
+| LIMIT 25
+| KEEP driver, cost, currency_symbol, unit""",
         0,
-        7,
+        8,
         24,
         14,
     )
@@ -898,18 +1047,39 @@ def build_usage() -> dict:
 | EVAL scope = allocation_driver
 | KEEP project, project_type_label, cost_type_label, scope, cost, currency_symbol, unit""",
         24,
-        7,
+        8,
         24,
         14,
     )
     panels.append(p)
 
-    esql = f"""FROM {DS_CONTRIB}
+    p, _ = custom_panel(
+        stable_uuid("cc-usage-datastream-cost"),
+        "Data stream cost attribution",
+        DATASTREAM_COST_TABLE_TEMPLATE,
+        f"""FROM {DS_CONTRIB}
 | EVAL ts = @timestamp, ds_project_name = CASE(project_name IS NOT NULL AND project_name != "", project_name, cluster_name IS NOT NULL AND cluster_name != "", cluster_name, "unknown"), ds_project_type = COALESCE(project_type, "unknown")
 | LOOKUP JOIN {DEP_CONTRIB} ON composite_key
 | LOOKUP JOIN {POOL} ON composite_key
 | LOOKUP JOIN {CONF} ON ts >= conf_start_date AND ts <= conf_end_date
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
+| EVAL unit = COALESCE(conf_chargeable_unit_rate_unit, "ECU")
+| EVAL currency_symbol = CASE(
+    conf_currency_symbol IS NOT NULL AND conf_currency_symbol != "", conf_currency_symbol,
+    conf_chargeable_unit_rate_unit == "ZAR", "R",
+    conf_chargeable_unit_rate_unit == "USD", "$",
+    conf_chargeable_unit_rate_unit == "EUR", "€",
+    conf_chargeable_unit_rate_unit == "GBP", "£",
+    conf_chargeable_unit_rate_unit == "JPY", "¥",
+    conf_chargeable_unit_rate_unit == "CNY", "¥",
+    conf_chargeable_unit_rate_unit == "INR", "₹",
+    conf_chargeable_unit_rate_unit == "CAD", "CA$",
+    conf_chargeable_unit_rate_unit == "AUD", "A$",
+    conf_chargeable_unit_rate_unit == "CHF", "CHF",
+    conf_chargeable_unit_rate_unit == "BRL", "R$",
+    conf_chargeable_unit_rate_unit IS NOT NULL AND conf_chargeable_unit_rate_unit != "", conf_chargeable_unit_rate_unit,
+    "ECU"
+  )
 | EVAL idx_share = CASE(COALESCE(deployment_sum_indexing_time, 0) > 0, TO_DOUBLE(datastream_sum_indexing_time) / TO_DOUBLE(deployment_sum_indexing_time), 0.0)
 | EVAL qry_share = CASE(COALESCE(deployment_sum_query_time, 0) > 0, TO_DOUBLE(datastream_sum_query_time) / TO_DOUBLE(deployment_sum_query_time), 0.0)
 | EVAL stg_share = CASE(COALESCE(deployment_sum_data_set_store_size, 0) > 0, TO_DOUBLE(datastream_sum_data_set_store_size) / TO_DOUBLE(deployment_sum_data_set_store_size), 0.0)
@@ -917,40 +1087,15 @@ def build_usage() -> dict:
 | EVAL qry_cost = COALESCE(query_ecu, 0.0) * rate * qry_share
 | EVAL stg_cost = COALESCE(storage_ecu, 0.0) * rate * stg_share
 | EVAL total_ds_cost = idx_cost + qry_cost + stg_cost
-| STATS `Indexing cost` = ROUND(SUM(idx_cost), 2), `Search cost` = ROUND(SUM(qry_cost), 2), `Storage cost` = ROUND(SUM(stg_cost), 2), `Attributed cost` = ROUND(SUM(total_ds_cost), 2) BY ds_project_name, ds_project_type, datastream
-| RENAME ds_project_name AS `Project`, ds_project_type AS `Project type`, datastream AS `Data stream`
-| SORT `Attributed cost` DESC
-| LIMIT 200"""
-    p, _ = lens_esql(
-        stable_uuid("lens-usage-datastream-cost"),
-        "Data stream cost attribution (local currency)",
-        esql,
-        [
-            col("Project", "keyword"),
-            col("Project type", "keyword"),
-            col("Data stream", "keyword"),
-            col("Indexing cost", "double"),
-            col("Search cost", "double"),
-            col("Storage cost", "double"),
-            col("Attributed cost", "double"),
-        ],
-        "lnsDatatable",
-        table_vis(
-            [
-                "Project",
-                "Project type",
-                "Data stream",
-                "Indexing cost",
-                "Search cost",
-                "Storage cost",
-                "Attributed cost",
-            ]
-        ),
+| STATS indexing_cost = SUM(idx_cost), query_cost = SUM(qry_cost), storage_cost = SUM(stg_cost), attributed_cost = SUM(total_ds_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY ds_project_name, ds_project_type, datastream
+| RENAME ds_project_name AS project, ds_project_type AS project_type
+| SORT attributed_cost DESC
+| LIMIT 200
+| KEEP project, project_type, datastream, indexing_cost, query_cost, storage_cost, attributed_cost, currency_symbol, unit""",
         0,
-        21,
+        22,
         48,
         14,
-        index=DS_CONTRIB,
     )
     panels.append(p)
 
@@ -984,7 +1129,7 @@ def build_usage() -> dict:
             ]
         ),
         0,
-        35,
+        36,
         48,
         14,
         index=DS_CONTRIB,
