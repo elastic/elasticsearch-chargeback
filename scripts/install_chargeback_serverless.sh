@@ -173,6 +173,7 @@ for idx in \
   billing_realized_pool_lookup \
   cluster_datastream_contribution_lookup \
   cluster_deployment_contribution_lookup \
+  cluster_ai_model_contribution_lookup \
   chargeback_conf_lookup
 do
   es_put_index "/${idx}" "$ASSETS/indices/${idx}.json"

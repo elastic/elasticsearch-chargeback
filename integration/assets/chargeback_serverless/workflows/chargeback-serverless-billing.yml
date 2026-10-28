@@ -257,6 +257,10 @@ steps:
                     "storage_ecu": {
                       "filter": { "term": { "cost_type": "retained" } },
                       "aggs": { "val": { "sum": { "field": "total_ecu" } } }
+                    },
+                    "ai_ecu": {
+                      "filter": { "terms": { "cost_type": ["ml-vcu", "inference"] } },
+                      "aggs": { "val": { "sum": { "field": "total_ecu" } } }
                     }
                   }
                 }
@@ -277,7 +281,7 @@ steps:
             {% for b in buckets -%}
             {% assign doc = b.meta.hits.hits[0]._source -%}
             {"index":{"_index":"{{consts.pool_lookup}}","_id":"{{ b.key }}"}}
-            {"@timestamp":"{{ foreach.item.day }}T00:00:00.000Z","composite_key":"{{ b.key }}","deployment_id":{{ doc.deployment_id | json }},"deployment_name":{{ doc.deployment_name | json }},"deployment_type":{{ doc.deployment_type | json }},"deployment_group":{{ doc.deployment_group | default: "serverless" | json }},"allocation_driver":"vcu_weighted","total_ecu":{{ b.total_ecu.value | default: 0 }},"indexing_ecu":{{ b.indexing_ecu.val.value | default: 0 }},"query_ecu":{{ b.query_ecu.val.value | default: 0 }},"storage_ecu":{{ b.storage_ecu.val.value | default: 0 }}}
+            {"@timestamp":"{{ foreach.item.day }}T00:00:00.000Z","composite_key":"{{ b.key }}","deployment_id":{{ doc.deployment_id | json }},"deployment_name":{{ doc.deployment_name | json }},"deployment_type":{{ doc.deployment_type | json }},"deployment_group":{{ doc.deployment_group | default: "serverless" | json }},"allocation_driver":"vcu_weighted","total_ecu":{{ b.total_ecu.value | default: 0 }},"indexing_ecu":{{ b.indexing_ecu.val.value | default: 0 }},"query_ecu":{{ b.query_ecu.val.value | default: 0 }},"storage_ecu":{{ b.storage_ecu.val.value | default: 0 }},"ai_ecu":{{ b.ai_ecu.val.value | default: 0 }}}
             {% endfor -%}
 
   - name: summary

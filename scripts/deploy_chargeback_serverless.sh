@@ -248,6 +248,7 @@ run_verification() {
     "chargeback-serverless-projects"
     "chargeback-serverless-state"
     "cluster_datastream_contribution_lookup"
+    "cluster_ai_model_contribution_lookup"
   )
 
   printf "\n%-42s | %-12s\n" "Index" "Doc Count"

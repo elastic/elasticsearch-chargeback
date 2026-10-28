@@ -26,6 +26,7 @@
       "indexing_ecu": { "type": "double" },
       "query_ecu": { "type": "double" },
       "storage_ecu": { "type": "double" },
+      "ai_ecu": { "type": "double" },
       "total_ecu": { "type": "double" },
       "total_chargeable_units": { "type": "double" },
       "event": {

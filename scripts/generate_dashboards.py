@@ -1466,6 +1466,92 @@ def build_usage() -> dict:
     )
     panels.append(p)
 
+    ai_kpi_esql = f"""FROM {BILLING}
+| EVAL ts = @timestamp
+| LOOKUP JOIN {CONF} ON ts >= conf_start_date AND ts <= conf_end_date
+| EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
+| EVAL unit = COALESCE(conf_chargeable_unit_rate_unit, "ECU")
+| EVAL currency_symbol = CASE(
+    conf_currency_symbol IS NOT NULL AND conf_currency_symbol != "", conf_currency_symbol,
+    conf_chargeable_unit_rate_unit == "ZAR", "R",
+    conf_chargeable_unit_rate_unit == "USD", "$",
+    conf_chargeable_unit_rate_unit == "EUR", "€",
+    conf_chargeable_unit_rate_unit == "GBP", "£",
+    conf_chargeable_unit_rate_unit == "JPY", "¥",
+    conf_chargeable_unit_rate_unit == "CNY", "¥",
+    conf_chargeable_unit_rate_unit == "INR", "₹",
+    conf_chargeable_unit_rate_unit == "CAD", "CA$",
+    conf_chargeable_unit_rate_unit == "AUD", "A$",
+    conf_chargeable_unit_rate_unit == "CHF", "CHF",
+    conf_chargeable_unit_rate_unit == "BRL", "R$",
+    conf_chargeable_unit_rate_unit IS NOT NULL AND conf_chargeable_unit_rate_unit != "", conf_chargeable_unit_rate_unit,
+    "ECU"
+  )
+| EVAL cost = COALESCE(total_ecu, 0.0) * rate
+| EVAL is_ai = CASE(cost_type IN ("ml-vcu", "inference") OR sku LIKE "*ml-vcu*" OR sku LIKE "*inference*", true, false)
+| WHERE is_ai == true
+| STATS ai_spend = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit)
+| EVAL dummy = 1
+| LOOKUP JOIN {AI_CONTRIB} ON dummy == 1
+| STATS ai_spend = MAX(ai_spend), total_inferences = SUM(inference_count), avg_latency_ms = ROUND(AVG(average_inference_time_ms), 1), currency_symbol = MAX(currency_symbol), unit = MAX(unit)
+| EVAL cost_per_1k = CASE(total_inferences > 0, ai_spend * 1000.0 / total_inferences, 0.0)
+| KEEP unit, currency_symbol, ai_spend, total_inferences, avg_latency_ms, cost_per_1k"""
+
+    p, _ = custom_panel(
+        stable_uuid("cc-usage-ai-kpi"),
+        "AI & Machine Learning FinOps Overview",
+        AI_KPIS_TEMPLATE,
+        ai_kpi_esql,
+        0,
+        64,
+        48,
+        6,
+    )
+    panels.append(p)
+
+    ai_models_esql = f"""FROM {AI_CONTRIB}
+| EVAL ts = @timestamp
+| LOOKUP JOIN {POOL} ON composite_key
+| LOOKUP JOIN {CONF} ON ts >= conf_start_date AND ts <= conf_end_date
+| EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
+| EVAL unit = COALESCE(conf_chargeable_unit_rate_unit, "ECU")
+| EVAL currency_symbol = CASE(
+    conf_currency_symbol IS NOT NULL AND conf_currency_symbol != "", conf_currency_symbol,
+    conf_chargeable_unit_rate_unit == "ZAR", "R",
+    conf_chargeable_unit_rate_unit == "USD", "$",
+    conf_chargeable_unit_rate_unit == "EUR", "€",
+    conf_chargeable_unit_rate_unit == "GBP", "£",
+    conf_chargeable_unit_rate_unit == "JPY", "¥",
+    conf_chargeable_unit_rate_unit == "CNY", "¥",
+    conf_chargeable_unit_rate_unit == "INR", "₹",
+    conf_chargeable_unit_rate_unit == "CAD", "CA$",
+    conf_chargeable_unit_rate_unit == "AUD", "A$",
+    conf_chargeable_unit_rate_unit == "CHF", "CHF",
+    conf_chargeable_unit_rate_unit == "BRL", "R$",
+    conf_chargeable_unit_rate_unit IS NOT NULL AND conf_chargeable_unit_rate_unit != "", conf_chargeable_unit_rate_unit,
+    "ECU"
+  )
+| EVAL compute_time = COALESCE(total_inference_time_ms, 0)
+| EVAL ai_pool_cost = COALESCE(ai_ecu, query_ecu, 0.0) * rate
+| STATS total_compute = SUM(compute_time), total_inf = SUM(inference_count), ai_pool = MAX(ai_pool_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY model_id, task_type
+| EVAL share = CASE(SUM(total_compute) > 0, total_compute * 1.0 / SUM(total_compute), 0.0)
+| EVAL attributed_cost = share * ai_pool
+| SORT total_compute DESC
+| LIMIT 25
+| KEEP model_id, task_type, total_compute, total_inf, attributed_cost, currency_symbol, unit"""
+
+    p, _ = custom_panel(
+        stable_uuid("cc-usage-ai-models"),
+        "AI Model Compute & Spend Breakdown",
+        AI_MODELS_TEMPLATE,
+        ai_models_esql,
+        0,
+        70,
+        48,
+        14,
+    )
+    panels.append(p)
+
     return dashboard_doc(
         DASH_USAGE,
         TITLE_USAGE,
