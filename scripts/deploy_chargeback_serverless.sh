@@ -125,8 +125,8 @@ USAGE_API_KEY="${USAGE_API_KEY:-}"
 PROJECT_ID="${PROJECT_ID:-${project_id:-}}"
 SL_API_KEY="${SL_API_KEY:-${sl_api_key:-}}"
 
-CONF_RATE="${CONF_RATE:-1}"
-CONF_RATE_UNIT="${CONF_RATE_UNIT:-ECU}"
+CONF_RATE="${CONF_RATE:-}"
+CONF_RATE_UNIT="${CONF_RATE_UNIT:-}"
 CONF_CURRENCY_SYMBOL="${CONF_CURRENCY_SYMBOL:-}"
 
 # Helper to prompt for missing variables

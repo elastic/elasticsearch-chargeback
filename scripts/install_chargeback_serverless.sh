@@ -31,18 +31,9 @@ KIBANA_URL="${KIBANA_URL:-${KIBANA_HOST:-https://127.0.0.1:5601}}"
 ALLOW_MISSING_WORKFLOWS="${ALLOW_MISSING_WORKFLOWS:-0}"
 BILLING_API_BASE="${BILLING_API_BASE:-https://billing.elastic-cloud.com}"
 CLOUD_API_BASE="${CLOUD_API_BASE:-https://api.elastic-cloud.com}"
-CONF_RATE="${CONF_RATE:-1}"
-CONF_RATE_UNIT="${CONF_RATE_UNIT:-ECU}"
+CONF_RATE="${CONF_RATE:-}"
+CONF_RATE_UNIT="${CONF_RATE_UNIT:-}"
 CONF_CURRENCY_SYMBOL="${CONF_CURRENCY_SYMBOL:-}"
-if [[ -z "$CONF_CURRENCY_SYMBOL" ]]; then
-  case "$CONF_RATE_UNIT" in
-    ZAR) CONF_CURRENCY_SYMBOL="R" ;;
-    USD) CONF_CURRENCY_SYMBOL="$" ;;
-    EUR) CONF_CURRENCY_SYMBOL="€" ;;
-    GBP) CONF_CURRENCY_SYMBOL="£" ;;
-    *)   CONF_CURRENCY_SYMBOL="$CONF_RATE_UNIT" ;;
-  esac
-fi
 
 url_hostname() {
   python3 -c "from urllib.parse import urlparse; print((urlparse('''$1''').hostname or '').lower())"

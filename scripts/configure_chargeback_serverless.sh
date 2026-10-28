@@ -29,22 +29,12 @@ USAGE_API_KEY="${USAGE_API_KEY:-}"
 
 BILLING_API_BASE="${BILLING_API_BASE:-https://billing.elastic-cloud.com}"
 CLOUD_API_BASE="${CLOUD_API_BASE:-https://api.elastic-cloud.com}"
-CONF_RATE="${CONF_RATE:-1}"
-CONF_RATE_UNIT="${CONF_RATE_UNIT:-ECU}"
+CONF_RATE="${CONF_RATE:-}"
+CONF_RATE_UNIT="${CONF_RATE_UNIT:-}"
 CONF_CURRENCY_SYMBOL="${CONF_CURRENCY_SYMBOL:-}"
 
 PROJECT_ID="${PROJECT_ID:-${project_id:-}}"
 SL_API_KEY="${SL_API_KEY:-${sl_api_key:-}}"
-
-if [[ -z "$CONF_CURRENCY_SYMBOL" ]]; then
-  case "$CONF_RATE_UNIT" in
-    ZAR) CONF_CURRENCY_SYMBOL="R" ;;
-    USD) CONF_CURRENCY_SYMBOL="$" ;;
-    EUR) CONF_CURRENCY_SYMBOL="€" ;;
-    GBP) CONF_CURRENCY_SYMBOL="£" ;;
-    *)   CONF_CURRENCY_SYMBOL="$CONF_RATE_UNIT" ;;
-  esac
-fi
 
 url_hostname() {
   python3 -c "from urllib.parse import urlparse; print((urlparse('''$1''').hostname or '').lower())"
@@ -133,6 +123,38 @@ fi
 
 # 2. Update chargeback_conf_lookup
 echo "Setting chargeback_conf_lookup currency rate window..."
+EXISTING_LOOKUP="{}"
+LOOKUP_GET_HTTP=$(es_curl -o /tmp/cbs-existing-lookup.json -w '%{http_code}' \
+  -X GET "${ES_URL%/}/chargeback_conf_lookup/_doc/config" \
+  -H "Authorization: ApiKey ${ES_API_KEY}" || true)
+
+if [[ "$LOOKUP_GET_HTTP" == "200" ]] && [[ -f /tmp/cbs-existing-lookup.json ]]; then
+  EXISTING_LOOKUP=$(jq '._source // {}' /tmp/cbs-existing-lookup.json 2>/dev/null || echo "{}")
+fi
+
+if [[ -n "$EXISTING_LOOKUP" && "$EXISTING_LOOKUP" != "{}" ]]; then
+  EXISTING_RATE=$(echo "$EXISTING_LOOKUP" | jq -r '.conf_chargeable_unit_rate // empty')
+  EXISTING_UNIT=$(echo "$EXISTING_LOOKUP" | jq -r '.conf_chargeable_unit_rate_unit // empty')
+  EXISTING_SYM=$(echo "$EXISTING_LOOKUP" | jq -r '.conf_currency_symbol // empty')
+
+  CONF_RATE="${CONF_RATE:-${EXISTING_RATE:-1}}"
+  CONF_RATE_UNIT="${CONF_RATE_UNIT:-${EXISTING_UNIT:-ECU}}"
+  CONF_CURRENCY_SYMBOL="${CONF_CURRENCY_SYMBOL:-${EXISTING_SYM:-}}"
+else
+  CONF_RATE="${CONF_RATE:-1}"
+  CONF_RATE_UNIT="${CONF_RATE_UNIT:-ECU}"
+fi
+
+if [[ -z "$CONF_CURRENCY_SYMBOL" ]]; then
+  case "$CONF_RATE_UNIT" in
+    ZAR) CONF_CURRENCY_SYMBOL="R" ;;
+    USD) CONF_CURRENCY_SYMBOL="$" ;;
+    EUR) CONF_CURRENCY_SYMBOL="€" ;;
+    GBP) CONF_CURRENCY_SYMBOL="£" ;;
+    *)   CONF_CURRENCY_SYMBOL="$CONF_RATE_UNIT" ;;
+  esac
+fi
+
 CONF_DOC=$(jq -n \
   --argjson rate "$CONF_RATE" \
   --arg unit "$CONF_RATE_UNIT" \
