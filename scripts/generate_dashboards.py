@@ -442,8 +442,8 @@ def paged_css(pfx: str, max_pages: int, display_mode: str = "table-row") -> str:
 
 def paged_top(pfx: str, page_size: int, max_pages: int) -> str:
     return f"""\
-{{% assign _total_items = rows.size | default: 0 %}}
-{{% assign _total_pages = _total_items | minus: 1 | divided_by: {page_size} | plus: 1 %}}
+{{% assign _total_items = rows.size | default: 0 | round %}}
+{{% assign _total_pages = _total_items | minus: 1 | divided_by: {page_size} | floor | plus: 1 %}}
 {{% if _total_pages < 1 %}}{{% assign _total_pages = 1 %}}{{% endif %}}
 {{% if _total_pages > {max_pages} %}}{{% assign _total_pages = {max_pages} %}}{{% endif %}}
 <div class="cb-paged-wrap cb-paged-wrap-{pfx}">
@@ -623,10 +623,10 @@ SANKEY_TEMPLATE = f"""\
 {{% assign sym = rows[0]["currency_symbol"].value | default: unit %}}
 {{% assign max_cost = rows[0]["cost"].value | default: 1.0 %}}
 {{% if max_cost <= 0 %}}{{% assign max_cost = 1.0 %}}{{% endif %}}
-{paged_top("sankey", 6, 6)}
+{paged_top("sankey", 10, 6)}
 <div class="cb-flow">
 {{% for row in rows %}}
-  {{% assign _row_pg = forloop.index0 | divided_by: 6 | plus: 1 %}}
+  {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
   {{% assign cost = row["cost"].value | default: 0.0 %}}
   {{% assign bar_pct = cost | times: 100.0 | divided_by: max_cost | round: 1 %}}
 {liquid_money_block("cost", "fmt_cost", with_decimals=True)}
@@ -815,7 +815,7 @@ AI_MODELS_TEMPLATE = f"""\
   {{% assign tot_compute = tot_compute | plus: tc %}}
 {{% endfor %}}
 
-{paged_top("aimod", 6, 6)}
+{paged_top("aimod", 10, 6)}
 <div class="cb-model-list">
   <div class="cb-model-head">
     <div>Model Name</div>
@@ -825,7 +825,7 @@ AI_MODELS_TEMPLATE = f"""\
     <div class="num">Attributed Cost</div>
   </div>
 {{% for r in rows %}}
-  {{% assign _row_pg = forloop.index0 | divided_by: 6 | plus: 1 %}}
+  {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
   {{% assign c_time = r["total_compute"].value | default: 0 %}}
   {{% assign bar_w = c_time | times: 100.0 | divided_by: max_time | round: 1 %}}
   {{% assign calls = r["total_inf"].value | default: 0 %}}
@@ -857,6 +857,8 @@ AI_MODELS_TEMPLATE = f"""\
 
 
 DAILY_PROJECT_COST_TEMPLATE = f"""\
+{{% assign _total_rows = rows.size | default: 0 %}}
+{{% if _total_rows > 0 %}}
 <style>
   .cb-hist-wrap {{
     display: flex;
@@ -918,13 +920,38 @@ DAILY_PROJECT_COST_TEMPLATE = f"""\
   .cb-hist-plot {{
     display: flex;
     flex: 1;
-    align-items: flex-end;
-    gap: 12px;
     overflow-x: auto;
     position: relative;
+  }}
+  .cb-hist-canvas {{
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    min-width: 100%;
+    height: 100%;
+    position: relative;
     padding-bottom: 26px;
-    border-bottom: 1px solid var(--cc-color-border, #d3dae6);
-    background-image: repeating-linear-gradient(to top, var(--cc-color-border, #e7ebf0) 0, var(--cc-color-border, #e7ebf0) 1px, transparent 1px, transparent 25%);
+    box-sizing: border-box;
+  }}
+  .cb-hist-grid {{
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 26px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    pointer-events: none;
+    z-index: 0;
+  }}
+  .cb-grid-line {{
+    width: 100%;
+    height: 1px;
+    background: var(--cc-color-border, #e7ebf0);
+  }}
+  .cb-grid-line-zero {{
+    background: var(--cc-color-border, #d3dae6);
   }}
   .cb-hist-col {{
     display: flex;
@@ -936,6 +963,7 @@ DAILY_PROJECT_COST_TEMPLATE = f"""\
     height: 100%;
     justify-content: flex-end;
     position: relative;
+    z-index: 1;
   }}
   .cb-col-tip {{
     font-size: 0.68rem;
@@ -1015,44 +1043,60 @@ DAILY_PROJECT_COST_TEMPLATE = f"""\
       <div>0</div>
     </div>
     <div class="cb-hist-plot">
-      {{% assign cur_day = "" %}}
-      {{% for r in rows %}}
-        {{% assign d = r["day"].value | slice: 0, 10 %}}
-        {{% if d != cur_day %}}
-          {{% if cur_day != "" %}}
-              </div>
-              <div class="cb-hist-date">{{{{ cur_day | slice: 5, 5 }}}}</div>
-            </div>
-          {{% endif %}}
-          {{% assign cur_day = d %}}
-          {{% assign d_cost = r["day_cost"].value | default: 0.0 %}}
-          {liquid_money_block("d_cost", "fmt_d_cost", with_decimals=True)}
-          <div class="cb-hist-col" title="{{{{ cur_day }}}}: {{{{ sym }}}}{{{{ fmt_d_cost }}}}">
-            <div class="cb-col-tip">{{{{ sym }}}}{{{{ fmt_d_cost }}}}</div>
-            <div class="cb-hist-stack">
-        {{% endif %}}
-        {{% assign p_cost = r["cost"].value | default: 0.0 %}}
-        {{% assign p_pct = p_cost | times: 100.0 | divided_by: max_day_cost | round: 2 %}}
-        {{% if p_pct < 0.5 and p_cost > 0 %}}{{% assign p_pct = 0.5 %}}{{% endif %}}
-        {{% assign p_name = r["project"].value | default: "unknown" %}}
-        {{% assign p_color = "#3274D9" %}}
-        {{% for p in projects %}}
-          {{% if p == p_name %}}
-            {{% assign c_idx = forloop.index0 | modulo: 10 %}}
-            {{% assign p_color = colors[c_idx] %}}
-          {{% endif %}}
-        {{% endfor %}}
-        {liquid_money_block("p_cost", "fmt_p_cost", with_decimals=True)}
-        <div class="cb-hist-seg" style="height: {{{{ p_pct }}}}%; background: {{{{ p_color }}}};" title="{{{{ p_name }}}}: {{{{ sym }}}}{{{{ fmt_p_cost }}}} ({{{{ cur_day }}}})"></div>
-      {{% endfor %}}
-      {{% if cur_day != "" %}}
-          </div>
-          <div class="cb-hist-date">{{{{ cur_day | slice: 5, 5 }}}}</div>
+      <div class="cb-hist-canvas">
+        <div class="cb-hist-grid">
+          <div class="cb-grid-line"></div>
+          <div class="cb-grid-line"></div>
+          <div class="cb-grid-line cb-grid-line-zero"></div>
         </div>
-      {{% endif %}}
+        {{% assign cur_bucket = "" %}}
+        {{% for r in rows %}}
+          {{% assign b_raw = r["day"].value | default: "" %}}
+          {{% if b_raw != cur_bucket %}}
+            {{% if cur_bucket != "" %}}
+                </div>
+                <div class="cb-hist-date">{{{{ cur_label }}}}</div>
+              </div>
+            {{% endif %}}
+            {{% assign cur_bucket = b_raw %}}
+            {{% assign time_sub = cur_bucket | slice: 11, 8 %}}
+            {{% if time_sub == "00:00:00" or time_sub == "" %}}
+              {{% assign cur_label = cur_bucket | slice: 5, 5 %}}
+              {{% assign cur_tip = cur_bucket | slice: 0, 10 %}}
+            {{% else %}}
+              {{% assign cur_label = cur_bucket | slice: 11, 5 %}}
+              {{% assign cur_tip = cur_bucket | slice: 0, 16 | replace: "T", " " %}}
+            {{% endif %}}
+            {{% assign d_cost = r["day_cost"].value | default: 0.0 %}}
+            {liquid_money_block("d_cost", "fmt_d_cost", with_decimals=True)}
+            <div class="cb-hist-col" title="{{{{ cur_tip }}}}: {{{{ sym }}}}{{{{ fmt_d_cost }}}}">
+              <div class="cb-col-tip">{{{{ sym }}}}{{{{ fmt_d_cost }}}}</div>
+              <div class="cb-hist-stack">
+          {{% endif %}}
+          {{% assign p_cost = r["cost"].value | default: 0.0 %}}
+          {{% assign p_pct = p_cost | times: 100.0 | divided_by: max_day_cost | round: 2 %}}
+          {{% if p_pct < 0.5 and p_cost > 0 %}}{{% assign p_pct = 0.5 %}}{{% endif %}}
+          {{% assign p_name = r["project"].value | default: "unknown" %}}
+          {{% assign p_color = "#3274D9" %}}
+          {{% for p in projects %}}
+            {{% if p == p_name %}}
+              {{% assign c_idx = forloop.index0 | modulo: 10 %}}
+              {{% assign p_color = colors[c_idx] %}}
+            {{% endif %}}
+          {{% endfor %}}
+          {liquid_money_block("p_cost", "fmt_p_cost", with_decimals=True)}
+          <div class="cb-hist-seg" style="height: {{{{ p_pct }}}}%; background: {{{{ p_color }}}};" title="{{{{ p_name }}}}: {{{{ sym }}}}{{{{ fmt_p_cost }}}} ({{{{ cur_tip }}}})"></div>
+        {{% endfor %}}
+        {{% if cur_bucket != "" %}}
+            </div>
+            <div class="cb-hist-date">{{{{ cur_label }}}}</div>
+          </div>
+        {{% endif %}}
+      </div>
     </div>
   </div>
 </div>
+{{% endif %}}
 """
 
 
@@ -1091,7 +1135,7 @@ def make_bar_template(label_key: str, label_header: str) -> str:
 {{% assign sym = rows[0]["currency_symbol"].value | default: unit %}}
 {{% assign max_cost = rows[0]["cost"].value | default: 1.0 %}}
 {{% if max_cost <= 0 %}}{{% assign max_cost = 1.0 %}}{{% endif %}}
-{paged_top(pfx, 6, 8)}
+{paged_top(pfx, 10, 8)}
 <div class="cb-bars">
   <div class="cb-bar-head">
     <div>{label_header}</div>
@@ -1099,7 +1143,7 @@ def make_bar_template(label_key: str, label_header: str) -> str:
     <div class="num">Cost ({{{{ unit }}}})</div>
   </div>
 {{% for row in rows %}}
-  {{% assign _row_pg = forloop.index0 | divided_by: 6 | plus: 1 %}}
+  {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
   {{% assign cost = row["cost"].value | default: 0.0 %}}
   {{% assign bar_pct = cost | times: 100.0 | divided_by: max_cost | round: 1 %}}
 {liquid_money_block("cost", "fmt_cost", with_decimals=True)}
@@ -1130,14 +1174,14 @@ UNALLOC_TABLE_TEMPLATE = f"""\
 </style>
 {{% assign unit = rows[0]["unit"].value | default: "ECU" %}}
 {{% assign sym = rows[0]["currency_symbol"].value | default: unit %}}
-{paged_top("unalloc", 8, 10)}
+{paged_top("unalloc", 10, 10)}
 <table class="cb-t">
   <thead>
     <tr><th>Category</th><th>Cost Type</th><th>SKU</th><th>Project</th><th class="num">Units (ECU)</th><th class="num">Cost ({{{{ unit }}}})</th></tr>
   </thead>
   <tbody>
   {{% for row in rows %}}
-    {{% assign _row_pg = forloop.index0 | divided_by: 8 | plus: 1 %}}
+    {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
     {{% assign cost = row["cost"].value | default: 0.0 %}}
     {{% assign ecu = row["ecu"].value | default: 0.0 %}}
 {liquid_money_block("cost", "fmt_cost", with_decimals=True)}
@@ -1173,14 +1217,14 @@ INVOICE_TABLE_TEMPLATE = f"""\
 </style>
 {{% assign unit = rows[0]["unit"].value | default: "ECU" %}}
 {{% assign sym = rows[0]["currency_symbol"].value | default: unit %}}
-{paged_top("inv", 8, 25)}
+{paged_top("inv", 10, 25)}
 <table class="cb-t">
   <thead>
     <tr><th>Project</th><th>Type</th><th>Category</th><th>Cost Type</th><th>SKU</th><th>Driver</th><th class="num">Quantity</th><th class="num">Units (ECU)</th><th class="num">Cost ({{{{ unit }}}})</th></tr>
   </thead>
   <tbody>
   {{% for row in rows %}}
-    {{% assign _row_pg = forloop.index0 | divided_by: 8 | plus: 1 %}}
+    {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
     {{% assign cost = row["cost"].value | default: 0.0 %}}
     {{% assign ecu = row["ecu"].value | default: 0.0 %}}
     {{% assign qty = row["qty"].value | default: 0.0 %}}
@@ -1221,14 +1265,14 @@ DATASTREAM_COST_TABLE_TEMPLATE = f"""\
 </style>
 {{% assign unit = rows[0]["unit"].value | default: "ECU" %}}
 {{% assign sym = rows[0]["currency_symbol"].value | default: unit %}}
-{paged_top("dscost", 8, 25)}
+{paged_top("dscost", 10, 25)}
 <table class="cb-t">
   <thead>
     <tr><th>Project</th><th>Project Type</th><th>Type</th><th>Namespace</th><th>Data Stream</th><th class="num">Indexing ({{{{ sym }}}})</th><th class="num">Search ({{{{ sym }}}})</th><th class="num">Storage ({{{{ sym }}}})</th><th class="num">Attributed Cost ({{{{ unit }}}})</th></tr>
   </thead>
   <tbody>
   {{% for row in rows %}}
-    {{% assign _row_pg = forloop.index0 | divided_by: 8 | plus: 1 %}}
+    {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
     {{% assign idx = row["indexing_cost"].value | default: 0.0 %}}
     {{% assign qry = row["query_cost"].value | default: 0.0 %}}
     {{% assign stg = row["storage_cost"].value | default: 0.0 %}}
@@ -1261,7 +1305,7 @@ STATUS_BOARD_TEMPLATE = f"""\
   .cb-status {{ display: flex; flex-direction: column; gap: var(--cc-space-xs); }}
   .cb-item {{
     display: grid; grid-template-columns: 18px 1.4fr 0.9fr 0.8fr 1.1fr 1.2fr; gap: var(--cc-space-s);
-    align-items: center; padding: var(--cc-space-s);
+    align-items: center; padding: 4px var(--cc-space-s);
     background: var(--cc-color-surface); border-radius: var(--cc-radius-s);
     border: 1px solid var(--cc-color-border);
   }}
@@ -1272,10 +1316,10 @@ STATUS_BOARD_TEMPLATE = f"""\
   .cb-name {{ font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
   .cb-meta {{ opacity: 0.8; font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
 </style>
-{paged_top("statbrd", 5, 20)}
+{paged_top("statbrd", 10, 20)}
 <div class="cb-status">
 {{% for row in rows %}}
-  {{% assign _row_pg = forloop.index0 | divided_by: 5 | plus: 1 %}}
+  {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
   {{% assign h = row["health"].value | default: "stale" %}}
   <div class="cb-item cb-pg-row-statbrd cb-pg-statbrd-{{{{ _row_pg }}}}">
     <div class="cb-dot {{% if h == "ok" %}}cb-ok{{% elsif h == "empty_or_unauthorized" %}}cb-err{{% else %}}cb-warn{{% endif %}}"></div>
@@ -1313,14 +1357,14 @@ ALLOC_TABLE_TEMPLATE = f"""\
 {{% assign sym = rows[0]["currency_symbol"].value | default: unit %}}
 {{% assign max_cost = rows[0]["cost"].value | default: 1.0 %}}
 {{% if max_cost <= 0 %}}{{% assign max_cost = 1.0 %}}{{% endif %}}
-{paged_top("alloc", 8, 10)}
+{paged_top("alloc", 10, 10)}
 <table class="cb-t">
   <thead>
     <tr><th>Project</th><th>Type</th><th>Cost Type</th><th>Driver</th><th class="num">Cost ({{{{ unit }}}})</th><th>Share</th></tr>
   </thead>
   <tbody>
   {{% for row in rows %}}
-    {{% assign _row_pg = forloop.index0 | divided_by: 8 | plus: 1 %}}
+    {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
     {{% assign cost = row["cost"].value | default: 0.0 %}}
     {{% assign bar_pct = cost | times: 100.0 | divided_by: max_cost | round: 1 %}}
 {liquid_money_block("cost", "fmt_cost", with_decimals=True)}
@@ -1484,8 +1528,9 @@ def build_billing() -> dict:
         "Daily cost by project",
         DAILY_PROJECT_COST_TEMPLATE,
         f"""{COST_PRELUDE}
-| EVAL day = TO_STRING(DATE_TRUNC(1 day, ts))
-| STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY day, project
+| WHERE @timestamp >= ?_tstart AND @timestamp <= ?_tend
+| STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY b = BUCKET(@timestamp, 30, ?_tstart, ?_tend), project
+| EVAL day = TO_STRING(b)
 | INLINE STATS day_cost = SUM(cost) BY day
 | SORT day ASC, cost DESC
 | LIMIT 500
