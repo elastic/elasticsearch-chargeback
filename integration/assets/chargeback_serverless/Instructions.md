@@ -122,6 +122,7 @@ Filter tag **Chargeback**. Wording is **project** (Serverless), not deployment.
    * Ensure `last_status` is `"ok"` for all projects being harvested (if a remote project shows `"empty_or_unauthorized"`, check that its least-privileged key was registered in `project_api_keys`).
 3. Confirm Links between the three dashboards work.
 4. Confirm spend panels show values in your configured currency unit.
+5. Confirm Usage & Cost Allocation shows Attributed Cost partitioned by Namespace (`ds_namespace`) and by Data Stream Type (`ds_type`), with matching breakdown columns in the data stream tables.
 
 ## Security & Architecture Notes
 

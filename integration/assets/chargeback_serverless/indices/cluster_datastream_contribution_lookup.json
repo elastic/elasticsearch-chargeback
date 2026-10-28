@@ -20,6 +20,8 @@
       "project_name": { "type": "keyword" },
       "project_type": { "type": "keyword" },
       "datastream": { "type": "keyword" },
+      "ds_type": { "type": "keyword" },
+      "ds_namespace": { "type": "keyword" },
       "datastream_sum_indexing_time": { "type": "long" },
       "datastream_sum_query_time": { "type": "long" },
       "datastream_sum_data_set_store_size": { "type": "long" },

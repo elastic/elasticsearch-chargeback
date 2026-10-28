@@ -655,7 +655,7 @@ DATASTREAM_COST_TABLE_TEMPLATE = f"""\
 <div class="cb-tbl-wrap">
 <table class="cb-t">
   <thead>
-    <tr><th>Project</th><th>Type</th><th>Data Stream</th><th class="num">Indexing ({{{{ sym }}}})</th><th class="num">Search ({{{{ sym }}}})</th><th class="num">Storage ({{{{ sym }}}})</th><th class="num">Attributed Cost ({{{{ unit }}}})</th></tr>
+    <tr><th>Project</th><th>Project Type</th><th>Type</th><th>Namespace</th><th>Data Stream</th><th class="num">Indexing ({{{{ sym }}}})</th><th class="num">Search ({{{{ sym }}}})</th><th class="num">Storage ({{{{ sym }}}})</th><th class="num">Attributed Cost ({{{{ unit }}}})</th></tr>
   </thead>
   <tbody>
   {{% for row in rows %}}
@@ -670,6 +670,8 @@ DATASTREAM_COST_TABLE_TEMPLATE = f"""\
     <tr>
       <td><strong>{{{{ row["project"].value }}}}</strong></td>
       <td>{{{{ row["project_type"].value }}}}</td>
+      <td>{{{{ row["ds_type"].value }}}}</td>
+      <td>{{{{ row["ds_namespace"].value }}}}</td>
       <td><code>{{{{ row["datastream"].value }}}}</code></td>
       <td class="num"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_idx }}}}</span></td>
       <td class="num"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_qry }}}}</span></td>
@@ -1056,11 +1058,11 @@ def build_usage() -> dict:
     panels.append(p)
 
     p, _ = custom_panel(
-        stable_uuid("cc-usage-datastream-cost"),
-        "Data stream cost attribution",
-        DATASTREAM_COST_TABLE_TEMPLATE,
+        stable_uuid("cc-usage-namespace"),
+        "Attributed cost by namespace",
+        make_bar_template("namespace", "Namespace"),
         f"""FROM {DS_CONTRIB}
-| EVAL ts = @timestamp, ds_project_name = CASE(project_name IS NOT NULL AND project_name != "", project_name, cluster_name IS NOT NULL AND cluster_name != "", cluster_name, "unknown"), ds_project_type = COALESCE(project_type, "unknown")
+| EVAL ts = @timestamp
 | LOOKUP JOIN {DEP_CONTRIB} ON composite_key
 | LOOKUP JOIN {POOL} ON composite_key
 | LOOKUP JOIN {CONF} ON ts >= conf_start_date AND ts <= conf_end_date
@@ -1089,21 +1091,114 @@ def build_usage() -> dict:
 | EVAL qry_cost = COALESCE(query_ecu, 0.0) * rate * qry_share
 | EVAL stg_cost = COALESCE(storage_ecu, 0.0) * rate * stg_share
 | EVAL total_ds_cost = idx_cost + qry_cost + stg_cost
-| STATS indexing_cost = SUM(idx_cost), query_cost = SUM(qry_cost), storage_cost = SUM(stg_cost), attributed_cost = SUM(total_ds_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY ds_project_name, ds_project_type, datastream
-| RENAME ds_project_name AS project, ds_project_type AS project_type
-| SORT attributed_cost DESC
-| LIMIT 200
-| KEEP project, project_type, datastream, indexing_cost, query_cost, storage_cost, attributed_cost, currency_symbol, unit""",
+| EVAL namespace = COALESCE(ds_namespace, "other")
+| STATS cost = SUM(total_ds_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY namespace
+| SORT cost DESC
+| LIMIT 25
+| KEEP namespace, cost, currency_symbol, unit""",
         0,
         22,
+        24,
+        14,
+    )
+    panels.append(p)
+
+    p, _ = custom_panel(
+        stable_uuid("cc-usage-dstype"),
+        "Attributed cost by data stream type",
+        make_bar_template("ds_type", "Data stream type"),
+        f"""FROM {DS_CONTRIB}
+| EVAL ts = @timestamp
+| LOOKUP JOIN {DEP_CONTRIB} ON composite_key
+| LOOKUP JOIN {POOL} ON composite_key
+| LOOKUP JOIN {CONF} ON ts >= conf_start_date AND ts <= conf_end_date
+| EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
+| EVAL unit = COALESCE(conf_chargeable_unit_rate_unit, "ECU")
+| EVAL currency_symbol = CASE(
+    conf_currency_symbol IS NOT NULL AND conf_currency_symbol != "", conf_currency_symbol,
+    conf_chargeable_unit_rate_unit == "ZAR", "R",
+    conf_chargeable_unit_rate_unit == "USD", "$",
+    conf_chargeable_unit_rate_unit == "EUR", "€",
+    conf_chargeable_unit_rate_unit == "GBP", "£",
+    conf_chargeable_unit_rate_unit == "JPY", "¥",
+    conf_chargeable_unit_rate_unit == "CNY", "¥",
+    conf_chargeable_unit_rate_unit == "INR", "₹",
+    conf_chargeable_unit_rate_unit == "CAD", "CA$",
+    conf_chargeable_unit_rate_unit == "AUD", "A$",
+    conf_chargeable_unit_rate_unit == "CHF", "CHF",
+    conf_chargeable_unit_rate_unit == "BRL", "R$",
+    conf_chargeable_unit_rate_unit IS NOT NULL AND conf_chargeable_unit_rate_unit != "", conf_chargeable_unit_rate_unit,
+    "ECU"
+  )
+| EVAL idx_share = CASE(COALESCE(deployment_sum_indexing_time, 0) > 0, TO_DOUBLE(datastream_sum_indexing_time) / TO_DOUBLE(deployment_sum_indexing_time), 0.0)
+| EVAL qry_share = CASE(COALESCE(deployment_sum_query_time, 0) > 0, TO_DOUBLE(datastream_sum_query_time) / TO_DOUBLE(deployment_sum_query_time), 0.0)
+| EVAL stg_share = CASE(COALESCE(deployment_sum_data_set_store_size, 0) > 0, TO_DOUBLE(datastream_sum_data_set_store_size) / TO_DOUBLE(deployment_sum_data_set_store_size), 0.0)
+| EVAL idx_cost = COALESCE(indexing_ecu, 0.0) * rate * idx_share
+| EVAL qry_cost = COALESCE(query_ecu, 0.0) * rate * qry_share
+| EVAL stg_cost = COALESCE(storage_ecu, 0.0) * rate * stg_share
+| EVAL total_ds_cost = idx_cost + qry_cost + stg_cost
+| EVAL ds_type_label = COALESCE(ds_type, "other")
+| STATS cost = SUM(total_ds_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY ds_type_label
+| RENAME ds_type_label AS ds_type
+| SORT cost DESC
+| LIMIT 25
+| KEEP ds_type, cost, currency_symbol, unit""",
+        24,
+        22,
+        24,
+        14,
+    )
+    panels.append(p)
+
+    p, _ = custom_panel(
+        stable_uuid("cc-usage-datastream-cost"),
+        "Data stream cost attribution",
+        DATASTREAM_COST_TABLE_TEMPLATE,
+        f"""FROM {DS_CONTRIB}
+| EVAL ts = @timestamp, ds_project_name = CASE(project_name IS NOT NULL AND project_name != "", project_name, cluster_name IS NOT NULL AND cluster_name != "", cluster_name, "unknown"), ds_project_type = COALESCE(project_type, "unknown"), data_type = COALESCE(ds_type, "other"), namespace = COALESCE(ds_namespace, "other")
+| LOOKUP JOIN {DEP_CONTRIB} ON composite_key
+| LOOKUP JOIN {POOL} ON composite_key
+| LOOKUP JOIN {CONF} ON ts >= conf_start_date AND ts <= conf_end_date
+| EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
+| EVAL unit = COALESCE(conf_chargeable_unit_rate_unit, "ECU")
+| EVAL currency_symbol = CASE(
+    conf_currency_symbol IS NOT NULL AND conf_currency_symbol != "", conf_currency_symbol,
+    conf_chargeable_unit_rate_unit == "ZAR", "R",
+    conf_chargeable_unit_rate_unit == "USD", "$",
+    conf_chargeable_unit_rate_unit == "EUR", "€",
+    conf_chargeable_unit_rate_unit == "GBP", "£",
+    conf_chargeable_unit_rate_unit == "JPY", "¥",
+    conf_chargeable_unit_rate_unit == "CNY", "¥",
+    conf_chargeable_unit_rate_unit == "INR", "₹",
+    conf_chargeable_unit_rate_unit == "CAD", "CA$",
+    conf_chargeable_unit_rate_unit == "AUD", "A$",
+    conf_chargeable_unit_rate_unit == "CHF", "CHF",
+    conf_chargeable_unit_rate_unit == "BRL", "R$",
+    conf_chargeable_unit_rate_unit IS NOT NULL AND conf_chargeable_unit_rate_unit != "", conf_chargeable_unit_rate_unit,
+    "ECU"
+  )
+| EVAL idx_share = CASE(COALESCE(deployment_sum_indexing_time, 0) > 0, TO_DOUBLE(datastream_sum_indexing_time) / TO_DOUBLE(deployment_sum_indexing_time), 0.0)
+| EVAL qry_share = CASE(COALESCE(deployment_sum_query_time, 0) > 0, TO_DOUBLE(datastream_sum_query_time) / TO_DOUBLE(deployment_sum_query_time), 0.0)
+| EVAL stg_share = CASE(COALESCE(deployment_sum_data_set_store_size, 0) > 0, TO_DOUBLE(datastream_sum_data_set_store_size) / TO_DOUBLE(deployment_sum_data_set_store_size), 0.0)
+| EVAL idx_cost = COALESCE(indexing_ecu, 0.0) * rate * idx_share
+| EVAL qry_cost = COALESCE(query_ecu, 0.0) * rate * qry_share
+| EVAL stg_cost = COALESCE(storage_ecu, 0.0) * rate * stg_share
+| EVAL total_ds_cost = idx_cost + qry_cost + stg_cost
+| STATS indexing_cost = SUM(idx_cost), query_cost = SUM(qry_cost), storage_cost = SUM(stg_cost), attributed_cost = SUM(total_ds_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY ds_project_name, ds_project_type, data_type, namespace, datastream
+| RENAME ds_project_name AS project, ds_project_type AS project_type, data_type AS ds_type, namespace AS ds_namespace
+| SORT attributed_cost DESC
+| LIMIT 200
+| KEEP project, project_type, ds_type, ds_namespace, datastream, indexing_cost, query_cost, storage_cost, attributed_cost, currency_symbol, unit""",
+        0,
+        36,
         48,
         14,
     )
     panels.append(p)
 
     esql = f"""FROM {DS_CONTRIB}
-| EVAL `Project` = CASE(project_name IS NOT NULL AND project_name != "", project_name, cluster_name IS NOT NULL AND cluster_name != "", cluster_name, "unknown"), `Project type` = COALESCE(project_type, "unknown")
-| STATS `Indexing time (ms)` = SUM(datastream_sum_indexing_time), `Search query time (ms)` = SUM(datastream_sum_query_time), `Avg dataset size (MB)` = ROUND(AVG(TO_DOUBLE(datastream_sum_data_set_store_size)) / 1048576.0, 2) BY `Project`, `Project type`, datastream
+| EVAL `Project` = CASE(project_name IS NOT NULL AND project_name != "", project_name, cluster_name IS NOT NULL AND cluster_name != "", cluster_name, "unknown"), `Project type` = COALESCE(project_type, "unknown"), `Data stream type` = COALESCE(ds_type, "other"), `Namespace` = COALESCE(ds_namespace, "other")
+| STATS `Indexing time (ms)` = SUM(datastream_sum_indexing_time), `Search query time (ms)` = SUM(datastream_sum_query_time), `Avg dataset size (MB)` = ROUND(AVG(TO_DOUBLE(datastream_sum_data_set_store_size)) / 1048576.0, 2) BY `Project`, `Project type`, `Data stream type`, `Namespace`, datastream
 | RENAME datastream AS `Data stream`
 | SORT `Indexing time (ms)` DESC
 | LIMIT 200"""
@@ -1114,6 +1209,8 @@ def build_usage() -> dict:
         [
             col("Project", "keyword"),
             col("Project type", "keyword"),
+            col("Data stream type", "keyword"),
+            col("Namespace", "keyword"),
             col("Data stream", "keyword"),
             col("Indexing time (ms)", "long"),
             col("Search query time (ms)", "long"),
@@ -1124,6 +1221,8 @@ def build_usage() -> dict:
             [
                 "Project",
                 "Project type",
+                "Data stream type",
+                "Namespace",
                 "Data stream",
                 "Indexing time (ms)",
                 "Search query time (ms)",
@@ -1131,7 +1230,7 @@ def build_usage() -> dict:
             ]
         ),
         0,
-        36,
+        50,
         48,
         14,
         index=DS_CONTRIB,
@@ -1141,7 +1240,7 @@ def build_usage() -> dict:
     return dashboard_doc(
         DASH_USAGE,
         TITLE_USAGE,
-        "Attribute project workload pools (Indexing, Search, Storage) to individual data streams using harvested _cat/indices usage.",
+        "Attribute project workload pools (Indexing, Search, Storage) across namespaces, data stream types (logs, metrics, traces), and individual data streams.",
         panels,
         refs,
         with_controls=True,

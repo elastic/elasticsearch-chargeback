@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Added
 
 - **Native Chargeback Serverless hub** ([#123](https://github.com/elastic/elasticsearch-chargeback/issues/123)): [`integration/assets/chargeback_serverless/`](integration/assets/chargeback_serverless/README.md) with lean lookup indices, billing classification pipeline, usage and billing workflows, and [`scripts/install_chargeback_serverless.sh`](scripts/install_chargeback_serverless.sh). Companion Fleet package `chargeback_serverless` lives on integrations branch `wip-johannes-chargeback-serverless`.
+- **Serverless Namespace and Data Type Partitioning**: Parse data stream names into `ds_type` and `ds_namespace` in `chargeback-serverless-usage` workflow; map both fields as keyword in `cluster_datastream_contribution_lookup`; Usage & Cost Allocation dashboard adds Attributed Cost by Namespace, Attributed Cost by Data Stream Type panels, and adds Type and Namespace breakdown columns to the data stream attribution and harvested usage metrics tables.
 
 ---
 
