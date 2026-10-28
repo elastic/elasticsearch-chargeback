@@ -348,6 +348,140 @@ def liquid_money_block(val_var: str, out_var: str, with_decimals: bool = True) -
 {{% endif %}}"""
 
 
+PAGED_BASE_CSS = """\
+  .cb-paged-wrap {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    height: 100%;
+    min-height: 0;
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+  .cb-content-wrap {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  .cb-pg-bar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+    padding: 6px 2px 2px 2px;
+    border-top: 1px solid var(--cc-color-border, #e0e0e0);
+    font-size: 0.76rem;
+    color: var(--cc-color-text, #333);
+    user-select: none;
+    flex-shrink: 0;
+  }
+  .cb-pg-info {
+    margin-right: auto;
+    opacity: 0.75;
+    font-size: 0.74rem;
+  }
+  .cb-pg-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 5px;
+    border-radius: 4px;
+    border: 1px solid var(--cc-color-border, #ccc);
+    background: var(--cc-color-surface, #fff);
+    color: var(--cc-color-text, #333);
+    cursor: pointer;
+    font-size: 0.75rem;
+    font-weight: 500;
+    text-decoration: none;
+    box-sizing: border-box;
+    transition: background 0.15s, border-color 0.15s;
+    user-select: none;
+  }
+  .cb-pg-btn:hover {
+    background: var(--cc-color-hover, #f0f0f0);
+    border-color: var(--cc-color-primary, #0077cc);
+  }
+  .cb-pg-dir {
+    display: none !important;
+    font-weight: 700;
+  }
+  .cb-prev-disabled, .cb-next-disabled {
+    opacity: 0.35 !important;
+    cursor: not-allowed !important;
+    pointer-events: none !important;
+  }
+"""
+
+
+def paged_css(pfx: str, max_pages: int, display_mode: str = "table-row") -> str:
+    rules = [
+        f"  .cb-pg-radio-{pfx} {{ display: none !important; position: absolute; opacity: 0; pointer-events: none; }}",
+        f"  .cb-pg-row-{pfx} {{ display: none !important; }}",
+    ]
+    for i in range(1, max_pages + 1):
+        rules.append(
+            f"  #{pfx}_pg_{i}:checked ~ .cb-content-wrap-{pfx} .cb-pg-{pfx}-{i} {{ display: {display_mode} !important; }}"
+        )
+        rules.append(
+            f"  #{pfx}_pg_{i}:checked ~ .cb-pg-bar-{pfx} .cb-btn-{pfx}-{i} {{ background: var(--cc-color-primary, #0077cc); color: #ffffff !important; border-color: var(--cc-color-primary, #0077cc); pointer-events: none; font-weight: 700; }}"
+        )
+        rules.append(
+            f"  #{pfx}_pg_{i}:checked ~ .cb-pg-bar-{pfx} .cb-pg-cur::after {{ content: \"{i}\"; }}"
+        )
+        rules.append(
+            f"  #{pfx}_pg_{i}:checked ~ .cb-pg-bar-{pfx} .cb-prev-{pfx}-{i} {{ display: inline-flex !important; }}"
+        )
+        rules.append(
+            f"  #{pfx}_pg_{i}:checked ~ .cb-pg-bar-{pfx} .cb-next-{pfx}-{i} {{ display: inline-flex !important; }}"
+        )
+    return "\n".join(rules)
+
+
+def paged_top(pfx: str, page_size: int, max_pages: int) -> str:
+    return f"""\
+{{% assign _total_items = rows.size | default: 0 %}}
+{{% assign _total_pages = _total_items | minus: 1 | divided_by: {page_size} | plus: 1 %}}
+{{% if _total_pages < 1 %}}{{% assign _total_pages = 1 %}}{{% endif %}}
+{{% if _total_pages > {max_pages} %}}{{% assign _total_pages = {max_pages} %}}{{% endif %}}
+<div class="cb-paged-wrap cb-paged-wrap-{pfx}">
+{{% for _p_i in (1.._total_pages) %}}
+  <input type="radio" name="{pfx}_pg" id="{pfx}_pg_{{{{ _p_i }}}}" class="cb-pg-radio-{pfx}" {{% if _p_i == 1 %}}checked{{% endif %}}>
+{{% endfor %}}
+<div class="cb-content-wrap cb-content-wrap-{pfx}">\
+"""
+
+
+def paged_bottom(pfx: str) -> str:
+    return f"""\
+</div>
+{{% if _total_pages > 1 %}}
+<div class="cb-pg-bar cb-pg-bar-{pfx}">
+  <span class="cb-pg-info">Page <span class="cb-pg-cur"></span> of {{{{ _total_pages }}}} ({{{{ _total_items }}}} items)</span>
+  <span class="cb-pg-btn cb-pg-dir cb-prev-disabled cb-prev-{pfx}-1" title="Previous page">&lsaquo;</span>
+  {{% for _p_i in (2.._total_pages) %}}
+    {{% assign _p_prev = _p_i | minus: 1 %}}
+    <label for="{pfx}_pg_{{{{ _p_prev }}}}" class="cb-pg-btn cb-pg-dir cb-prev-{pfx}-{{{{ _p_i }}}}" title="Previous page">&lsaquo;</label>
+  {{% endfor %}}
+  {{% for _p_i in (1.._total_pages) %}}
+    <label for="{pfx}_pg_{{{{ _p_i }}}}" class="cb-pg-btn cb-btn-{pfx}-{{{{ _p_i }}}}">{{{{ _p_i }}}}</label>
+  {{% endfor %}}
+  {{% for _p_i in (1.._total_pages) %}}
+    {{% if _p_i < _total_pages %}}
+      {{% assign _p_next = _p_i | plus: 1 %}}
+      <label for="{pfx}_pg_{{{{ _p_next }}}}" class="cb-pg-btn cb-pg-dir cb-next-{pfx}-{{{{ _p_i }}}}" title="Next page">&rsaquo;</label>
+    {{% else %}}
+      <span class="cb-pg-btn cb-pg-dir cb-next-disabled cb-next-{pfx}-{{{{ _p_i }}}}" title="Next page">&rsaquo;</span>
+    {{% endif %}}
+  {{% endfor %}}
+</div>
+{{% endif %}}
+</div>\
+"""
+
+
 BILLING_KPI_TEMPLATE = f"""\
 <style>
   .cb-kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--cc-space-s, 8px); margin: 0 0 14px 0; padding: 0 0 8px 0; }}
@@ -467,6 +601,8 @@ USAGE_KPI_TEMPLATE = f"""\
 
 SANKEY_TEMPLATE = f"""\
 <style>
+{PAGED_BASE_CSS}
+{paged_css("sankey", 6, "grid")}
   .cb-flow {{ display: flex; flex-direction: column; gap: var(--cc-space-s); }}
   .cb-row {{
     display: grid;
@@ -487,12 +623,14 @@ SANKEY_TEMPLATE = f"""\
 {{% assign sym = rows[0]["currency_symbol"].value | default: unit %}}
 {{% assign max_cost = rows[0]["cost"].value | default: 1.0 %}}
 {{% if max_cost <= 0 %}}{{% assign max_cost = 1.0 %}}{{% endif %}}
+{paged_top("sankey", 6, 6)}
 <div class="cb-flow">
 {{% for row in rows %}}
+  {{% assign _row_pg = forloop.index0 | divided_by: 6 | plus: 1 %}}
   {{% assign cost = row["cost"].value | default: 0.0 %}}
   {{% assign bar_pct = cost | times: 100.0 | divided_by: max_cost | round: 1 %}}
 {liquid_money_block("cost", "fmt_cost", with_decimals=True)}
-  <div class="cb-row">
+  <div class="cb-row cb-pg-row-sankey cb-pg-sankey-{{{{ _row_pg }}}}">
     <div class="cb-stage"><strong>{{{{ row["category"].value }}}}</strong></div>
     <div class="cb-stage">→ {{{{ row["cost_type"].value }}}}</div>
     <div class="cb-stage">→ {{{{ row["project_type"].value }}}}</div>
@@ -501,6 +639,7 @@ SANKEY_TEMPLATE = f"""\
   </div>
 {{% endfor %}}
 </div>
+{paged_bottom("sankey")}
 """
 
 
@@ -599,6 +738,8 @@ AI_KPIS_TEMPLATE = f"""\
 
 AI_MODELS_TEMPLATE = f"""\
 <style>
+{PAGED_BASE_CSS}
+{paged_css("aimod", 6, "grid")}
   .cb-model-list {{
     display: flex;
     flex-direction: column;
@@ -674,6 +815,7 @@ AI_MODELS_TEMPLATE = f"""\
   {{% assign tot_compute = tot_compute | plus: tc %}}
 {{% endfor %}}
 
+{paged_top("aimod", 6, 6)}
 <div class="cb-model-list">
   <div class="cb-model-head">
     <div>Model Name</div>
@@ -683,6 +825,7 @@ AI_MODELS_TEMPLATE = f"""\
     <div class="num">Attributed Cost</div>
   </div>
 {{% for r in rows %}}
+  {{% assign _row_pg = forloop.index0 | divided_by: 6 | plus: 1 %}}
   {{% assign c_time = r["total_compute"].value | default: 0 %}}
   {{% assign bar_w = c_time | times: 100.0 | divided_by: max_time | round: 1 %}}
   {{% assign calls = r["total_inf"].value | default: 0 %}}
@@ -693,7 +836,7 @@ AI_MODELS_TEMPLATE = f"""\
   {{% endif %}}
   {liquid_money_block("calls", "fmt_calls", with_decimals=False)}
   {liquid_money_block("cost", "fmt_cost", with_decimals=True)}
-  <div class="cb-model-row">
+  <div class="cb-model-row cb-pg-row-aimod cb-pg-aimod-{{{{ _row_pg }}}}">
     <div class="cb-model-name" title="{{{{ r[\"model_id\"].value }}}}">
       <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#1b85b8;"></span>
       {{{{ r["model_id"].value }}}}
@@ -709,6 +852,7 @@ AI_MODELS_TEMPLATE = f"""\
   </div>
 {{% endfor %}}
 </div>
+{paged_bottom("aimod")}
 """
 
 
@@ -913,9 +1057,12 @@ DAILY_PROJECT_COST_TEMPLATE = f"""\
 
 
 def make_bar_template(label_key: str, label_header: str) -> str:
+    pfx = f"bar_{label_key}"
     return f"""\
 <style>
-  .cb-bars {{ display: flex; flex-direction: column; gap: 6px; padding: 4px 6px; max-height: 100%; overflow-y: auto; }}
+{PAGED_BASE_CSS}
+{paged_css(pfx, 8, "grid")}
+  .cb-bars {{ display: flex; flex-direction: column; gap: 6px; padding: 4px 6px; }}
   .cb-bar-head {{
     display: grid;
     grid-template-columns: minmax(110px, 1.4fr) 2fr minmax(90px, 1fr);
@@ -944,6 +1091,7 @@ def make_bar_template(label_key: str, label_header: str) -> str:
 {{% assign sym = rows[0]["currency_symbol"].value | default: unit %}}
 {{% assign max_cost = rows[0]["cost"].value | default: 1.0 %}}
 {{% if max_cost <= 0 %}}{{% assign max_cost = 1.0 %}}{{% endif %}}
+{paged_top(pfx, 6, 8)}
 <div class="cb-bars">
   <div class="cb-bar-head">
     <div>{label_header}</div>
@@ -951,22 +1099,25 @@ def make_bar_template(label_key: str, label_header: str) -> str:
     <div class="num">Cost ({{{{ unit }}}})</div>
   </div>
 {{% for row in rows %}}
+  {{% assign _row_pg = forloop.index0 | divided_by: 6 | plus: 1 %}}
   {{% assign cost = row["cost"].value | default: 0.0 %}}
   {{% assign bar_pct = cost | times: 100.0 | divided_by: max_cost | round: 1 %}}
 {liquid_money_block("cost", "fmt_cost", with_decimals=True)}
-  <div class="cb-bar-row">
+  <div class="cb-bar-row cb-pg-row-{pfx} cb-pg-{pfx}-{{{{ _row_pg }}}}">
     <div class="cb-bar-label" title="{{{{ row["{label_key}"].value }}}}">{{{{ row["{label_key}"].value }}}}</div>
     <div class="cb-bar-track"><div class="cb-bar-fill" style="width: {{{{ bar_pct }}}}%;"></div></div>
     <div class="cb-bar-val"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_cost }}}}</span></div>
   </div>
 {{% endfor %}}
 </div>
+{paged_bottom(pfx)}
 """
 
 
 UNALLOC_TABLE_TEMPLATE = f"""\
 <style>
-  .cb-tbl-wrap {{ max-height: 100%; overflow: auto; }}
+{PAGED_BASE_CSS}
+{paged_css("unalloc", 10, "table-row")}
   table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; }}
   table.cb-t th {{
     position: sticky; top: 0; background: var(--cc-color-surface); z-index: 1;
@@ -979,18 +1130,19 @@ UNALLOC_TABLE_TEMPLATE = f"""\
 </style>
 {{% assign unit = rows[0]["unit"].value | default: "ECU" %}}
 {{% assign sym = rows[0]["currency_symbol"].value | default: unit %}}
-<div class="cb-tbl-wrap">
+{paged_top("unalloc", 8, 10)}
 <table class="cb-t">
   <thead>
     <tr><th>Category</th><th>Cost Type</th><th>SKU</th><th>Project</th><th class="num">Units (ECU)</th><th class="num">Cost ({{{{ unit }}}})</th></tr>
   </thead>
   <tbody>
   {{% for row in rows %}}
+    {{% assign _row_pg = forloop.index0 | divided_by: 8 | plus: 1 %}}
     {{% assign cost = row["cost"].value | default: 0.0 %}}
     {{% assign ecu = row["ecu"].value | default: 0.0 %}}
 {liquid_money_block("cost", "fmt_cost", with_decimals=True)}
 {liquid_money_block("ecu", "fmt_ecu", with_decimals=True)}
-    <tr>
+    <tr class="cb-pg-row-unalloc cb-pg-unalloc-{{{{ _row_pg }}}}">
       <td><strong>{{{{ row["category"].value }}}}</strong></td>
       <td>{{{{ row["cost_type"].value }}}}</td>
       <td><code>{{{{ row["sku"].value }}}}</code></td>
@@ -1001,13 +1153,14 @@ UNALLOC_TABLE_TEMPLATE = f"""\
   {{% endfor %}}
   </tbody>
 </table>
-</div>
+{paged_bottom("unalloc")}
 """
 
 
 INVOICE_TABLE_TEMPLATE = f"""\
 <style>
-  .cb-tbl-wrap {{ max-height: 100%; overflow: auto; }}
+{PAGED_BASE_CSS}
+{paged_css("inv", 25, "table-row")}
   table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; }}
   table.cb-t th {{
     position: sticky; top: 0; background: var(--cc-color-surface); z-index: 1;
@@ -1020,20 +1173,21 @@ INVOICE_TABLE_TEMPLATE = f"""\
 </style>
 {{% assign unit = rows[0]["unit"].value | default: "ECU" %}}
 {{% assign sym = rows[0]["currency_symbol"].value | default: unit %}}
-<div class="cb-tbl-wrap">
+{paged_top("inv", 8, 25)}
 <table class="cb-t">
   <thead>
     <tr><th>Project</th><th>Type</th><th>Category</th><th>Cost Type</th><th>SKU</th><th>Driver</th><th class="num">Quantity</th><th class="num">Units (ECU)</th><th class="num">Cost ({{{{ unit }}}})</th></tr>
   </thead>
   <tbody>
   {{% for row in rows %}}
+    {{% assign _row_pg = forloop.index0 | divided_by: 8 | plus: 1 %}}
     {{% assign cost = row["cost"].value | default: 0.0 %}}
     {{% assign ecu = row["ecu"].value | default: 0.0 %}}
     {{% assign qty = row["qty"].value | default: 0.0 %}}
 {liquid_money_block("cost", "fmt_cost", with_decimals=True)}
 {liquid_money_block("ecu", "fmt_ecu", with_decimals=True)}
 {liquid_money_block("qty", "fmt_qty", with_decimals=True)}
-    <tr>
+    <tr class="cb-pg-row-inv cb-pg-inv-{{{{ _row_pg }}}}">
       <td><strong>{{{{ row["project"].value }}}}</strong></td>
       <td>{{{{ row["project_type"].value }}}}</td>
       <td>{{{{ row["category"].value }}}}</td>
@@ -1047,13 +1201,14 @@ INVOICE_TABLE_TEMPLATE = f"""\
   {{% endfor %}}
   </tbody>
 </table>
-</div>
+{paged_bottom("inv")}
 """
 
 
 DATASTREAM_COST_TABLE_TEMPLATE = f"""\
 <style>
-  .cb-tbl-wrap {{ max-height: 100%; overflow: auto; }}
+{PAGED_BASE_CSS}
+{paged_css("dscost", 25, "table-row")}
   table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; }}
   table.cb-t th {{
     position: sticky; top: 0; background: var(--cc-color-surface); z-index: 1;
@@ -1066,13 +1221,14 @@ DATASTREAM_COST_TABLE_TEMPLATE = f"""\
 </style>
 {{% assign unit = rows[0]["unit"].value | default: "ECU" %}}
 {{% assign sym = rows[0]["currency_symbol"].value | default: unit %}}
-<div class="cb-tbl-wrap">
+{paged_top("dscost", 8, 25)}
 <table class="cb-t">
   <thead>
     <tr><th>Project</th><th>Project Type</th><th>Type</th><th>Namespace</th><th>Data Stream</th><th class="num">Indexing ({{{{ sym }}}})</th><th class="num">Search ({{{{ sym }}}})</th><th class="num">Storage ({{{{ sym }}}})</th><th class="num">Attributed Cost ({{{{ unit }}}})</th></tr>
   </thead>
   <tbody>
   {{% for row in rows %}}
+    {{% assign _row_pg = forloop.index0 | divided_by: 8 | plus: 1 %}}
     {{% assign idx = row["indexing_cost"].value | default: 0.0 %}}
     {{% assign qry = row["query_cost"].value | default: 0.0 %}}
     {{% assign stg = row["storage_cost"].value | default: 0.0 %}}
@@ -1081,7 +1237,7 @@ DATASTREAM_COST_TABLE_TEMPLATE = f"""\
 {liquid_money_block("qry", "fmt_qry", with_decimals=True)}
 {liquid_money_block("stg", "fmt_stg", with_decimals=True)}
 {liquid_money_block("total", "fmt_total", with_decimals=True)}
-    <tr>
+    <tr class="cb-pg-row-dscost cb-pg-dscost-{{{{ _row_pg }}}}">
       <td><strong>{{{{ row["project"].value }}}}</strong></td>
       <td>{{{{ row["project_type"].value }}}}</td>
       <td>{{{{ row["ds_type"].value }}}}</td>
@@ -1095,43 +1251,49 @@ DATASTREAM_COST_TABLE_TEMPLATE = f"""\
   {{% endfor %}}
   </tbody>
 </table>
-</div>
+{paged_bottom("dscost")}
 """
 
-STATUS_BOARD_TEMPLATE = """\
+STATUS_BOARD_TEMPLATE = f"""\
 <style>
-  .cb-status { display: flex; flex-direction: column; gap: var(--cc-space-xs); }
-  .cb-item {
+{PAGED_BASE_CSS}
+{paged_css("statbrd", 20, "grid")}
+  .cb-status {{ display: flex; flex-direction: column; gap: var(--cc-space-xs); }}
+  .cb-item {{
     display: grid; grid-template-columns: 18px 1.4fr 0.9fr 0.8fr 1.1fr 1.2fr; gap: var(--cc-space-s);
     align-items: center; padding: var(--cc-space-s);
     background: var(--cc-color-surface); border-radius: var(--cc-radius-s);
     border: 1px solid var(--cc-color-border);
-  }
-  .cb-dot { width: 10px; height: 10px; border-radius: 50%; }
-  .cb-ok { background: var(--cc-vis-1, #54b399); }
-  .cb-warn { background: var(--cc-vis-8, #da8b45); }
-  .cb-err { background: var(--cc-vis-7, #c9404f); }
-  .cb-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .cb-meta { opacity: 0.8; font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  }}
+  .cb-dot {{ width: 10px; height: 10px; border-radius: 50%; }}
+  .cb-ok {{ background: var(--cc-vis-1, #54b399); }}
+  .cb-warn {{ background: var(--cc-vis-8, #da8b45); }}
+  .cb-err {{ background: var(--cc-vis-7, #c9404f); }}
+  .cb-name {{ font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+  .cb-meta {{ opacity: 0.8; font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
 </style>
+{paged_top("statbrd", 5, 20)}
 <div class="cb-status">
-{% for row in rows %}
-  {% assign h = row["health"].value | default: "stale" %}
-  <div class="cb-item">
-    <div class="cb-dot {% if h == "ok" %}cb-ok{% elsif h == "empty_or_unauthorized" %}cb-err{% else %}cb-warn{% endif %}"></div>
-    <div class="cb-name">{{ row["project_name"].value | default: row["project_id"].value }}</div>
-    <div class="cb-meta">{{ row["project_type"].value | default: "unknown" }}</div>
-    <div class="cb-meta">{{ row["index_count"].value | default: 0 }} indices</div>
-    <div class="cb-meta">{{ h }} · day {{ row["day"].value | default: "—" }}</div>
-    <div class="cb-meta">{{ row["updated_at"].value | default: "never" | slice: 0, 19 }}</div>
+{{% for row in rows %}}
+  {{% assign _row_pg = forloop.index0 | divided_by: 5 | plus: 1 %}}
+  {{% assign h = row["health"].value | default: "stale" %}}
+  <div class="cb-item cb-pg-row-statbrd cb-pg-statbrd-{{{{ _row_pg }}}}">
+    <div class="cb-dot {{% if h == "ok" %}}cb-ok{{% elsif h == "empty_or_unauthorized" %}}cb-err{{% else %}}cb-warn{{% endif %}}"></div>
+    <div class="cb-name">{{{{ row["project_name"].value | default: row["project_id"].value }}}}</div>
+    <div class="cb-meta">{{{{ row["project_type"].value | default: "unknown" }}}}</div>
+    <div class="cb-meta">{{{{ row["index_count"].value | default: 0 }}}} indices</div>
+    <div class="cb-meta">{{{{ h }}}} · day {{{{ row["day"].value | default: "—" }}}}</div>
+    <div class="cb-meta">{{{{ row["updated_at"].value | default: "never" | slice: 0, 19 }}}}</div>
   </div>
-{% endfor %}
+{{% endfor %}}
 </div>
+{paged_bottom("statbrd")}
 """
 
 ALLOC_TABLE_TEMPLATE = f"""\
 <style>
-  .cb-tbl-wrap {{ max-height: 100%; overflow: auto; }}
+{PAGED_BASE_CSS}
+{paged_css("alloc", 10, "table-row")}
   table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; }}
   table.cb-t th {{
     position: sticky; top: 0; background: var(--cc-color-surface); z-index: 1;
@@ -1151,17 +1313,18 @@ ALLOC_TABLE_TEMPLATE = f"""\
 {{% assign sym = rows[0]["currency_symbol"].value | default: unit %}}
 {{% assign max_cost = rows[0]["cost"].value | default: 1.0 %}}
 {{% if max_cost <= 0 %}}{{% assign max_cost = 1.0 %}}{{% endif %}}
-<div class="cb-tbl-wrap">
+{paged_top("alloc", 8, 10)}
 <table class="cb-t">
   <thead>
     <tr><th>Project</th><th>Type</th><th>Cost Type</th><th>Driver</th><th class="num">Cost ({{{{ unit }}}})</th><th>Share</th></tr>
   </thead>
   <tbody>
   {{% for row in rows %}}
+    {{% assign _row_pg = forloop.index0 | divided_by: 8 | plus: 1 %}}
     {{% assign cost = row["cost"].value | default: 0.0 %}}
     {{% assign bar_pct = cost | times: 100.0 | divided_by: max_cost | round: 1 %}}
 {liquid_money_block("cost", "fmt_cost", with_decimals=True)}
-    <tr>
+    <tr class="cb-pg-row-alloc cb-pg-alloc-{{{{ _row_pg }}}}">
       <td><strong>{{{{ row["project"].value }}}}</strong></td>
       <td>{{{{ row["project_type_label"].value }}}}</td>
       <td>{{{{ row["cost_type_label"].value }}}}</td>
@@ -1172,7 +1335,7 @@ ALLOC_TABLE_TEMPLATE = f"""\
   {{% endfor %}}
   </tbody>
 </table>
-</div>
+{paged_bottom("alloc")}
 """
 
 
