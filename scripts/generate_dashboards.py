@@ -291,24 +291,24 @@ def liquid_money_block(val_var: str, out_var: str, with_decimals: bool = True) -
         return f"""\
 {{% assign {p}_iv = {val_var} | round %}}
 {{% if {p}_iv >= 1000000000 %}}
-  {{% assign {p}_b = {p}_iv | divided_by: 1000000000 %}}
-  {{% assign {p}_m = {p}_iv | modulo: 1000000000 | divided_by: 1000000 %}}
-  {{% assign {p}_k = {p}_iv | modulo: 1000000 | divided_by: 1000 %}}
-  {{% assign {p}_u = {p}_iv | modulo: 1000 %}}
+  {{% assign {p}_b = {p}_iv | divided_by: 1000000000 | floor %}}
+  {{% assign {p}_m = {p}_iv | modulo: 1000000000 | divided_by: 1000000 | floor %}}
+  {{% assign {p}_k = {p}_iv | modulo: 1000000 | divided_by: 1000 | floor %}}
+  {{% assign {p}_u = {p}_iv | modulo: 1000 | floor %}}
   {{% if {p}_m < 10 %}}{{% assign {p}_ms = "00" | append: {p}_m %}}{{% elsif {p}_m < 100 %}}{{% assign {p}_ms = "0" | append: {p}_m %}}{{% else %}}{{% assign {p}_ms = {p}_m %}}{{% endif %}}
   {{% if {p}_k < 10 %}}{{% assign {p}_ks = "00" | append: {p}_k %}}{{% elsif {p}_k < 100 %}}{{% assign {p}_ks = "0" | append: {p}_k %}}{{% else %}}{{% assign {p}_ks = {p}_k %}}{{% endif %}}
   {{% if {p}_u < 10 %}}{{% assign {p}_us = "00" | append: {p}_u %}}{{% elsif {p}_u < 100 %}}{{% assign {p}_us = "0" | append: {p}_u %}}{{% else %}}{{% assign {p}_us = {p}_u %}}{{% endif %}}
   {{% assign {out_var} = {p}_b | append: "," | append: {p}_ms | append: "," | append: {p}_ks | append: "," | append: {p}_us %}}
 {{% elsif {p}_iv >= 1000000 %}}
-  {{% assign {p}_m = {p}_iv | divided_by: 1000000 %}}
-  {{% assign {p}_k = {p}_iv | modulo: 1000000 | divided_by: 1000 %}}
-  {{% assign {p}_u = {p}_iv | modulo: 1000 %}}
+  {{% assign {p}_m = {p}_iv | divided_by: 1000000 | floor %}}
+  {{% assign {p}_k = {p}_iv | modulo: 1000000 | divided_by: 1000 | floor %}}
+  {{% assign {p}_u = {p}_iv | modulo: 1000 | floor %}}
   {{% if {p}_k < 10 %}}{{% assign {p}_ks = "00" | append: {p}_k %}}{{% elsif {p}_k < 100 %}}{{% assign {p}_ks = "0" | append: {p}_k %}}{{% else %}}{{% assign {p}_ks = {p}_k %}}{{% endif %}}
   {{% if {p}_u < 10 %}}{{% assign {p}_us = "00" | append: {p}_u %}}{{% elsif {p}_u < 100 %}}{{% assign {p}_us = "0" | append: {p}_u %}}{{% else %}}{{% assign {p}_us = {p}_u %}}{{% endif %}}
   {{% assign {out_var} = {p}_m | append: "," | append: {p}_ks | append: "," | append: {p}_us %}}
 {{% elsif {p}_iv >= 1000 %}}
-  {{% assign {p}_k = {p}_iv | divided_by: 1000 %}}
-  {{% assign {p}_u = {p}_iv | modulo: 1000 %}}
+  {{% assign {p}_k = {p}_iv | divided_by: 1000 | floor %}}
+  {{% assign {p}_u = {p}_iv | modulo: 1000 | floor %}}
   {{% if {p}_u < 10 %}}{{% assign {p}_us = "00" | append: {p}_u %}}{{% elsif {p}_u < 100 %}}{{% assign {p}_us = "0" | append: {p}_u %}}{{% else %}}{{% assign {p}_us = {p}_u %}}{{% endif %}}
   {{% assign {out_var} = {p}_k | append: "," | append: {p}_us %}}
 {{% else %}}
@@ -316,28 +316,29 @@ def liquid_money_block(val_var: str, out_var: str, with_decimals: bool = True) -
 {{% endif %}}"""
 
     return f"""\
-{{% assign {p}_iv = {val_var} | floor %}}
-{{% assign {p}_dv = {val_var} | minus: {p}_iv | times: 100 | round %}}
+{{% assign {p}_cents = {val_var} | times: 100 | round %}}
+{{% assign {p}_iv = {p}_cents | divided_by: 100 | floor %}}
+{{% assign {p}_dv = {p}_cents | modulo: 100 | floor %}}
 {{% if {p}_dv < 10 %}}{{% assign {p}_ds = "0" | append: {p}_dv %}}{{% else %}}{{% assign {p}_ds = {p}_dv | append: "" %}}{{% endif %}}
 {{% if {p}_iv >= 1000000000 %}}
-  {{% assign {p}_b = {p}_iv | divided_by: 1000000000 %}}
-  {{% assign {p}_m = {p}_iv | modulo: 1000000000 | divided_by: 1000000 %}}
-  {{% assign {p}_k = {p}_iv | modulo: 1000000 | divided_by: 1000 %}}
-  {{% assign {p}_u = {p}_iv | modulo: 1000 %}}
+  {{% assign {p}_b = {p}_iv | divided_by: 1000000000 | floor %}}
+  {{% assign {p}_m = {p}_iv | modulo: 1000000000 | divided_by: 1000000 | floor %}}
+  {{% assign {p}_k = {p}_iv | modulo: 1000000 | divided_by: 1000 | floor %}}
+  {{% assign {p}_u = {p}_iv | modulo: 1000 | floor %}}
   {{% if {p}_m < 10 %}}{{% assign {p}_ms = "00" | append: {p}_m %}}{{% elsif {p}_m < 100 %}}{{% assign {p}_ms = "0" | append: {p}_m %}}{{% else %}}{{% assign {p}_ms = {p}_m %}}{{% endif %}}
   {{% if {p}_k < 10 %}}{{% assign {p}_ks = "00" | append: {p}_k %}}{{% elsif {p}_k < 100 %}}{{% assign {p}_ks = "0" | append: {p}_k %}}{{% else %}}{{% assign {p}_ks = {p}_k %}}{{% endif %}}
   {{% if {p}_u < 10 %}}{{% assign {p}_us = "00" | append: {p}_u %}}{{% elsif {p}_u < 100 %}}{{% assign {p}_us = "0" | append: {p}_u %}}{{% else %}}{{% assign {p}_us = {p}_u %}}{{% endif %}}
   {{% assign {out_var} = {p}_b | append: "," | append: {p}_ms | append: "," | append: {p}_ks | append: "," | append: {p}_us | append: "." | append: {p}_ds %}}
 {{% elsif {p}_iv >= 1000000 %}}
-  {{% assign {p}_m = {p}_iv | divided_by: 1000000 %}}
-  {{% assign {p}_k = {p}_iv | modulo: 1000000 | divided_by: 1000 %}}
-  {{% assign {p}_u = {p}_iv | modulo: 1000 %}}
+  {{% assign {p}_m = {p}_iv | divided_by: 1000000 | floor %}}
+  {{% assign {p}_k = {p}_iv | modulo: 1000000 | divided_by: 1000 | floor %}}
+  {{% assign {p}_u = {p}_iv | modulo: 1000 | floor %}}
   {{% if {p}_k < 10 %}}{{% assign {p}_ks = "00" | append: {p}_k %}}{{% elsif {p}_k < 100 %}}{{% assign {p}_ks = "0" | append: {p}_k %}}{{% else %}}{{% assign {p}_ks = {p}_k %}}{{% endif %}}
   {{% if {p}_u < 10 %}}{{% assign {p}_us = "00" | append: {p}_u %}}{{% elsif {p}_u < 100 %}}{{% assign {p}_us = "0" | append: {p}_u %}}{{% else %}}{{% assign {p}_us = {p}_u %}}{{% endif %}}
   {{% assign {out_var} = {p}_m | append: "," | append: {p}_ks | append: "," | append: {p}_us | append: "." | append: {p}_ds %}}
 {{% elsif {p}_iv >= 1000 %}}
-  {{% assign {p}_k = {p}_iv | divided_by: 1000 %}}
-  {{% assign {p}_u = {p}_iv | modulo: 1000 %}}
+  {{% assign {p}_k = {p}_iv | divided_by: 1000 | floor %}}
+  {{% assign {p}_u = {p}_iv | modulo: 1000 | floor %}}
   {{% if {p}_u < 10 %}}{{% assign {p}_us = "00" | append: {p}_u %}}{{% elsif {p}_u < 100 %}}{{% assign {p}_us = "0" | append: {p}_u %}}{{% else %}}{{% assign {p}_us = {p}_u %}}{{% endif %}}
   {{% assign {out_var} = {p}_k | append: "," | append: {p}_us | append: "." | append: {p}_ds %}}
 {{% else %}}
