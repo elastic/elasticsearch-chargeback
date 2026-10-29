@@ -57,7 +57,7 @@ Environment variables (loaded from macOS Keychain, or .env if present):
   HUB_ES_API_KEY        (Optional) Dedicated Hub ES API key if different from ES_API_KEY
   PROJECT_ID            (Optional) Remote project ID to register in project_api_keys
   SL_API_KEY            (Optional) Least-privileged remote project API key
-  LOOKBEHIND            (Optional) Historical billing lookbehind days (default: 30)
+  LOOKBEHIND            (Optional) Historical billing lookbehind days (default: 60)
   CONF_RATE             (Optional) Chargeable unit rate (default: 1.0)
   CONF_RATE_UNIT        (Optional) Currency/unit code (default: USD)
   CONF_CURRENCY_SYMBOL  (Optional) Currency symbol (e.g. $, R, €, £)
@@ -136,7 +136,7 @@ CLOUD_API_KEY="${CLOUD_API_KEY:-${BILLING_API_KEY:-}}"
 BILLING_API_KEY="${BILLING_API_KEY:-$CLOUD_API_KEY}"
 PROJECT_ID="${PROJECT_ID:-${project_id:-}}"
 SL_API_KEY="${SL_API_KEY:-${sl_api_key:-}}"
-LOOKBEHIND="${LOOKBEHIND:-30}"
+LOOKBEHIND="${LOOKBEHIND:-60}"
 
 CONF_RATE="${CONF_RATE:-1.0}"
 CONF_RATE_UNIT="${CONF_RATE_UNIT:-USD}"
