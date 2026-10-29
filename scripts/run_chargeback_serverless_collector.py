@@ -131,66 +131,88 @@ def main():
     project_map = {p["id"]: p for p in projects}
     print(f"  Total projects discovered across org: {len(projects)}")
 
-    # 2. Collect Historical Billing Metrics
+    # 2. Collect Historical Billing Metrics (Day-by-Day)
     now = datetime.now(timezone.utc)
-    from_date = now - timedelta(days=LOOKBEHIND)
-    print(f"\n>>> Step 2: Collecting Billing metrics (last {LOOKBEHIND} days)...")
-    from_str = from_date.strftime("%Y-%m-%dT00:00:00Z")
-    to_str = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    print(f"\n>>> Step 2: Collecting Billing metrics day-by-day (last {LOOKBEHIND} days)...")
 
-    billing_url = f"{BILLING_API_BASE}/api/v2/billing/organizations/{ORG_ID}/costs/instances?from={urllib.parse.quote(from_str)}&to={urllib.parse.quote(to_str)}"
-    billing_instances = []
-    try:
-        status, bdata = http_get(billing_url, cloud_headers)
-        raw_instances = bdata.get("instances", [])
-        billing_instances = [
-            inst for inst in raw_instances
-            if inst.get("type") in ["elasticsearch", "observability", "security"]
-        ]
-        print(f"  • Retrieved billing instances for {len(billing_instances)} Serverless project instance(s)")
-    except Exception as e:
-        print(f"  ⚠ Failed to fetch billing instances: {e}")
+    start_date = (now - timedelta(days=LOOKBEHIND)).date()
+    end_date = now.date()
 
-    # Format billing events
     billing_docs = []
-    for inst in billing_instances:
-        inst_id = inst.get("id", "")
-        inst_name = inst.get("name", inst_id)
-        inst_type = inst.get("type", "elasticsearch")
+    latest_billing_instances = []
 
-        # Resolve project details if matched
-        proj = project_map.get(inst_id, {})
-        pname = proj.get("name", inst_name)
-        ptype = proj.get("project_type", inst_type)
+    current_date = start_date
+    while current_date <= end_date:
+        day_start = datetime(current_date.year, current_date.month, current_date.day, 0, 0, 0, tzinfo=timezone.utc)
+        if current_date == end_date:
+            day_end = now
+        else:
+            day_end = day_start + timedelta(days=1)
 
-        line_items = inst.get("product_line_items", [])
-        for li in line_items:
-            sku = li.get("sku", "")
-            kind = li.get("kind", "")
-            itype = li.get("type", "")
-            total_ecu = float(li.get("total_ecu") or 0.0)
-            qty = li.get("quantity") or {}
-            qty_val = float(qty.get("value") or 0.0) if isinstance(qty, dict) else 0.0
+        if day_end <= day_start:
+            current_date += timedelta(days=1)
+            continue
 
-            cost_type, cost_cat, is_alloc, driver = classify_sku(sku, kind, itype)
+        day_from_str = day_start.strftime("%Y-%m-%dT%H:%M:%SZ")
+        day_to_str = day_end.strftime("%Y-%m-%dT%H:%M:%SZ")
+        day_timestamp = day_start.strftime("%Y-%m-%dT00:00:00.000Z")
 
-            doc = {
-                "@timestamp": from_str,
-                "project_id": inst_id,
-                "project_name": pname,
-                "project_type": ptype,
-                "sku": sku,
-                "total_ecu": total_ecu,
-                "quantity_value": qty_val,
-                "cost_type": cost_type,
-                "cost_category": cost_cat,
-                "is_allocatable": is_alloc,
-                "allocation_driver": driver,
-                "conf_chargeable_unit_rate": CONF_RATE,
-                "conf_chargeable_unit_rate_unit": CONF_RATE_UNIT,
-                "conf_currency_symbol": CONF_CURRENCY_SYMBOL
-            }
-            billing_docs.append(doc)
+        billing_url = f"{BILLING_API_BASE}/api/v2/billing/organizations/{ORG_ID}/costs/instances?from={urllib.parse.quote(day_from_str)}&to={urllib.parse.quote(day_to_str)}"
+        try:
+            status, bdata = http_get(billing_url, cloud_headers)
+            raw_instances = bdata.get("instances", [])
+            day_instances = [
+                inst for inst in raw_instances
+                if inst.get("type") in ["elasticsearch", "observability", "security"]
+            ]
+            if day_instances:
+                latest_billing_instances = day_instances
+
+            day_line_count = 0
+            for inst in day_instances:
+                inst_id = inst.get("id", "")
+                inst_name = inst.get("name", inst_id)
+                inst_type = inst.get("type", "elasticsearch")
+
+                proj = project_map.get(inst_id, {})
+                pname = proj.get("name", inst_name)
+                ptype = proj.get("project_type", inst_type)
+
+                line_items = inst.get("product_line_items", [])
+                for li in line_items:
+                    sku = li.get("sku", "")
+                    kind = li.get("kind", "")
+                    itype = li.get("type", "")
+                    total_ecu = float(li.get("total_ecu") or 0.0)
+                    qty = li.get("quantity") or {}
+                    qty_val = float(qty.get("value") or 0.0) if isinstance(qty, dict) else 0.0
+
+                    cost_type, cost_cat, is_alloc, driver = classify_sku(sku, kind, itype)
+
+                    doc = {
+                        "@timestamp": day_timestamp,
+                        "project_id": inst_id,
+                        "project_name": pname,
+                        "project_type": ptype,
+                        "sku": sku,
+                        "total_ecu": total_ecu,
+                        "quantity_value": qty_val,
+                        "cost_type": cost_type,
+                        "cost_category": cost_cat,
+                        "is_allocatable": is_alloc,
+                        "allocation_driver": driver,
+                        "conf_chargeable_unit_rate": CONF_RATE,
+                        "conf_chargeable_unit_rate_unit": CONF_RATE_UNIT,
+                        "conf_currency_symbol": CONF_CURRENCY_SYMBOL
+                    }
+                    billing_docs.append(doc)
+                    day_line_count += 1
+            if day_instances:
+                print(f"  • {current_date.strftime('%Y-%m-%d')}: {len(day_instances)} project instance(s), {day_line_count} line items")
+        except Exception as e:
+            print(f"  ⚠ Failed to fetch billing instances for {current_date}: {e}")
+
+        current_date += timedelta(days=1)
 
     if billing_docs:
         print(f"  • Ingesting {len(billing_docs)} billing metric documents into metrics-chargeback_serverless.billing-default...")
@@ -219,7 +241,7 @@ def main():
 
     # Calculate latest daily realized pool per project
     pools = {}
-    for inst in billing_instances:
+    for inst in latest_billing_instances:
         pid = inst.get("id")
         idx_e = qry_e = stg_e = ai_e = 0.0
         for li in inst.get("product_line_items", []):
