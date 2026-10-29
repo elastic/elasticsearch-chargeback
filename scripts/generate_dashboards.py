@@ -3,9 +3,9 @@
 
 - Working Links (all dashboardLink with panelId:link_<uuid>_dashboard)
 - Project wording (Serverless has projects, not deployments)
-- Local currency via LOOKUP JOIN chargeback_conf_lookup on every spend visual
-- Concrete project_* and deployment_* fields with chargeback-serverless-projects fallback
-- Configuration dashboard shows Dev Tools DSL only (no prose setup instructions)
+- Local currency via Fleet policy settings (unit_rate, currency_unit, currency_symbol) on every visual
+- Native metrics data streams: metrics-chargeback_serverless.billing-* and metrics-chargeback_serverless.usage-*
+- Configuration dashboard displays Fleet Integration Policy guide, discovered projects registry, and hourly harvest health
 - Matches `elastic-package export dashboards` structure (typeMigrationVersion 10.3.0, expanded JSON attributes, no tag files)
 """
 
@@ -37,7 +37,7 @@ ALERT_UNALLOCATED = "chargeback_serverless-alert-unallocated-ecu"
 ALERT_STALE_STATE = "chargeback_serverless-alert-stale-project-state"
 ALERT_MISSING_PROJECTS = "chargeback_serverless-alert-missing-projects"
 
-INDEX_PATTERN_ID = "chargeback_serverless-billing_cluster_cost_lookup"
+INDEX_PATTERN_ID = "chargeback_serverless-billing"
 
 # Shared ES|QL prelude: currency rate and symbol from policy config stamped on events.
 COST_PRELUDE = f"""FROM {BILLING}
@@ -245,7 +245,7 @@ def custom_panel(
     panel_id: str,
     title: str,
     template: str,
-    esql_query: str,
+    esql_query: str | None,
     x: int,
     y: int,
     w: int,
@@ -253,7 +253,7 @@ def custom_panel(
 ) -> tuple[dict, list]:
     panel = {
         "embeddableConfig": {
-            "esql_query": [esql_query],
+            "esql_query": [esql_query] if esql_query else [],
             "template": template,
         },
         "gridData": {"x": x, "y": y, "w": w, "h": h, "i": panel_id},
@@ -262,6 +262,7 @@ def custom_panel(
         "type": "custom_content",
     }
     return panel, []
+
 
 
 def liquid_money_block(val_var: str, out_var: str, with_decimals: bool = True) -> str:
@@ -1282,8 +1283,8 @@ STATUS_BOARD_TEMPLATE = f"""\
 {paged_css("statbrd", 20, "grid")}
   .cb-status {{ display: flex; flex-direction: column; gap: var(--cc-space-xs); }}
   .cb-item {{
-    display: grid; grid-template-columns: 18px 1.4fr 0.9fr 0.8fr 1.1fr 1.2fr; gap: var(--cc-space-s);
-    align-items: center; padding: 4px var(--cc-space-s);
+    display: grid; grid-template-columns: 18px 1.4fr 0.9fr 0.8fr 1.3fr 1.1fr; gap: var(--cc-space-s);
+    align-items: center; padding: 6px var(--cc-space-s);
     background: var(--cc-color-surface); border-radius: var(--cc-radius-s);
     border: 1px solid var(--cc-color-border);
   }}
@@ -1293,6 +1294,10 @@ STATUS_BOARD_TEMPLATE = f"""\
   .cb-err {{ background: var(--cc-vis-7, #c9404f); }}
   .cb-name {{ font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
   .cb-meta {{ opacity: 0.8; font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+  .cb-badge {{ display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.74rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }}
+  .cb-badge-ok {{ background: rgba(84, 179, 153, 0.15); color: var(--cc-vis-1, #54b399); }}
+  .cb-badge-warn {{ background: rgba(218, 139, 69, 0.15); color: var(--cc-vis-8, #da8b45); }}
+  .cb-badge-err {{ background: rgba(201, 64, 79, 0.15); color: var(--cc-vis-7, #c9404f); }}
 </style>
 {paged_top("statbrd", 10, 20)}
 <div class="cb-status">
@@ -1304,8 +1309,16 @@ STATUS_BOARD_TEMPLATE = f"""\
     <div class="cb-name">{{{{ row["project_name"].value | default: row["project_id"].value }}}}</div>
     <div class="cb-meta">{{{{ row["project_type"].value | default: "unknown" }}}}</div>
     <div class="cb-meta">{{{{ row["index_count"].value | default: 0 }}}} indices</div>
-    <div class="cb-meta">{{{{ h }}}} · day {{{{ row["day"].value | default: "—" }}}}</div>
-    <div class="cb-meta">{{{{ row["updated_at"].value | default: "never" | slice: 0, 19 }}}}</div>
+    <div>
+      {{% if h == "ok" %}}
+        <span class="cb-badge cb-badge-ok">Harvesting Active</span>
+      {{% elsif h == "empty_or_unauthorized" %}}
+        <span class="cb-badge cb-badge-err">Needs Remote API Key</span>
+      {{% else %}}
+        <span class="cb-badge cb-badge-warn">Pending Poll</span>
+      {{% endif %}}
+    </div>
+    <div class="cb-meta">Polled: {{{{ row["updated_at"].value | default: "never" | slice: 0, 19 }}}}</div>
   </div>
 {{% endfor %}}
 </div>
@@ -1685,7 +1698,7 @@ def build_usage() -> dict:
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
 | EVAL unit = COALESCE(conf_chargeable_unit_rate_unit, "USD")
 | EVAL currency_symbol = COALESCE(conf_currency_symbol, "$")
-| STATS idx_time = SUM(datastream_sum_indexing_time), qry_time = SUM(datastream_sum_query_time), stg_bytes = AVG(TO_DOUBLE(datastream_sum_data_set_store_size)), idx_ecu = MAX(indexing_ecu), qry_ecu = MAX(query_ecu), stg_ecu = MAX(storage_ecu), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project_name, ds_namespace, datastream
+| STATS idx_time = SUM(datastream_sum_indexing_time), qry_time = SUM(datastream_sum_query_time), stg_bytes = AVG(TO_DOUBLE(datastream_sum_data_set_store_size)), idx_ecu = MAX(indexing_ecu), qry_ecu = MAX(query_ecu), stg_ecu = MAX(storage_ecu), rate = MAX(rate), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project_name, ds_namespace, datastream
 | INLINE STATS p_idx_time = SUM(idx_time), p_qry_time = SUM(qry_time), p_stg_bytes = SUM(stg_bytes) BY project_name
 | EVAL idx_share = CASE(p_idx_time > 0, TO_DOUBLE(idx_time) / TO_DOUBLE(p_idx_time), 0.0)
 | EVAL qry_share = CASE(p_qry_time > 0, TO_DOUBLE(qry_time) / TO_DOUBLE(p_qry_time), 0.0)
@@ -1715,7 +1728,7 @@ def build_usage() -> dict:
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
 | EVAL unit = COALESCE(conf_chargeable_unit_rate_unit, "USD")
 | EVAL currency_symbol = COALESCE(conf_currency_symbol, "$")
-| STATS idx_time = SUM(datastream_sum_indexing_time), qry_time = SUM(datastream_sum_query_time), stg_bytes = AVG(TO_DOUBLE(datastream_sum_data_set_store_size)), idx_ecu = MAX(indexing_ecu), qry_ecu = MAX(query_ecu), stg_ecu = MAX(storage_ecu), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project_name, ds_type, datastream
+| STATS idx_time = SUM(datastream_sum_indexing_time), qry_time = SUM(datastream_sum_query_time), stg_bytes = AVG(TO_DOUBLE(datastream_sum_data_set_store_size)), idx_ecu = MAX(indexing_ecu), qry_ecu = MAX(query_ecu), stg_ecu = MAX(storage_ecu), rate = MAX(rate), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project_name, ds_type, datastream
 | INLINE STATS p_idx_time = SUM(idx_time), p_qry_time = SUM(qry_time), p_stg_bytes = SUM(stg_bytes) BY project_name
 | EVAL idx_share = CASE(p_idx_time > 0, TO_DOUBLE(idx_time) / TO_DOUBLE(p_idx_time), 0.0)
 | EVAL qry_share = CASE(p_qry_time > 0, TO_DOUBLE(qry_time) / TO_DOUBLE(p_qry_time), 0.0)
@@ -1746,7 +1759,7 @@ def build_usage() -> dict:
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
 | EVAL unit = COALESCE(conf_chargeable_unit_rate_unit, "USD")
 | EVAL currency_symbol = COALESCE(conf_currency_symbol, "$")
-| STATS idx_time = SUM(datastream_sum_indexing_time), qry_time = SUM(datastream_sum_query_time), stg_bytes = AVG(TO_DOUBLE(datastream_sum_data_set_store_size)), idx_ecu = MAX(indexing_ecu), qry_ecu = MAX(query_ecu), stg_ecu = MAX(storage_ecu), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project = project_name, project_type, ds_type, ds_namespace, datastream
+| STATS idx_time = SUM(datastream_sum_indexing_time), qry_time = SUM(datastream_sum_query_time), stg_bytes = AVG(TO_DOUBLE(datastream_sum_data_set_store_size)), idx_ecu = MAX(indexing_ecu), qry_ecu = MAX(query_ecu), stg_ecu = MAX(storage_ecu), rate = MAX(rate), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project = project_name, project_type, ds_type, ds_namespace, datastream
 | INLINE STATS p_idx_time = SUM(idx_time), p_qry_time = SUM(qry_time), p_stg_bytes = SUM(stg_bytes) BY project
 | EVAL idx_share = CASE(p_idx_time > 0, TO_DOUBLE(idx_time) / TO_DOUBLE(p_idx_time), 0.0)
 | EVAL qry_share = CASE(p_qry_time > 0, TO_DOUBLE(qry_time) / TO_DOUBLE(p_qry_time), 0.0)
@@ -1894,7 +1907,7 @@ def build_config() -> dict:
 <div class="cb-dsl">
   <div>
     <h4>1. Fleet Integration Settings</h4>
-    <p>Set Organization ID, API keys, and Currency in Integrations → Chargeback Serverless → Settings.</p>
+    <p>Set Organization ID, Cloud API Key, and Currency Rates in Fleet Settings.</p>
     <pre># Configured in Kibana Fleet UI:
 Organization ID:  &lt;YOUR_ORG_ID&gt;
 Cloud API Key:    ••••••••••••••••
@@ -1903,8 +1916,8 @@ Currency Symbol:  $ (or €, R, £, etc.)
 Unit Rate:        1.0</pre>
   </div>
   <div>
-    <h4>2. Remote Least-Privilege Key (Dev Tools)</h4>
-    <p>Run on remote project to grant index metadata monitor only (no data read access).</p>
+    <h4>2. Remote Least-Privilege API Key</h4>
+    <p>Generate on remote project (Dev Tools or API) for index storage metadata monitoring.</p>
     <pre>POST _security/api_key
 {
   "name": "chargeback-usage-harvesting",
@@ -1922,14 +1935,14 @@ Unit Rate:        1.0</pre>
 }</pre>
   </div>
   <div>
-    <h4>3. Add Key to Integration Policy</h4>
-    <p>Add key under Remote Project API Keys in Settings (<project_id>:<encoded_key>).</p>
+    <h4>3. Add Keys to Integration Policy</h4>
+    <p>Add under Remote Project API Keys in Settings (&lt;project_id&gt;:&lt;encoded_key&gt;).</p>
     <pre># In Integration Settings:
 Remote Project API Keys:
   - &lt;PROJECT_ID&gt;:&lt;ENCODED_KEY&gt;
 
 Fleet masks and encrypts all keys.
-No secrets are stored in indices.</pre>
+Zero secrets are stored in indices.</pre>
   </div>
 </div>
 """
@@ -1937,10 +1950,7 @@ No secrets are stored in indices.</pre>
         stable_uuid("cc-config-help"),
         "Fleet Configuration Guide",
         config_dsl,
-        f"""FROM {BILLING}
-| KEEP conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_currency_symbol
-| SORT @timestamp DESC
-| LIMIT 1""",
+        None,
         0,
         2,
         48,
@@ -1951,10 +1961,10 @@ No secrets are stored in indices.</pre>
     esql = f"""FROM {BILLING}
 | KEEP conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_currency_symbol
 | SORT @timestamp DESC
-| LIMIT 10"""
+| LIMIT 1"""
     p, _ = lens_esql(
         stable_uuid("lens-config-rates"),
-        "Configured currency settings from Fleet policy",
+        "Active currency settings from Fleet policy",
         esql,
         [
             col("conf_chargeable_unit_rate", "double", "Unit rate"),
@@ -2038,7 +2048,7 @@ No secrets are stored in indices.</pre>
     return dashboard_doc(
         DASH_CONFIG,
         TITLE_CONFIG,
-        "Configure currency rates via Dev Tools DSL, verify discovered Serverless projects, and monitor hourly usage harvest health.",
+        "Fleet Integration Policy configuration guide, active currency settings, discovered Serverless projects, and hourly usage harvest status.",
         panels,
         refs,
         with_controls=False,
@@ -2144,7 +2154,7 @@ def build_index_pattern() -> dict:
             "fieldAttrs": "{}",
             "fieldFormatMap": "{}",
             "fields": json.dumps(fields),
-            "name": "[Chargeback Serverless] Billing Cluster Cost",
+            "name": "[Chargeback Serverless] Billing",
             "runtimeFieldMap": "{}",
             "sourceFilters": "[]",
             "timeFieldName": "@timestamp",
