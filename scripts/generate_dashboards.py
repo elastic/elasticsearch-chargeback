@@ -46,8 +46,8 @@ COST_PRELUDE = f"""FROM {BILLING}
 | EVAL currency_symbol = COALESCE(conf_currency_symbol, "$")
 | EVAL units = COALESCE(total_ecu, 0.0)
 | EVAL cost = units * COALESCE(conf_chargeable_unit_rate, 1.0)
-| EVAL project = CASE(deployment_name IS NOT NULL AND deployment_name != "", deployment_name, deployment_id IS NOT NULL AND deployment_id != "", deployment_id, "organization")
-| EVAL project_type_label = CASE(deployment_type IS NOT NULL AND deployment_type != "", deployment_type, "organization")
+| EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "organization")
+| EVAL project_type_label = CASE(project_type IS NOT NULL AND project_type != "", project_type, "organization")
 | EVAL category_label = COALESCE(cost_category, "other")
 | EVAL cost_type_label = COALESCE(cost_type, "other")
 | WHERE ts IS NOT NULL"""
@@ -1376,8 +1376,8 @@ ALLOC_TABLE_TEMPLATE = f"""\
 
 def control_group() -> dict:
     controls = [
-        (stable_uuid("ctrl-project-type"), "deployment_type", "Project type", 0),
-        (stable_uuid("ctrl-project-name"), "deployment_name", "Project name", 1),
+        (stable_uuid("ctrl-project-type"), "project_type", "Project type", 0),
+        (stable_uuid("ctrl-project-name"), "project_name", "Project name", 1),
         (stable_uuid("ctrl-cost-category"), "cost_category", "Cost category", 2),
         (stable_uuid("ctrl-cost-type"), "cost_type", "Cost type", 3),
         (stable_uuid("ctrl-allocation-driver"), "allocation_driver", "Allocation driver", 4),
@@ -1780,7 +1780,7 @@ def build_usage() -> dict:
 
     esql = f"""FROM {USAGE}
 | WHERE doc_type == "datastream"
-| EVAL `Project` = CASE(project_name IS NOT NULL AND project_name != "", project_name, cluster_name IS NOT NULL AND cluster_name != "", cluster_name, "unknown"), `Project type` = COALESCE(project_type, "unknown"), `Data stream type` = COALESCE(ds_type, "other"), `Namespace` = COALESCE(ds_namespace, "other")
+| EVAL `Project` = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "unknown"), `Project type` = COALESCE(project_type, "unknown"), `Data stream type` = COALESCE(ds_type, "other"), `Namespace` = COALESCE(ds_namespace, "other")
 | STATS `Indexing time (ms)` = SUM(datastream_sum_indexing_time), `Search query time (ms)` = SUM(datastream_sum_query_time), `Avg dataset size (MB)` = ROUND(AVG(TO_DOUBLE(datastream_sum_data_set_store_size)) / 1048576.0, 2) BY `Project`, `Project type`, `Data stream type`, `Namespace`, datastream
 | RENAME datastream AS `Data stream`
 | SORT `Indexing time (ms)` DESC
@@ -2106,9 +2106,9 @@ def build_alerts() -> list[dict]:
             ALERT_MISSING_PROJECTS,
             "[Chargeback Serverless] Billed project missing from registry",
             f"""FROM {BILLING}
-| WHERE deployment_id IS NOT NULL AND deployment_id != "" AND (deployment_name IS NULL OR deployment_name == "" OR deployment_name == deployment_id)
-| STATS ecu = ROUND(SUM(COALESCE(total_ecu, 0.0)), 2) BY deployment_id, deployment_type
-| EVAL result = CONCAT("Billed project `", deployment_id, "` (", COALESCE(deployment_type, "unknown"), ", ", TO_STRING(ecu), " ECU) has no resolved project_name.")
+| WHERE project_id IS NOT NULL AND project_id != "" AND (project_name IS NULL OR project_name == "" OR project_name == project_id)
+| STATS ecu = ROUND(SUM(COALESCE(total_ecu, 0.0)), 2) BY project_id, project_type
+| EVAL result = CONCAT("Billed project `", project_id, "` (", COALESCE(project_type, "unknown"), ", ", TO_STRING(ecu), " ECU) has no resolved project_name.")
 | STATS result = VALUES(result)
 | MV_EXPAND result""",
             "12h",
@@ -2131,22 +2131,18 @@ def build_index_pattern() -> dict:
         f("@timestamp", "date", "date"),
         f("composite_key", "string", "keyword"),
         f("sku", "string", "keyword"),
-        f("type", "string", "keyword"),
-        f("kind", "string", "keyword"),
         f("project_id", "string", "keyword"),
         f("project_name", "string", "keyword"),
         f("project_type", "string", "keyword"),
-        f("deployment_id", "string", "keyword"),
-        f("deployment_name", "string", "keyword"),
-        f("deployment_type", "string", "keyword"),
-        f("deployment_group", "string", "keyword"),
         f("cost_category", "string", "keyword"),
         f("cost_type", "string", "keyword"),
         f("allocation_driver", "string", "keyword"),
         f("is_allocatable", "boolean", "boolean"),
         f("quantity_value", "number", "double"),
         f("total_ecu", "number", "double"),
-        f("total_chargeable_units", "number", "double"),
+        f("conf_chargeable_unit_rate", "number", "double"),
+        f("conf_chargeable_unit_rate_unit", "string", "keyword"),
+        f("conf_currency_symbol", "string", "keyword"),
     ]
     return {
         "attributes": {
