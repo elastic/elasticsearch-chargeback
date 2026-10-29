@@ -349,9 +349,9 @@ PAGED_BASE_CSS = """\
     justify-content: flex-end;
     gap: 4px;
     padding: 6px 2px 2px 2px;
-    border-top: 1px solid var(--cc-color-border, #e0e0e0);
+    border-top: 1px solid var(--cc-color-border);
     font-size: 0.76rem;
-    color: var(--cc-color-text, #333);
+    color: var(--cc-color-text);
     user-select: none;
     flex-shrink: 0;
   }
@@ -367,21 +367,21 @@ PAGED_BASE_CSS = """\
     min-width: 22px;
     height: 22px;
     padding: 0 5px;
-    border-radius: 4px;
-    border: 1px solid var(--cc-color-border, #ccc);
-    background: var(--cc-color-surface, #fff);
-    color: var(--cc-color-text, #333);
+    border-radius: var(--cc-radius-s, 4px);
+    border: 1px solid var(--cc-color-border);
+    background: var(--cc-color-surface);
+    color: var(--cc-color-text);
     cursor: pointer;
     font-size: 0.75rem;
     font-weight: 500;
     text-decoration: none;
     box-sizing: border-box;
-    transition: background 0.15s, border-color 0.15s;
+    transition: background var(--cc-motion-fast, 0.15s), border-color var(--cc-motion-fast, 0.15s);
     user-select: none;
   }
   .cb-pg-btn:hover {
-    background: var(--cc-color-hover, #f0f0f0);
-    border-color: var(--cc-color-primary, #0077cc);
+    background: var(--cc-color-border);
+    border-color: var(--cc-color-primary);
   }
   .cb-pg-dir {
     display: none !important;
@@ -405,7 +405,7 @@ def paged_css(pfx: str, max_pages: int, display_mode: str = "table-row") -> str:
             f"  #{pfx}_pg_{i}:checked ~ .cb-content-wrap-{pfx} .cb-pg-{pfx}-{i} {{ display: {display_mode} !important; }}"
         )
         rules.append(
-            f"  #{pfx}_pg_{i}:checked ~ .cb-pg-bar-{pfx} .cb-btn-{pfx}-{i} {{ background: var(--cc-color-primary, #0077cc); color: #ffffff !important; border-color: var(--cc-color-primary, #0077cc); pointer-events: none; font-weight: 700; }}"
+            f"  #{pfx}_pg_{i}:checked ~ .cb-pg-bar-{pfx} .cb-btn-{pfx}-{i} {{ background: var(--cc-color-primary); color: #ffffff !important; border-color: var(--cc-color-primary); pointer-events: none; font-weight: 700; }}"
         )
         rules.append(
             f"  #{pfx}_pg_{i}:checked ~ .cb-pg-bar-{pfx} .cb-pg-cur::after {{ content: \"{i}\"; }}"
@@ -471,9 +471,9 @@ BILLING_KPI_TEMPLATE = f"""\
     padding: 10px 14px 12px 14px;
   }}
   .cb-kpi-label {{ color: var(--cc-color-text); opacity: 0.72; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; line-height: 1.1; }}
-  .cb-kpi-value {{ font-size: 1.45rem; font-weight: 600; margin-top: 4px; line-height: 1.1; font-variant-numeric: tabular-nums; display: flex; align-items: baseline; }}
+  .cb-kpi-value {{ color: var(--cc-color-text); font-size: 1.45rem; font-weight: 600; margin-top: 4px; line-height: 1.1; font-variant-numeric: tabular-nums; display: flex; align-items: baseline; }}
   .cb-sym {{ font-size: 1.05rem; opacity: 0.85; margin-right: 4px; font-weight: 500; }}
-  .cb-kpi-sub {{ font-size: 0.75rem; opacity: 0.68; margin-top: 4px; line-height: 1.1; }}
+  .cb-kpi-sub {{ color: var(--cc-color-text); font-size: 0.75rem; opacity: 0.68; margin-top: 4px; line-height: 1.1; }}
 </style>
 {{% assign r = rows[0] %}}
 {{% assign total = r["total_spend"].value | default: 0.0 %}}
@@ -533,9 +533,9 @@ USAGE_KPI_TEMPLATE = f"""\
     padding: 10px 14px 12px 14px;
   }}
   .cb-kpi-label {{ color: var(--cc-color-text); opacity: 0.72; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; line-height: 1.1; }}
-  .cb-kpi-value {{ font-size: 1.45rem; font-weight: 600; margin-top: 4px; line-height: 1.1; font-variant-numeric: tabular-nums; display: flex; align-items: baseline; }}
+  .cb-kpi-value {{ color: var(--cc-color-text); font-size: 1.45rem; font-weight: 600; margin-top: 4px; line-height: 1.1; font-variant-numeric: tabular-nums; display: flex; align-items: baseline; }}
   .cb-sym {{ font-size: 1.05rem; opacity: 0.85; margin-right: 4px; font-weight: 500; }}
-  .cb-kpi-sub {{ font-size: 0.75rem; opacity: 0.68; margin-top: 4px; line-height: 1.1; }}
+  .cb-kpi-sub {{ color: var(--cc-color-text); font-size: 0.75rem; opacity: 0.68; margin-top: 4px; line-height: 1.1; }}
 </style>
 {{% assign r = rows[0] %}}
 {{% assign pool = r["pool_spend"].value | default: 0.0 %}}
@@ -589,13 +589,13 @@ SANKEY_TEMPLATE = f"""\
     gap: var(--cc-space-s);
     align-items: center;
   }}
-  .cb-stage {{ font-size: 0.88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+  .cb-stage {{ font-size: 0.88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--cc-color-text); }}
   .cb-bar-track {{
     height: 14px; background: var(--cc-color-border);
     border-radius: var(--cc-radius-s); overflow: hidden;
   }}
   .cb-bar {{ height: 100%; background: var(--cc-vis-0); min-width: 2px; }}
-  .cb-cost {{ text-align: right; font-variant-numeric: tabular-nums; font-size: 0.88rem; white-space: nowrap; }}
+  .cb-cost {{ text-align: right; font-variant-numeric: tabular-nums; font-size: 0.88rem; white-space: nowrap; color: var(--cc-color-text); }}
   .cb-sym {{ font-weight: 500; opacity: 0.85; margin-right: 2px; }}
 </style>
 {{% assign unit = rows[0]["unit"].value | default: "ECU" %}}
@@ -631,11 +631,10 @@ AI_KPIS_TEMPLATE = f"""\
     font-family: inherit;
   }}
   .cb-ai-card {{
-    background: var(--cc-color-surface, #ffffff);
-    border: 1px solid var(--cc-color-border, #d3dae6);
-    border-radius: var(--cc-radius-m, 8px);
-    padding: var(--cc-space-m, 16px);
-    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    background: var(--cc-color-surface);
+    border: 1px solid var(--cc-color-border);
+    border-radius: var(--cc-radius);
+    padding: 10px 14px 12px 14px;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
@@ -643,16 +642,18 @@ AI_KPIS_TEMPLATE = f"""\
   .cb-ai-label {{
     font-size: 0.78rem;
     font-weight: 600;
-    color: var(--cc-color-text-secondary, #69707d);
+    color: var(--cc-color-text);
+    opacity: 0.72;
     text-transform: uppercase;
     letter-spacing: 0.04em;
     margin-bottom: 8px;
+    line-height: 1.1;
   }}
   .cb-ai-val {{
     font-size: 1.65rem;
     font-weight: 700;
     line-height: 1.2;
-    color: var(--cc-color-text, #1a1c21);
+    color: var(--cc-color-text);
     font-variant-numeric: tabular-nums;
   }}
   .cb-ai-val .sym {{
@@ -663,11 +664,13 @@ AI_KPIS_TEMPLATE = f"""\
   }}
   .cb-ai-sub {{
     font-size: 0.78rem;
-    color: var(--cc-color-text-secondary, #69707d);
+    color: var(--cc-color-text);
+    opacity: 0.68;
     margin-top: 8px;
     display: flex;
     align-items: center;
     gap: 4px;
+    line-height: 1.1;
   }}
   .cb-ai-pill {{
     display: inline-block;
@@ -675,8 +678,8 @@ AI_KPIS_TEMPLATE = f"""\
     border-radius: 10px;
     font-size: 0.7rem;
     font-weight: 600;
-    background: var(--cc-color-primary-subdued, #e8f2fe);
-    color: var(--cc-color-primary, #006bb4);
+    background: color-mix(in srgb, var(--cc-color-primary) 15%, transparent);
+    color: var(--cc-color-primary);
   }}
 </style>
 {{% assign unit = rows[0]["unit"].value | default: "ECU" %}}
@@ -732,11 +735,12 @@ AI_MODELS_TEMPLATE = f"""\
     gap: var(--cc-space-s, 8px);
     font-size: 0.76rem;
     font-weight: 600;
-    color: var(--cc-color-text-secondary, #69707d);
+    color: var(--cc-color-text);
+    opacity: 0.75;
     text-transform: uppercase;
     letter-spacing: 0.03em;
     padding-bottom: 6px;
-    border-bottom: 1px solid var(--cc-color-border, #d3dae6);
+    border-bottom: 1px solid var(--cc-color-border);
   }}
   .cb-model-head .num {{ text-align: right; }}
   .cb-model-row {{
@@ -746,11 +750,12 @@ AI_MODELS_TEMPLATE = f"""\
     align-items: center;
     font-size: 0.85rem;
     padding: 6px 0;
-    border-bottom: 1px dashed var(--cc-color-border, #e7ebf0);
+    border-bottom: 1px dashed var(--cc-color-border);
+    color: var(--cc-color-text);
   }}
   .cb-model-name {{
     font-weight: 600;
-    color: var(--cc-color-text, #1a1c21);
+    color: var(--cc-color-text);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -764,19 +769,21 @@ AI_MODELS_TEMPLATE = f"""\
     border-radius: 4px;
     font-size: 0.7rem;
     font-weight: 500;
-    background: var(--cc-color-lightShade, #f0f3f6);
-    color: var(--cc-color-text-secondary, #535966);
+    background: var(--cc-color-surface);
+    border: 1px solid var(--cc-color-border);
+    color: var(--cc-color-text);
+    opacity: 0.85;
     text-transform: uppercase;
   }}
   .cb-track {{
     height: 12px;
-    background: var(--cc-color-border, #e7ebf0);
+    background: var(--cc-color-border);
     border-radius: 6px;
     overflow: hidden;
   }}
   .cb-fill {{
     height: 100%;
-    background: linear-gradient(90deg, #1b85b8, #5a9e6f);
+    background: var(--cc-vis-0);
     border-radius: 6px;
   }}
   .cb-num {{
@@ -817,7 +824,7 @@ AI_MODELS_TEMPLATE = f"""\
   {liquid_money_block("cost", "fmt_cost", with_decimals=True)}
   <div class="cb-model-row cb-pg-row-aimod cb-pg-aimod-{{{{ _row_pg }}}}">
     <div class="cb-model-name" title="{{{{ r[\"model_id\"].value }}}}">
-      <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#1b85b8;"></span>
+      <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--cc-vis-0);"></span>
       {{{{ r["model_id"].value }}}}
     </div>
     <div><span class="cb-model-tag">{{{{ r["task_type"].value | default: "inference" }}}}</span></div>
@@ -836,26 +843,26 @@ AI_MODELS_TEMPLATE = f"""\
 
 
 def make_daily_cost_template(group_field: str, is_category: bool = False) -> str:
+    palette_colors = (
+        "var(--cc-vis-0),var(--cc-vis-1),var(--cc-vis-2),var(--cc-vis-3),var(--cc-vis-4),var(--cc-vis-5),var(--cc-vis-6),var(--cc-vis-7),var(--cc-vis-8),var(--cc-vis-9)"
+    )
     if is_category:
-        palette_colors = (
-            "#0077CC,#2EB88A,#DE5477,#F0B020,#5B8FF9,#9972C4,#E0752F,#00BFB3,#1B85B8,#D36086"
-        )
         legend_color_code = """\
-      {% if itm == "compute" %}{% assign item_color = "#0077CC" %}
-      {% elsif itm == "storage" %}{% assign item_color = "#2EB88A" %}
-      {% elsif itm == "support" %}{% assign item_color = "#DE5477" %}
-      {% elsif itm == "network" %}{% assign item_color = "#F0B020" %}
+      {% if itm == "compute" %}{% assign item_color = "var(--cc-vis-0)" %}
+      {% elsif itm == "storage" %}{% assign item_color = "var(--cc-vis-1)" %}
+      {% elsif itm == "support" %}{% assign item_color = "var(--cc-vis-2)" %}
+      {% elsif itm == "network" %}{% assign item_color = "var(--cc-vis-3)" %}
       {% else %}
         {% assign c_idx = forloop.index0 | modulo: 10 %}
         {% assign item_color = colors[c_idx] %}
       {% endif %}"""
         seg_color_code = """\
-          {% if p_name == "compute" %}{% assign item_color = "#0077CC" %}
-          {% elsif p_name == "storage" %}{% assign item_color = "#2EB88A" %}
-          {% elsif p_name == "support" %}{% assign item_color = "#DE5477" %}
-          {% elsif p_name == "network" %}{% assign item_color = "#F0B020" %}
+          {% if p_name == "compute" %}{% assign item_color = "var(--cc-vis-0)" %}
+          {% elsif p_name == "storage" %}{% assign item_color = "var(--cc-vis-1)" %}
+          {% elsif p_name == "support" %}{% assign item_color = "var(--cc-vis-2)" %}
+          {% elsif p_name == "network" %}{% assign item_color = "var(--cc-vis-3)" %}
           {% else %}
-            {% assign item_color = "#98A2B3" %}
+            {% assign item_color = "var(--cc-vis-9)" %}
             {% for itm in items %}
               {% if itm == p_name %}
                 {% assign c_idx = forloop.index0 | modulo: 10 %}
@@ -864,14 +871,11 @@ def make_daily_cost_template(group_field: str, is_category: bool = False) -> str
             {% endfor %}
           {% endif %}"""
     else:
-        palette_colors = (
-            "#0077CC,#2EB88A,#5B8FF9,#DE5477,#F0B020,#9972C4,#E0752F,#00BFB3,#1B85B8,#D36086"
-        )
         legend_color_code = """\
       {% assign c_idx = forloop.index0 | modulo: 10 %}
       {% assign item_color = colors[c_idx] %}"""
         seg_color_code = """\
-          {% assign item_color = "#0077CC" %}
+          {% assign item_color = "var(--cc-vis-0)" %}
           {% for itm in items %}
             {% if itm == p_name %}
               {% assign c_idx = forloop.index0 | modulo: 10 %}
@@ -908,11 +912,12 @@ def make_daily_cost_template(group_field: str, is_category: bool = False) -> str
     flex-direction: column;
     justify-content: space-between;
     font-size: 0.72rem;
-    color: var(--cc-color-text-secondary, #69707d);
+    color: var(--cc-color-text);
+    opacity: 0.72;
     text-align: right;
     padding-right: 8px;
     min-width: 44px;
-    border-right: 1px solid var(--cc-color-border, #d3dae6);
+    border-right: 1px solid var(--cc-color-border);
     user-select: none;
     margin-top: 1px;
     margin-bottom: 20px;
@@ -951,10 +956,12 @@ def make_daily_cost_template(group_field: str, is_category: bool = False) -> str
   .cb-grid-line {{
     width: 100%;
     height: 1px;
-    background: var(--cc-color-border, #e7ebf0);
+    background: var(--cc-color-border);
+    opacity: 0.4;
   }}
   .cb-grid-line-zero {{
-    background: var(--cc-color-border, #d3dae6);
+    background: var(--cc-color-border);
+    opacity: 1;
   }}
   .cb-hist-col {{
     display: flex;
@@ -978,7 +985,7 @@ def make_daily_cost_template(group_field: str, is_category: bool = False) -> str
   }}
   .cb-hist-seg {{
     width: 100%;
-    transition: opacity 0.15s ease-in-out;
+    transition: opacity var(--cc-motion-fast, 0.15s) ease-in-out;
     cursor: pointer;
   }}
   .cb-hist-seg:hover {{
@@ -991,7 +998,8 @@ def make_daily_cost_template(group_field: str, is_category: bool = False) -> str
     font-size: 0.70rem;
     font-weight: 500;
     font-variant-numeric: tabular-nums;
-    color: var(--cc-color-text-secondary, #69707d);
+    color: var(--cc-color-text);
+    opacity: 0.75;
     white-space: nowrap;
     text-align: center;
     left: 50%;
@@ -1015,7 +1023,7 @@ def make_daily_cost_template(group_field: str, is_category: bool = False) -> str
     gap: 8px;
     font-size: 0.76rem;
     font-weight: 500;
-    color: var(--cc-color-text, #1a1c21);
+    color: var(--cc-color-text);
   }}
   .cb-legend-box {{
     width: 10px;
@@ -1023,6 +1031,7 @@ def make_daily_cost_template(group_field: str, is_category: bool = False) -> str
     border-radius: 2px;
     flex-shrink: 0;
     display: inline-block;
+    border: 1px solid var(--cc-color-border);
   }}
   .cb-legend-label {{
     overflow: hidden;
@@ -1210,6 +1219,7 @@ def make_bar_template(label_key: str, label_header: str) -> str:
     font-size: 0.78rem; font-weight: 600; opacity: 0.75;
     text-transform: uppercase; letter-spacing: 0.03em;
     padding-bottom: 4px; border-bottom: 1px solid var(--cc-color-border);
+    color: var(--cc-color-text);
   }}
   .cb-bar-head .num {{ text-align: right; }}
   .cb-bar-row {{
@@ -1217,14 +1227,15 @@ def make_bar_template(label_key: str, label_header: str) -> str:
     grid-template-columns: minmax(110px, 1.4fr) 2fr minmax(90px, 1fr);
     gap: var(--cc-space-s, 8px);
     align-items: center; font-size: 0.85rem; padding: 2px 0;
+    color: var(--cc-color-text);
   }}
-  .cb-bar-label {{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }}
+  .cb-bar-label {{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; color: var(--cc-color-text); }}
   .cb-bar-track {{
     height: 12px; background: var(--cc-color-border);
     border-radius: var(--cc-radius-s, 4px); overflow: hidden;
   }}
-  .cb-bar-fill {{ height: 100%; background: var(--cc-vis-0, #3274D9); min-width: 2px; }}
-  .cb-bar-val {{ text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }}
+  .cb-bar-fill {{ height: 100%; background: var(--cc-vis-0); min-width: 2px; }}
+  .cb-bar-val {{ text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--cc-color-text); }}
   .cb-sym {{ font-weight: 500; opacity: 0.85; margin-right: 2px; }}
 </style>
 {{% assign unit = rows[0]["unit"].value | default: "ECU" %}}
@@ -1258,13 +1269,14 @@ UNALLOC_TABLE_TEMPLATE = f"""\
 <style>
 {PAGED_BASE_CSS}
 {paged_css("unalloc", 10, "table-row")}
-  table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; }}
+  table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; color: var(--cc-color-text); }}
   table.cb-t th {{
     position: sticky; top: 0; background: var(--cc-color-surface); z-index: 1;
     text-align: left; padding: 6px 8px; border-bottom: 2px solid var(--cc-color-border);
     font-weight: 600; opacity: 0.75; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em;
+    color: var(--cc-color-text);
   }}
-  table.cb-t td {{ padding: 6px 8px; border-bottom: 1px solid var(--cc-color-border); }}
+  table.cb-t td {{ padding: 6px 8px; border-bottom: 1px solid var(--cc-color-border); color: var(--cc-color-text); }}
   table.cb-t th.num, table.cb-t td.num {{ text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }}
   .cb-sym {{ font-weight: 500; opacity: 0.85; margin-right: 2px; }}
 </style>
@@ -1301,13 +1313,14 @@ INVOICE_TABLE_TEMPLATE = f"""\
 <style>
 {PAGED_BASE_CSS}
 {paged_css("inv", 25, "table-row")}
-  table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; }}
+  table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; color: var(--cc-color-text); }}
   table.cb-t th {{
     position: sticky; top: 0; background: var(--cc-color-surface); z-index: 1;
     text-align: left; padding: 6px 8px; border-bottom: 2px solid var(--cc-color-border);
     font-weight: 600; opacity: 0.75; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em;
+    color: var(--cc-color-text);
   }}
-  table.cb-t td {{ padding: 6px 8px; border-bottom: 1px solid var(--cc-color-border); }}
+  table.cb-t td {{ padding: 6px 8px; border-bottom: 1px solid var(--cc-color-border); color: var(--cc-color-text); }}
   table.cb-t th.num, table.cb-t td.num {{ text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }}
   .cb-sym {{ font-weight: 500; opacity: 0.85; margin-right: 2px; }}
 </style>
@@ -1349,13 +1362,14 @@ DATASTREAM_COST_TABLE_TEMPLATE = f"""\
 <style>
 {PAGED_BASE_CSS}
 {paged_css("dscost", 25, "table-row")}
-  table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; }}
+  table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; color: var(--cc-color-text); }}
   table.cb-t th {{
     position: sticky; top: 0; background: var(--cc-color-surface); z-index: 1;
     text-align: left; padding: 6px 8px; border-bottom: 2px solid var(--cc-color-border);
     font-weight: 600; opacity: 0.75; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em;
+    color: var(--cc-color-text);
   }}
-  table.cb-t td {{ padding: 6px 8px; border-bottom: 1px solid var(--cc-color-border); }}
+  table.cb-t td {{ padding: 6px 8px; border-bottom: 1px solid var(--cc-color-border); color: var(--cc-color-text); }}
   table.cb-t th.num, table.cb-t td.num {{ text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }}
   .cb-sym {{ font-weight: 500; opacity: 0.85; margin-right: 2px; }}
 </style>
@@ -1406,15 +1420,15 @@ STATUS_BOARD_TEMPLATE = f"""\
     border: 1px solid var(--cc-color-border);
   }}
   .cb-dot {{ width: 10px; height: 10px; border-radius: 50%; }}
-  .cb-ok {{ background: var(--cc-vis-1, #54b399); }}
-  .cb-warn {{ background: var(--cc-vis-8, #da8b45); }}
-  .cb-err {{ background: var(--cc-vis-7, #c9404f); }}
-  .cb-name {{ font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
-  .cb-meta {{ opacity: 0.8; font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+  .cb-ok {{ background: var(--cc-color-accent, var(--cc-vis-1)); }}
+  .cb-warn {{ background: var(--cc-color-warning); }}
+  .cb-err {{ background: var(--cc-color-danger); }}
+  .cb-name {{ font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--cc-color-text); }}
+  .cb-meta {{ opacity: 0.75; font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--cc-color-text); }}
   .cb-badge {{ display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.74rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }}
-  .cb-badge-ok {{ background: rgba(84, 179, 153, 0.15); color: var(--cc-vis-1, #54b399); }}
-  .cb-badge-warn {{ background: rgba(218, 139, 69, 0.15); color: var(--cc-vis-8, #da8b45); }}
-  .cb-badge-err {{ background: rgba(201, 64, 79, 0.15); color: var(--cc-vis-7, #c9404f); }}
+  .cb-badge-ok {{ background: color-mix(in srgb, var(--cc-color-accent, var(--cc-vis-1)) 15%, transparent); color: var(--cc-color-accent, var(--cc-vis-1)); }}
+  .cb-badge-warn {{ background: color-mix(in srgb, var(--cc-color-warning) 15%, transparent); color: var(--cc-color-warning); }}
+  .cb-badge-err {{ background: color-mix(in srgb, var(--cc-color-danger) 15%, transparent); color: var(--cc-color-danger); }}
 </style>
 {paged_top("statbrd", 10, 20)}
 <div class="cb-status">
@@ -1446,13 +1460,14 @@ ALLOC_TABLE_TEMPLATE = f"""\
 <style>
 {PAGED_BASE_CSS}
 {paged_css("alloc", 10, "table-row")}
-  table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; }}
+  table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; color: var(--cc-color-text); }}
   table.cb-t th {{
     position: sticky; top: 0; background: var(--cc-color-surface); z-index: 1;
     text-align: left; padding: 6px 8px; border-bottom: 2px solid var(--cc-color-border);
     font-weight: 600; opacity: 0.75; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em;
+    color: var(--cc-color-text);
   }}
-  table.cb-t td {{ padding: 6px 8px; border-bottom: 1px solid var(--cc-color-border); }}
+  table.cb-t td {{ padding: 6px 8px; border-bottom: 1px solid var(--cc-color-border); color: var(--cc-color-text); }}
   table.cb-t th.num, table.cb-t td.num {{ text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }}
   .cb-sym {{ font-weight: 500; opacity: 0.85; margin-right: 2px; }}
   .cb-bar-track {{
@@ -2029,9 +2044,9 @@ def build_config() -> dict:
 
     config_dsl = """\
 <style>
-  .cb-dsl { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--cc-space-m); font-size: 0.85rem; }
-  .cb-dsl h4 { margin: 0 0 4px 0; font-size: 0.9rem; font-weight: 600; }
-  .cb-dsl p { margin: 0 0 6px 0; font-size: 0.75rem; color: var(--cc-color-text-secondary); }
+  .cb-dsl { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--cc-space-m); font-size: 0.85rem; color: var(--cc-color-text); }
+  .cb-dsl h4 { margin: 0 0 4px 0; font-size: 0.9rem; font-weight: 600; color: var(--cc-color-text); }
+  .cb-dsl p { margin: 0 0 6px 0; font-size: 0.75rem; color: var(--cc-color-text); opacity: 0.72; }
   .cb-dsl pre {
     background: var(--cc-color-surface);
     border: 1px solid var(--cc-color-border);
@@ -2041,6 +2056,7 @@ def build_config() -> dict:
     font-family: monospace;
     font-size: 0.74rem;
     overflow-x: auto;
+    color: var(--cc-color-text);
   }
 </style>
 <div class="cb-dsl">
