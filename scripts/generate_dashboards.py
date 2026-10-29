@@ -2188,8 +2188,8 @@ Zero secrets are stored in indices.</pre>
     panels.append(p)
 
     esql = f"""FROM {BILLING}
-| KEEP conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_currency_symbol
 | SORT @timestamp DESC
+| KEEP conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_currency_symbol
 | LIMIT 1"""
     p, _ = lens_esql(
         stable_uuid("lens-config-rates"),
