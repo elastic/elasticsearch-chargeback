@@ -91,8 +91,10 @@ To break down usage per data stream across projects outside this hub:
    ```
    *(This key only grants permission to read `_cat/indices` metadata — it cannot read, search, or modify any data).*
 
-2. **Register the key in the Fleet Integration Policy**:
-   - In **Fleet → Agent Policies → your policy → Chargeback Serverless**, paste `<project_id>:<encoded_api_key>` into **Remote Project Elasticsearch API Keys**.
+2. **Register the key(s) in the Fleet Integration Policy**:
+   - In **Fleet → Agent Policies → your policy → Chargeback Serverless**, enter `<project_id>:<encoded_api_key>` into **Remote Project Elasticsearch API Keys**.
+   - **Multiple remote projects:** Click **Add item** (or **+**) to add rows for additional projects.
+   - **Adding keys later:** If keys are already saved, Fleet hides them as policy secrets. Click **↺ Replace remote project elasticsearch api keys** and re-enter **all** keys to retain (both existing and new) before saving.
    - Or run:
      ```bash
      PROJECT_ID="<remote_project_id>" SL_API_KEY="<encoded_api_key>" ./scripts/configure_chargeback_serverless.sh

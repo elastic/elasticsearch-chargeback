@@ -68,19 +68,30 @@ POST _security/api_key
 
 Copy the resulting `encoded` API key string.
 
-### 3. Register the Key in Fleet Integration Policy
+### 3. Register the Keys in Fleet Integration Policy
 
 In **Kibana Fleet UI**:
 1. Navigate to **Fleet → Agent Policies → your policy → Chargeback Serverless**.
-2. Under **Remote Project Elasticsearch API Keys**, click **Add** (or paste):
-   ```text
-   <remote_project_id>:<encoded_api_key>
-   ```
-   *Example:*
-   ```text
-   bf694be853c246c0b5304648ec385fb4:VjFSa0Jad0J4...
-   ```
-3. Click **Save integration**. Fleet encrypts the key and pushes the configuration immediately to the agent collector.
+2. Locate **Remote Project Elasticsearch API Keys**:
+   - **Adding for the first time:** Paste `<remote_project_id>:<encoded_api_key>` in the input field.
+   - **Adding multiple remote projects:** Click **Add item** (or **+**) to create an additional row for each remote project:
+     ```text
+     <remote_project_id_1>:<encoded_api_key_1>
+     <remote_project_id_2>:<encoded_api_key_2>
+     ```
+     *Example:*
+     ```text
+     bf694be853c246c0b5304648ec385fb4:VjFSa0Jad0J4...
+     e3b0c44298fc1c149afbf4c8996fb924:YmFzZTY0a2V5...
+     ```
+   - **Adding more keys later (Policy Secrets):**  
+     Because this field is stored as an encrypted Fleet Policy Secret (`type: password`), saved values are masked with:
+     > *"The saved remote project elasticsearch api keys is hidden. You can only replace the remote project elasticsearch api keys."*  
+     
+     Click **↺ Replace remote project elasticsearch api keys** to open editable rows.  
+     > [!IMPORTANT]
+     > Fleet Policy Secrets are write-only for security and cannot be read back by Kibana. Clicking **Replace** overwrites the stored secret list. When adding a new key to an existing deployment, you must enter **all** keys you want to retain (both existing and new) before saving.
+3. Click **Save integration**. Fleet encrypts the keys and pushes the configuration immediately to the agent collector.
 
 Alternatively, register via CLI:
 ```bash
