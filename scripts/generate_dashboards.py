@@ -39,11 +39,40 @@ ALERT_MISSING_PROJECTS = "chargeback_serverless-alert-missing-projects"
 
 INDEX_PATTERN_ID = "chargeback_serverless-billing"
 
+# Dynamic currency resolution: if user customizes unit (e.g. EUR) but leaves symbol as default $,
+# or if symbol is empty, map to standard symbol for that currency unit.
+CURRENCY_RESOLVE_ESQL = """\
+| EVAL unit = TO_UPPER(COALESCE(conf_chargeable_unit_rate_unit, "USD"))
+| EVAL currency_symbol = CASE(
+    conf_currency_symbol IS NOT NULL AND conf_currency_symbol != "" AND (conf_currency_symbol != "$" OR conf_chargeable_unit_rate_unit IS NULL OR conf_chargeable_unit_rate_unit IN ("USD", "usd")), conf_currency_symbol,
+    unit == "EUR", "€",
+    unit == "GBP", "£",
+    unit == "ZAR", "R",
+    unit == "JPY", "¥",
+    unit == "CNY", "¥",
+    unit == "INR", "₹",
+    unit == "CAD", "CA$",
+    unit == "AUD", "A$",
+    unit == "CHF", "CHF",
+    unit == "BRL", "R$",
+    unit == "SEK", "kr",
+    unit == "NOK", "kr",
+    unit == "DKK", "kr",
+    unit == "PLN", "zł",
+    unit == "NZD", "NZ$",
+    unit == "SGD", "S$",
+    unit == "HKD", "HK$",
+    unit == "ILS", "₪",
+    unit == "KRW", "₩",
+    conf_currency_symbol IS NOT NULL AND conf_currency_symbol != "", conf_currency_symbol,
+    unit != "", unit,
+    "$"
+  )"""
+
 # Shared ES|QL prelude: currency rate and symbol from policy config stamped on events.
 COST_PRELUDE = f"""FROM {BILLING}
 | EVAL ts = @timestamp
-| EVAL unit = COALESCE(conf_chargeable_unit_rate_unit, "USD")
-| EVAL currency_symbol = COALESCE(conf_currency_symbol, "$")
+{CURRENCY_RESOLVE_ESQL}
 | EVAL units = COALESCE(total_ecu, 0.0)
 | EVAL cost = units * COALESCE(conf_chargeable_unit_rate, 1.0)
 | EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "organization")
@@ -842,7 +871,7 @@ AI_MODELS_TEMPLATE = f"""\
 """
 
 
-def make_daily_cost_template(group_field: str, is_category: bool = False) -> str:
+def make_daily_cost_template(group_field: str, header_label: str = "Project", is_category: bool = False) -> str:
     palette_colors = (
         "var(--cc-vis-0),var(--cc-vis-1),var(--cc-vis-2),var(--cc-vis-3),var(--cc-vis-4),var(--cc-vis-5),var(--cc-vis-6),var(--cc-vis-7),var(--cc-vis-8),var(--cc-vis-9)"
     )
@@ -887,15 +916,42 @@ def make_daily_cost_template(group_field: str, is_category: bool = False) -> str
 {{% assign _total_rows = rows.size | default: 0 %}}
 {{% if _total_rows > 0 %}}
 <style>
+  .cb-daily-container {{
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 250px;
+    box-sizing: border-box;
+    padding: 6px 10px 10px 10px;
+  }}
+  .cb-daily-head {{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.78rem;
+    font-weight: 600;
+    opacity: 0.75;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    padding: 0 4px 6px 4px;
+    border-bottom: 1px solid var(--cc-color-border);
+    margin-bottom: 6px;
+    color: var(--cc-color-text);
+  }}
+  .cb-daily-head .num {{
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }}
   .cb-daily-wrap {{
     display: flex;
     flex-direction: row;
     align-items: stretch;
-    height: 100%;
-    min-height: 250px;
+    flex: 1;
+    min-height: 200px;
     font-family: inherit;
     box-sizing: border-box;
-    padding: 10px 14px 14px 10px;
+    padding: 0;
     gap: 16px;
     overflow: hidden;
   }}
@@ -916,12 +972,14 @@ def make_daily_cost_template(group_field: str, is_category: bool = False) -> str
     opacity: 0.72;
     text-align: right;
     padding-right: 8px;
-    min-width: 44px;
+    min-width: 48px;
+    white-space: nowrap;
     border-right: 1px solid var(--cc-color-border);
     user-select: none;
     margin-top: 1px;
     margin-bottom: 20px;
     box-sizing: border-box;
+    font-variant-numeric: tabular-nums;
   }}
   .cb-hist-plot {{
     display: flex;
@@ -1038,9 +1096,23 @@ def make_daily_cost_template(group_field: str, is_category: bool = False) -> str
     text-overflow: ellipsis;
     white-space: nowrap;
   }}
+  .cb-sym {{ font-weight: 500; opacity: 0.85; margin-right: 2px; }}
 </style>
-{{% assign unit = rows[0]["unit"].value | default: "ECU" %}}
-{{% assign sym = rows[0]["currency_symbol"].value | default: unit %}}
+{{% assign unit = "USD" %}}
+{{% assign sym = "$" %}}
+{{% for r in rows %}}
+  {{% assign r_unit = r["unit"].value | default: "" %}}
+  {{% if r_unit != "" %}}
+    {{% assign unit = r_unit %}}
+    {{% assign r_sym = r["currency_symbol"].value | default: "" %}}
+    {{% if r_sym != "" %}}
+      {{% assign sym = r_sym %}}
+    {{% else %}}
+      {{% assign sym = unit %}}
+    {{% endif %}}
+    {{% break %}}
+  {{% endif %}}
+{{% endfor %}}
 {{% assign colors = "{palette_colors}" | split: "," %}}
 
 {{% assign item_str = "" %}}
@@ -1106,103 +1178,110 @@ def make_daily_cost_template(group_field: str, is_category: bool = False) -> str
 
 {{% assign m_arr = "Jan,Feb,Mar,Apr,May,Jun,Jul,Aug,Sep,Oct,Nov,Dec" | split: "," %}}
 
-<div class="cb-daily-wrap">
-  <div class="cb-daily-main">
-    <div class="cb-hist-y">
-      <div>{{{{ sym }}}}{{{{ fmt_y_4 }}}}</div>
-      <div>{{{{ sym }}}}{{{{ fmt_y_3 }}}}</div>
-      <div>{{{{ sym }}}}{{{{ fmt_y_2 }}}}</div>
-      <div>{{{{ sym }}}}{{{{ fmt_y_1 }}}}</div>
-      <div>{{{{ sym }}}}0</div>
-    </div>
-    <div class="cb-hist-plot">
-      <div class="cb-hist-canvas">
-        <div class="cb-hist-grid">
-          <div class="cb-grid-line"></div>
-          <div class="cb-grid-line"></div>
-          <div class="cb-grid-line"></div>
-          <div class="cb-grid-line"></div>
-          <div class="cb-grid-line cb-grid-line-zero"></div>
-        </div>
-        {{% assign cur_bucket = "" %}}
-        {{% assign cur_label = "" %}}
-        {{% assign b_idx = -1 %}}
-        {{% for r in rows %}}
-          {{% assign b_raw = r["day"].value | default: "" %}}
-          {{% if b_raw != cur_bucket %}}
-            {{% if cur_bucket != "" %}}
-                </div>
-                {{% assign show_lbl = b_idx | modulo: step_mod %}}
-                {{% if show_lbl == 0 %}}
-                  <div class="cb-hist-date">{{{{ cur_label }}}}</div>
-                {{% endif %}}
-              </div>
-            {{% endif %}}
-            {{% assign cur_bucket = b_raw %}}
-            {{% assign b_idx = b_idx | plus: 1 %}}
-            {{% assign time_sub = cur_bucket | slice: 11, 8 %}}
-            {{% if time_sub == "00:00:00" or time_sub == "" %}}
-              {{% assign m_idx = cur_bucket | slice: 5, 2 | plus: 0 | minus: 1 %}}
-              {{% assign m_name = m_arr[m_idx] | default: "" %}}
-              {{% assign d_num = cur_bucket | slice: 8, 2 | plus: 0 %}}
-              {{% if m_name != "" %}}
-                {{% assign cur_label = m_name | append: " " | append: d_num %}}
-              {{% else %}}
-                {{% assign cur_label = cur_bucket | slice: 5, 5 %}}
-              {{% endif %}}
-              {{% assign cur_tip = cur_bucket | slice: 0, 10 %}}
-            {{% else %}}
-              {{% assign cur_label = cur_bucket | slice: 11, 5 %}}
-              {{% assign cur_tip = cur_bucket | slice: 0, 16 | replace: "T", " " %}}
-            {{% endif %}}
-            {{% assign d_cost = r["day_cost"].value | default: 0.0 %}}
-            {{% assign stack_pct = d_cost | times: 100.0 | divided_by: y_top | round: 2 %}}
-            {{% if stack_pct > 100.0 %}}{{% assign stack_pct = 100.0 %}}{{% endif %}}
-            {liquid_money_block("d_cost", "fmt_d_cost", with_decimals=True)}
-            <div class="cb-hist-col" title="{{{{ cur_tip }}}}: {{{{ sym }}}}{{{{ fmt_d_cost }}}}">
-              <div class="cb-hist-stack" style="height: {{{{ stack_pct }}}}%;">
-          {{% endif %}}
-          {{% assign p_cost = r["cost"].value | default: 0.0 %}}
-          {{% assign p_name = r["{group_field}"].value | default: "unknown" %}}
-          {{% assign seg_pct = 0.0 %}}
-          {{% if d_cost > 0 %}}
-            {{% assign seg_pct = p_cost | times: 100.0 | divided_by: d_cost | round: 2 %}}
-          {{% endif %}}
-          {{% if seg_pct > 0 %}}
-{seg_color_code}
-            {liquid_money_block("p_cost", "fmt_p_cost", with_decimals=True)}
-            <div class="cb-hist-seg" style="flex: 0 0 {{{{ seg_pct }}}}%; height: {{{{ seg_pct }}}}%; background: {{{{ item_color }}}};" title="{{{{ p_name }}}}: {{{{ sym }}}}{{{{ fmt_p_cost }}}} ({{{{ cur_tip }}}})"></div>
-          {{% endif %}}
-        {{% endfor %}}
-        {{% if cur_bucket != "" %}}
-            </div>
-            {{% assign show_lbl = b_idx | modulo: step_mod %}}
-            {{% if show_lbl == 0 %}}
-              <div class="cb-hist-date">{{{{ cur_label }}}}</div>
-            {{% endif %}}
+<div class="cb-daily-container">
+  <div class="cb-daily-head">
+    <div>{header_label}</div>
+    <div></div>
+    <div class="num">Cost ({{{{ unit }}}})</div>
+  </div>
+  <div class="cb-daily-wrap">
+    <div class="cb-daily-main">
+      <div class="cb-hist-y">
+        <div><span class="cb-sym">{{{{ sym }}}}</span>{{{{ fmt_y_4 }}}}</div>
+        <div><span class="cb-sym">{{{{ sym }}}}</span>{{{{ fmt_y_3 }}}}</div>
+        <div><span class="cb-sym">{{{{ sym }}}}</span>{{{{ fmt_y_2 }}}}</div>
+        <div><span class="cb-sym">{{{{ sym }}}}</span>{{{{ fmt_y_1 }}}}</div>
+        <div><span class="cb-sym">{{{{ sym }}}}</span>0</div>
+      </div>
+      <div class="cb-hist-plot">
+        <div class="cb-hist-canvas">
+          <div class="cb-hist-grid">
+            <div class="cb-grid-line"></div>
+            <div class="cb-grid-line"></div>
+            <div class="cb-grid-line"></div>
+            <div class="cb-grid-line"></div>
+            <div class="cb-grid-line cb-grid-line-zero"></div>
           </div>
-        {{% endif %}}
+          {{% assign cur_bucket = "" %}}
+          {{% assign cur_label = "" %}}
+          {{% assign b_idx = -1 %}}
+          {{% for r in rows %}}
+            {{% assign b_raw = r["day"].value | default: "" %}}
+            {{% if b_raw != cur_bucket %}}
+              {{% if cur_bucket != "" %}}
+                  </div>
+                  {{% assign show_lbl = b_idx | modulo: step_mod %}}
+                  {{% if show_lbl == 0 %}}
+                    <div class="cb-hist-date">{{{{ cur_label }}}}</div>
+                  {{% endif %}}
+                </div>
+              {{% endif %}}
+              {{% assign cur_bucket = b_raw %}}
+              {{% assign b_idx = b_idx | plus: 1 %}}
+              {{% assign time_sub = cur_bucket | slice: 11, 8 %}}
+              {{% if time_sub == "00:00:00" or time_sub == "" %}}
+                {{% assign m_idx = cur_bucket | slice: 5, 2 | plus: 0 | minus: 1 %}}
+                {{% assign m_name = m_arr[m_idx] | default: "" %}}
+                {{% assign d_num = cur_bucket | slice: 8, 2 | plus: 0 %}}
+                {{% if m_name != "" %}}
+                  {{% assign cur_label = m_name | append: " " | append: d_num %}}
+                {{% else %}}
+                  {{% assign cur_label = cur_bucket | slice: 5, 5 %}}
+                {{% endif %}}
+                {{% assign cur_tip = cur_bucket | slice: 0, 10 %}}
+              {{% else %}}
+                {{% assign cur_label = cur_bucket | slice: 11, 5 %}}
+                {{% assign cur_tip = cur_bucket | slice: 0, 16 | replace: "T", " " %}}
+              {{% endif %}}
+              {{% assign d_cost = r["day_cost"].value | default: 0.0 %}}
+              {{% assign stack_pct = d_cost | times: 100.0 | divided_by: y_top | round: 2 %}}
+              {{% if stack_pct > 100.0 %}}{{% assign stack_pct = 100.0 %}}{{% endif %}}
+              {liquid_money_block("d_cost", "fmt_d_cost", with_decimals=True)}
+              <div class="cb-hist-col" title="{{{{ cur_tip }}}}: {{{{ sym }}}}{{{{ fmt_d_cost }}}}">
+                <div class="cb-hist-stack" style="height: {{{{ stack_pct }}}}%;">
+            {{% endif %}}
+            {{% assign p_cost = r["cost"].value | default: 0.0 %}}
+            {{% assign p_name = r["{group_field}"].value | default: "unknown" %}}
+            {{% assign seg_pct = 0.0 %}}
+            {{% if d_cost > 0 %}}
+              {{% assign seg_pct = p_cost | times: 100.0 | divided_by: d_cost | round: 2 %}}
+            {{% endif %}}
+            {{% if seg_pct > 0 %}}
+  {seg_color_code}
+              {liquid_money_block("p_cost", "fmt_p_cost", with_decimals=True)}
+              <div class="cb-hist-seg" style="flex: 0 0 {{{{ seg_pct }}}}%; height: {{{{ seg_pct }}}}%; background: {{{{ item_color }}}};" title="{{{{ p_name }}}}: {{{{ sym }}}}{{{{ fmt_p_cost }}}} ({{{{ cur_tip }}}})"></div>
+            {{% endif %}}
+          {{% endfor %}}
+          {{% if cur_bucket != "" %}}
+              </div>
+              {{% assign show_lbl = b_idx | modulo: step_mod %}}
+              {{% if show_lbl == 0 %}}
+                <div class="cb-hist-date">{{{{ cur_label }}}}</div>
+              {{% endif %}}
+            </div>
+          {{% endif %}}
+        </div>
       </div>
     </div>
-  </div>
-  <div class="cb-daily-legend">
-    {{% for itm in items %}}
-      {{% if itm != "" %}}
-{legend_color_code}
-        <div class="cb-legend-item">
-          <span class="cb-legend-box" style="background: {{{{ item_color }}}};"></span>
-          <span class="cb-legend-label" title="{{{{ itm }}}}">{{{{ itm }}}}</span>
-        </div>
-      {{% endif %}}
-    {{% endfor %}}
+    <div class="cb-daily-legend">
+      {{% for itm in items %}}
+        {{% if itm != "" %}}
+  {legend_color_code}
+          <div class="cb-legend-item">
+            <span class="cb-legend-box" style="background: {{{{ item_color }}}};"></span>
+            <span class="cb-legend-label" title="{{{{ itm }}}}">{{{{ itm }}}}</span>
+          </div>
+        {{% endif %}}
+      {{% endfor %}}
+    </div>
   </div>
 </div>
 {{% endif %}}
 """
 
 
-DAILY_PROJECT_COST_TEMPLATE = make_daily_cost_template("project", is_category=False)
-DAILY_CATEGORY_COST_TEMPLATE = make_daily_cost_template("category", is_category=True)
+DAILY_PROJECT_COST_TEMPLATE = make_daily_cost_template("project", "Project", is_category=False)
+DAILY_CATEGORY_COST_TEMPLATE = make_daily_cost_template("category", "Cost category", is_category=True)
 
 
 def make_bar_template(label_key: str, label_header: str) -> str:
@@ -1850,8 +1929,7 @@ def build_usage() -> dict:
         f"""FROM {USAGE}
 | WHERE doc_type == "datastream"
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
-| EVAL unit = COALESCE(conf_chargeable_unit_rate_unit, "USD")
-| EVAL currency_symbol = COALESCE(conf_currency_symbol, "$")
+{CURRENCY_RESOLVE_ESQL}
 | STATS idx_time = SUM(datastream_sum_indexing_time), qry_time = SUM(datastream_sum_query_time), stg_bytes = AVG(TO_DOUBLE(datastream_sum_data_set_store_size)), idx_ecu = MAX(indexing_ecu), qry_ecu = MAX(query_ecu), stg_ecu = MAX(storage_ecu), rate = MAX(rate), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project_name, ds_namespace, datastream
 | INLINE STATS p_idx_time = SUM(idx_time), p_qry_time = SUM(qry_time), p_stg_bytes = SUM(stg_bytes) BY project_name
 | EVAL idx_share = CASE(p_idx_time > 0, TO_DOUBLE(idx_time) / TO_DOUBLE(p_idx_time), 0.0)
@@ -1880,8 +1958,7 @@ def build_usage() -> dict:
         f"""FROM {USAGE}
 | WHERE doc_type == "datastream"
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
-| EVAL unit = COALESCE(conf_chargeable_unit_rate_unit, "USD")
-| EVAL currency_symbol = COALESCE(conf_currency_symbol, "$")
+{CURRENCY_RESOLVE_ESQL}
 | STATS idx_time = SUM(datastream_sum_indexing_time), qry_time = SUM(datastream_sum_query_time), stg_bytes = AVG(TO_DOUBLE(datastream_sum_data_set_store_size)), idx_ecu = MAX(indexing_ecu), qry_ecu = MAX(query_ecu), stg_ecu = MAX(storage_ecu), rate = MAX(rate), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project_name, ds_type, datastream
 | INLINE STATS p_idx_time = SUM(idx_time), p_qry_time = SUM(qry_time), p_stg_bytes = SUM(stg_bytes) BY project_name
 | EVAL idx_share = CASE(p_idx_time > 0, TO_DOUBLE(idx_time) / TO_DOUBLE(p_idx_time), 0.0)
@@ -1911,8 +1988,7 @@ def build_usage() -> dict:
         f"""FROM {USAGE}
 | WHERE doc_type == "datastream"
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
-| EVAL unit = COALESCE(conf_chargeable_unit_rate_unit, "USD")
-| EVAL currency_symbol = COALESCE(conf_currency_symbol, "$")
+{CURRENCY_RESOLVE_ESQL}
 | STATS idx_time = SUM(datastream_sum_indexing_time), qry_time = SUM(datastream_sum_query_time), stg_bytes = AVG(TO_DOUBLE(datastream_sum_data_set_store_size)), idx_ecu = MAX(indexing_ecu), qry_ecu = MAX(query_ecu), stg_ecu = MAX(storage_ecu), rate = MAX(rate), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project = project_name, project_type, ds_type, ds_namespace, datastream
 | INLINE STATS p_idx_time = SUM(idx_time), p_qry_time = SUM(qry_time), p_stg_bytes = SUM(stg_bytes) BY project
 | EVAL idx_share = CASE(p_idx_time > 0, TO_DOUBLE(idx_time) / TO_DOUBLE(p_idx_time), 0.0)
@@ -1977,8 +2053,7 @@ def build_usage() -> dict:
     ai_kpi_esql = f"""FROM {USAGE}
 | WHERE doc_type == "ai_model"
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
-| EVAL unit = COALESCE(conf_chargeable_unit_rate_unit, "USD")
-| EVAL currency_symbol = COALESCE(conf_currency_symbol, "$")
+{CURRENCY_RESOLVE_ESQL}
 | EVAL ai_pool_cost = COALESCE(ai_ecu, query_ecu, 0.0) * rate
 | STATS proj_spend = MAX(ai_pool_cost), proj_inf = SUM(inference_count), proj_latency = AVG(average_inference_time_ms), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY composite_key
 | STATS ai_spend = SUM(proj_spend), total_inferences = SUM(proj_inf), avg_latency_ms = ROUND(AVG(proj_latency), 1), currency_symbol = MAX(currency_symbol), unit = MAX(unit)
@@ -2000,8 +2075,7 @@ def build_usage() -> dict:
     ai_models_esql = f"""FROM {USAGE}
 | WHERE doc_type == "ai_model"
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
-| EVAL unit = COALESCE(conf_chargeable_unit_rate_unit, "USD")
-| EVAL currency_symbol = COALESCE(conf_currency_symbol, "$")
+{CURRENCY_RESOLVE_ESQL}
 | EVAL compute_time = COALESCE(total_inference_time_ms, 0)
 | EVAL ai_pool_cost = COALESCE(ai_ecu, query_ecu, 0.0) * rate
 | STATS total_compute = SUM(compute_time), total_inf = SUM(inference_count), ai_pool = MAX(ai_pool_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY model_id, task_type
@@ -2241,9 +2315,9 @@ def build_alerts() -> list[dict]:
             "[Chargeback Serverless] Unallocated cost present",
             f"""{COST_PRELUDE}
 | WHERE (COALESCE(is_allocatable, false) == false OR allocation_driver == "none") AND cost > 0
-| STATS unallocated = ROUND(SUM(cost), 2), sym = COALESCE(MAX(currency_symbol), "ECU"), unit = COALESCE(MAX(unit), "ECU"), rows = COUNT(*)
+| STATS unallocated = ROUND(SUM(cost), 2), sym = COALESCE(MAX(currency_symbol), "$"), unit = COALESCE(MAX(unit), "USD"), rows = COUNT(*)
 | WHERE unallocated > 0
-| EVAL result = CONCAT("Unallocated cost: ", COALESCE(sym, unit, "ECU"), " ", TO_STRING(unallocated), " (", COALESCE(unit, "ECU"), ") across ", TO_STRING(rows), " billing rows.")
+| EVAL result = CONCAT("Unallocated cost: ", COALESCE(sym, "$"), " ", TO_STRING(unallocated), " (", COALESCE(unit, "USD"), ") across ", TO_STRING(rows), " billing rows.")
 | KEEP result""",
             "6h",
         ),

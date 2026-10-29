@@ -489,9 +489,22 @@ if existing_pkg_id and os.path.exists(existing_json_file):
                 old_inputs = it.get("inputs", [])
                 if isinstance(old_inputs, list):
                     for inp in old_inputs:
-                        old_keys = inp.get("vars", {}).get("project_api_keys", {}).get("value")
+                        old_vars = inp.get("vars", {})
+                        old_keys = old_vars.get("project_api_keys", {}).get("value")
                         if old_keys and not proj_keys:
                             proj_keys = old_keys if isinstance(old_keys, list) else [old_keys]
+                        if not os.environ.get("CONF_RATE_UNIT"):
+                            old_unit = old_vars.get("currency_unit", {}).get("value")
+                            if old_unit:
+                                currency_unit = str(old_unit)
+                        if not os.environ.get("CONF_CURRENCY_SYMBOL"):
+                            old_sym = old_vars.get("currency_symbol", {}).get("value")
+                            if old_sym:
+                                currency_symbol = str(old_sym)
+                        if not os.environ.get("CONF_RATE"):
+                            old_rate = old_vars.get("unit_rate", {}).get("value")
+                            if old_rate:
+                                unit_rate = str(old_rate)
     except Exception:
         pass
 

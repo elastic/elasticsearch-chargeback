@@ -35,6 +35,15 @@ CONF_RATE = float(get_env("CONF_RATE", "1.0") or 1.0)
 CONF_RATE_UNIT = get_env("CONF_RATE_UNIT", "USD") or "USD"
 CONF_CURRENCY_SYMBOL = get_env("CONF_CURRENCY_SYMBOL", "$") or "$"
 
+SYMBOL_MAP = {
+    "EUR": "€", "GBP": "£", "ZAR": "R", "JPY": "¥", "CNY": "¥", "INR": "₹",
+    "CAD": "CA$", "AUD": "A$", "CHF": "CHF", "BRL": "R$", "SEK": "kr",
+    "NOK": "kr", "DKK": "kr", "PLN": "zł", "NZD": "NZ$", "SGD": "S$",
+    "HKD": "HK$", "ILS": "₪", "KRW": "₩", "USD": "$"
+}
+if not get_env("CONF_CURRENCY_SYMBOL") and CONF_RATE_UNIT.upper() in SYMBOL_MAP:
+    CONF_CURRENCY_SYMBOL = SYMBOL_MAP[CONF_RATE_UNIT.upper()]
+
 # Project keys mapping: project_id -> api_key
 PROJECT_KEYS = {}
 project_keys_env = get_env("PROJECT_API_KEYS")
