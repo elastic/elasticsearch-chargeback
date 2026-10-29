@@ -81,101 +81,116 @@ es() {
 : "${BILLING_API_KEY:?Set BILLING_API_KEY}"
 : "${USAGE_API_KEY:?Set USAGE_API_KEY}"
 
-echo "Configuring Chargeback Serverless integration credentials..."
-
-# 1. Fetch existing config doc to preserve existing project_api_keys and lists
-EXISTING_CONFIG="{}"
-CONFIG_GET_HTTP=$(es_curl -o /tmp/cbs-existing-config.json -w '%{http_code}' \
-  -X GET "${ES_URL%/}/chargeback-serverless-config/_doc/config" \
-  -H "Authorization: ApiKey ${ES_API_KEY}" || true)
-
-if [[ "$CONFIG_GET_HTTP" == "200" ]] && [[ -f /tmp/cbs-existing-config.json ]]; then
-  EXISTING_CONFIG=$(jq '._source // {}' /tmp/cbs-existing-config.json 2>/dev/null || echo "{}")
+KIBANA_URL="${KIBANA_URL:-${KIBANA_HOST:-}}"
+if [[ -z "$KIBANA_URL" && -n "$ES_URL" && "$ES_URL" =~ \.es\. ]]; then
+  KIBANA_URL="${ES_URL//.es./.kb.}"
 fi
+KIBANA_API_KEY="${KIBANA_API_KEY:-$ES_API_KEY}"
 
-CONFIG_DOC=$(python3 -c "
-import json, sys, os
-from datetime import datetime, timezone
+CLOUD_API_KEY="${CLOUD_API_KEY:-${BILLING_API_KEY:-}}"
+BILLING_API_KEY="${BILLING_API_KEY:-$CLOUD_API_KEY}"
 
-existing = json.loads(sys.argv[1])
-project_keys = existing.get('project_api_keys', {})
-
-# If PROJECT_ID and SL_API_KEY are provided, merge them
-pid = os.environ.get('PROJECT_ID', '').strip()
-pkey = os.environ.get('SL_API_KEY', '').strip()
-if pid and pkey:
-    project_keys[pid] = pkey
-
-doc = {
-    'organization_id': os.environ.get('ORGANIZATION_ID'),
-    'billing_api_base': os.environ.get('BILLING_API_BASE'),
-    'cloud_api_base': os.environ.get('CLOUD_API_BASE'),
-    'billing_api_key': os.environ.get('BILLING_API_KEY'),
-    'usage_api_key': os.environ.get('USAGE_API_KEY'),
-    'hub_es_api_key': os.environ.get('HUB_ES_API_KEY'),
-    'project_api_keys': project_keys,
-    'include_project_ids': existing.get('include_project_ids', []),
-    'exclude_project_ids': existing.get('exclude_project_ids', []),
-    'updated_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+KBN_CURL_TLS_FLAG="$(curl_tls_args_for "${KIBANA_URL:-https://127.0.0.1:5601}")"
+kbn_curl() {
+  if [[ -n "$KBN_CURL_TLS_FLAG" ]]; then
+    curl -sS --retry 3 --retry-connrefused "$KBN_CURL_TLS_FLAG" "$@"
+  else
+    curl -sS --retry 3 --retry-connrefused "$@"
+  fi
 }
-print(json.dumps(doc))
-" "$EXISTING_CONFIG")
 
-es PUT "/chargeback-serverless-config/_doc/config" -d "$CONFIG_DOC" >/dev/null
-echo "  ✓ chargeback-serverless-config updated (Org ID: $ORGANIZATION_ID)"
+echo "Configuring Chargeback Serverless Fleet Integration Policy..."
 
-if [[ -n "$PROJECT_ID" && -n "$SL_API_KEY" ]]; then
-  echo "  ✓ Registered remote project key for project: $PROJECT_ID"
+# 1. Update Fleet Package Policy via Kibana Fleet API
+if [[ -n "$KIBANA_URL" && -n "$KIBANA_API_KEY" ]]; then
+  PKG_POLICIES_HTTP=$(kbn_curl -o /tmp/cbs-conf-pkg-policies.json -w '%{http_code}' \
+    -X GET "${KIBANA_URL%/}/api/fleet/package_policies?perPage=100" \
+    -H "Authorization: ApiKey ${KIBANA_API_KEY}" \
+    -H "kbn-xsrf: true" || true)
+
+  EXISTING_PKG_POLICY=$(jq -c --arg pkg "chargeback_serverless" '
+    (.items // .results // .)
+    | if type=="array" then . else [] end
+    | map(select(.package.name == $pkg or .name == $pkg))
+    | .[0] // empty
+  ' /tmp/cbs-conf-pkg-policies.json 2>/dev/null || true)
+
+  if [[ -n "$EXISTING_PKG_POLICY" ]]; then
+    PKG_ID=$(echo "$EXISTING_PKG_POLICY" | jq -r '.id')
+    export EXISTING_PKG_POLICY PROJECT_ID SL_API_KEY ORGANIZATION_ID CLOUD_API_KEY HUB_ES_API_KEY
+    export CONF_RATE CONF_RATE_UNIT CONF_CURRENCY_SYMBOL BILLING_API_BASE CLOUD_API_BASE
+
+    UPDATED_POLICY_PAYLOAD=$(python3 -c '
+import json, os, sys
+
+policy = json.loads(os.environ["EXISTING_PKG_POLICY"])
+org_id = os.environ.get("ORGANIZATION_ID")
+cloud_key = os.environ.get("CLOUD_API_KEY")
+hub_key = os.environ.get("HUB_ES_API_KEY")
+pid = os.environ.get("PROJECT_ID", "").strip()
+pkey = os.environ.get("SL_API_KEY", "").strip()
+unit_rate = os.environ.get("CONF_RATE")
+unit = os.environ.get("CONF_RATE_UNIT")
+symbol = os.environ.get("CONF_CURRENCY_SYMBOL")
+
+inputs = policy.get("inputs", [])
+for inp in inputs:
+    vars_dict = inp.setdefault("vars", {})
+    if org_id:
+        vars_dict["organization_id"] = {"value": str(org_id), "type": "text"}
+    if cloud_key:
+        vars_dict["cloud_api_key"] = {"value": str(cloud_key), "type": "password"}
+    if hub_key:
+        vars_dict["hub_es_api_key"] = {"value": str(hub_key), "type": "password"}
+    if unit:
+        vars_dict["currency_unit"] = {"value": str(unit), "type": "text"}
+    if symbol:
+        vars_dict["currency_symbol"] = {"value": str(symbol), "type": "text"}
+    if unit_rate:
+        vars_dict["unit_rate"] = {"value": str(unit_rate), "type": "text"}
+
+    if pid and pkey:
+        curr_keys = vars_dict.get("project_api_keys", {}).get("value", [])
+        if isinstance(curr_keys, str):
+            curr_keys = [curr_keys]
+        new_entry = f"{pid}:{pkey}"
+        if new_entry not in curr_keys:
+            curr_keys.append(new_entry)
+        vars_dict["project_api_keys"] = {"value": curr_keys, "type": "password"}
+
+# Keep payload clean for Fleet API update
+clean_payload = {
+    "name": policy.get("name", "chargeback_serverless"),
+    "description": policy.get("description", "Chargeback Serverless scheduled collection"),
+    "namespace": policy.get("namespace", "default"),
+    "policy_id": policy.get("policy_id"),
+    "enabled": policy.get("enabled", True),
+    "package": policy.get("package"),
+    "inputs": inputs
+}
+print(json.dumps(clean_payload))
+')
+
+    SAVE_HTTP=$(kbn_curl -o /tmp/cbs-conf-save.json -w '%{http_code}' \
+      -X PUT "${KIBANA_URL%/}/api/fleet/package_policies/${PKG_ID}" \
+      -H "Authorization: ApiKey ${KIBANA_API_KEY}" \
+      -H "kbn-xsrf: true" \
+      -H "Content-Type: application/json" \
+      -d "$UPDATED_POLICY_PAYLOAD" || true)
+
+    if [[ "$SAVE_HTTP" == "200" || "$SAVE_HTTP" == "201" ]]; then
+      echo "  ✓ Fleet package policy '$PKG_ID' updated securely."
+      if [[ -n "$PROJECT_ID" && -n "$SL_API_KEY" ]]; then
+        echo "  ✓ Added remote harvesting key for project: $PROJECT_ID"
+      fi
+    else
+      echo "  ⚠ Warning: Could not update Fleet package policy (HTTP $SAVE_HTTP): $(head -c 200 /tmp/cbs-conf-save.json 2>/dev/null)"
+    fi
+  else
+    echo "  Notice: No existing 'chargeback_serverless' package policy found in Fleet."
+    echo "  Run ./scripts/deploy_chargeback_serverless.sh to install the package and initialize the policy."
+  fi
 fi
 
-# 2. Update chargeback_conf_lookup
-echo "Setting chargeback_conf_lookup currency rate window..."
-EXISTING_LOOKUP="{}"
-LOOKUP_GET_HTTP=$(es_curl -o /tmp/cbs-existing-lookup.json -w '%{http_code}' \
-  -X GET "${ES_URL%/}/chargeback_conf_lookup/_doc/config" \
-  -H "Authorization: ApiKey ${ES_API_KEY}" || true)
+echo "Configuration completed successfully (all settings managed in Fleet package policy)."
 
-if [[ "$LOOKUP_GET_HTTP" == "200" ]] && [[ -f /tmp/cbs-existing-lookup.json ]]; then
-  EXISTING_LOOKUP=$(jq '._source // {}' /tmp/cbs-existing-lookup.json 2>/dev/null || echo "{}")
-fi
-
-if [[ -n "$EXISTING_LOOKUP" && "$EXISTING_LOOKUP" != "{}" ]]; then
-  EXISTING_RATE=$(echo "$EXISTING_LOOKUP" | jq -r '.conf_chargeable_unit_rate // empty')
-  EXISTING_UNIT=$(echo "$EXISTING_LOOKUP" | jq -r '.conf_chargeable_unit_rate_unit // empty')
-  EXISTING_SYM=$(echo "$EXISTING_LOOKUP" | jq -r '.conf_currency_symbol // empty')
-
-  CONF_RATE="${CONF_RATE:-${EXISTING_RATE:-1}}"
-  CONF_RATE_UNIT="${CONF_RATE_UNIT:-${EXISTING_UNIT:-ECU}}"
-  CONF_CURRENCY_SYMBOL="${CONF_CURRENCY_SYMBOL:-${EXISTING_SYM:-}}"
-else
-  CONF_RATE="${CONF_RATE:-1}"
-  CONF_RATE_UNIT="${CONF_RATE_UNIT:-ECU}"
-fi
-
-if [[ -z "$CONF_CURRENCY_SYMBOL" ]]; then
-  case "$CONF_RATE_UNIT" in
-    ZAR) CONF_CURRENCY_SYMBOL="R" ;;
-    USD) CONF_CURRENCY_SYMBOL="$" ;;
-    EUR) CONF_CURRENCY_SYMBOL="€" ;;
-    GBP) CONF_CURRENCY_SYMBOL="£" ;;
-    *)   CONF_CURRENCY_SYMBOL="$CONF_RATE_UNIT" ;;
-  esac
-fi
-
-CONF_DOC=$(jq -n \
-  --argjson rate "$CONF_RATE" \
-  --arg unit "$CONF_RATE_UNIT" \
-  --arg sym "$CONF_CURRENCY_SYMBOL" \
-  '{
-    "@timestamp": "1970-01-01T00:00:00.000Z",
-    config_join_key: "config",
-    conf_start_date: "2020-01-01T00:00:00.000Z",
-    conf_end_date: "2099-12-31T23:59:59.999Z",
-    conf_chargeable_unit_rate: $rate,
-    conf_chargeable_unit_rate_unit: $unit,
-    conf_currency_symbol: $sym
-  }')
-es PUT "/chargeback_conf_lookup/_doc/config" -d "$CONF_DOC" >/dev/null
-echo "  ✓ chargeback_conf_lookup updated ($CONF_CURRENCY_SYMBOL 1 = $CONF_RATE $CONF_RATE_UNIT)"
-
-echo "Configuration completed successfully."

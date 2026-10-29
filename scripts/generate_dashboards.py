@@ -30,14 +30,8 @@ TITLE_BILLING = "[Chargeback Serverless] Billing Components Overview"
 TITLE_USAGE = "[Chargeback Serverless] Usage & Cost Allocation"
 TITLE_CONFIG = "[Chargeback Serverless] Configuration"
 
-BILLING = "billing_cluster_cost_lookup"
-POOL = "billing_realized_pool_lookup"
-DS_CONTRIB = "cluster_datastream_contribution_lookup"
-DEP_CONTRIB = "cluster_deployment_contribution_lookup"
-AI_CONTRIB = "cluster_ai_model_contribution_lookup"
-PROJECTS = "chargeback-serverless-projects"
-STATE = "chargeback-serverless-state"
-CONF = "chargeback_conf_lookup"
+BILLING = "metrics-chargeback_serverless.billing-*"
+USAGE = "metrics-chargeback_serverless.usage-*"
 
 ALERT_UNALLOCATED = "chargeback_serverless-alert-unallocated-ecu"
 ALERT_STALE_STATE = "chargeback_serverless-alert-stale-project-state"
@@ -45,28 +39,11 @@ ALERT_MISSING_PROJECTS = "chargeback_serverless-alert-missing-projects"
 
 INDEX_PATTERN_ID = "chargeback_serverless-billing_cluster_cost_lookup"
 
-# Shared ES|QL prelude: conf rate -> local currency; project labels from concrete deployment_* fields.
+# Shared ES|QL prelude: currency rate and symbol from policy config stamped on events.
 COST_PRELUDE = f"""FROM {BILLING}
 | EVAL ts = @timestamp
-| LOOKUP JOIN {CONF} ON ts >= conf_start_date AND ts <= conf_end_date
-| EVAL @timestamp = ts
-| EVAL unit = COALESCE(conf_chargeable_unit_rate_unit, "ECU")
-| EVAL currency_symbol = CASE(
-    conf_currency_symbol IS NOT NULL AND conf_currency_symbol != "", conf_currency_symbol,
-    conf_chargeable_unit_rate_unit == "ZAR", "R",
-    conf_chargeable_unit_rate_unit == "USD", "$",
-    conf_chargeable_unit_rate_unit == "EUR", "€",
-    conf_chargeable_unit_rate_unit == "GBP", "£",
-    conf_chargeable_unit_rate_unit == "JPY", "¥",
-    conf_chargeable_unit_rate_unit == "CNY", "¥",
-    conf_chargeable_unit_rate_unit == "INR", "₹",
-    conf_chargeable_unit_rate_unit == "CAD", "CA$",
-    conf_chargeable_unit_rate_unit == "AUD", "A$",
-    conf_chargeable_unit_rate_unit == "CHF", "CHF",
-    conf_chargeable_unit_rate_unit == "BRL", "R$",
-    conf_chargeable_unit_rate_unit IS NOT NULL AND conf_chargeable_unit_rate_unit != "", conf_chargeable_unit_rate_unit,
-    "ECU"
-  )
+| EVAL unit = COALESCE(conf_chargeable_unit_rate_unit, "USD")
+| EVAL currency_symbol = COALESCE(conf_currency_symbol, "$")
 | EVAL units = COALESCE(total_ecu, 0.0)
 | EVAL cost = units * COALESCE(conf_chargeable_unit_rate, 1.0)
 | EVAL project = CASE(deployment_name IS NOT NULL AND deployment_name != "", deployment_name, deployment_id IS NOT NULL AND deployment_id != "", deployment_id, "organization")
@@ -1703,36 +1680,19 @@ def build_usage() -> dict:
         stable_uuid("cc-usage-namespace"),
         "Attributed cost by namespace",
         make_bar_template("namespace", "Namespace"),
-        f"""FROM {DS_CONTRIB}
-| EVAL ts = @timestamp
-| LOOKUP JOIN {DEP_CONTRIB} ON composite_key
-| LOOKUP JOIN {POOL} ON composite_key
-| LOOKUP JOIN {CONF} ON ts >= conf_start_date AND ts <= conf_end_date
-| EVAL @timestamp = ts
+        f"""FROM {USAGE}
+| WHERE doc_type == "datastream"
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
-| EVAL unit = COALESCE(conf_chargeable_unit_rate_unit, "ECU")
-| EVAL currency_symbol = CASE(
-    conf_currency_symbol IS NOT NULL AND conf_currency_symbol != "", conf_currency_symbol,
-    conf_chargeable_unit_rate_unit == "ZAR", "R",
-    conf_chargeable_unit_rate_unit == "USD", "$",
-    conf_chargeable_unit_rate_unit == "EUR", "€",
-    conf_chargeable_unit_rate_unit == "GBP", "£",
-    conf_chargeable_unit_rate_unit == "JPY", "¥",
-    conf_chargeable_unit_rate_unit == "CNY", "¥",
-    conf_chargeable_unit_rate_unit == "INR", "₹",
-    conf_chargeable_unit_rate_unit == "CAD", "CA$",
-    conf_chargeable_unit_rate_unit == "AUD", "A$",
-    conf_chargeable_unit_rate_unit == "CHF", "CHF",
-    conf_chargeable_unit_rate_unit == "BRL", "R$",
-    conf_chargeable_unit_rate_unit IS NOT NULL AND conf_chargeable_unit_rate_unit != "", conf_chargeable_unit_rate_unit,
-    "ECU"
-  )
-| EVAL idx_share = CASE(COALESCE(deployment_sum_indexing_time, 0) > 0, TO_DOUBLE(datastream_sum_indexing_time) / TO_DOUBLE(deployment_sum_indexing_time), 0.0)
-| EVAL qry_share = CASE(COALESCE(deployment_sum_query_time, 0) > 0, TO_DOUBLE(datastream_sum_query_time) / TO_DOUBLE(deployment_sum_query_time), 0.0)
-| EVAL stg_share = CASE(COALESCE(deployment_sum_data_set_store_size, 0) > 0, TO_DOUBLE(datastream_sum_data_set_store_size) / TO_DOUBLE(deployment_sum_data_set_store_size), 0.0)
-| EVAL idx_cost = COALESCE(indexing_ecu, 0.0) * rate * idx_share
-| EVAL qry_cost = COALESCE(query_ecu, 0.0) * rate * qry_share
-| EVAL stg_cost = COALESCE(storage_ecu, 0.0) * rate * stg_share
+| EVAL unit = COALESCE(conf_chargeable_unit_rate_unit, "USD")
+| EVAL currency_symbol = COALESCE(conf_currency_symbol, "$")
+| STATS idx_time = SUM(datastream_sum_indexing_time), qry_time = SUM(datastream_sum_query_time), stg_bytes = AVG(TO_DOUBLE(datastream_sum_data_set_store_size)), idx_ecu = MAX(indexing_ecu), qry_ecu = MAX(query_ecu), stg_ecu = MAX(storage_ecu), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project_name, ds_namespace, datastream
+| INLINE STATS p_idx_time = SUM(idx_time), p_qry_time = SUM(qry_time), p_stg_bytes = SUM(stg_bytes) BY project_name
+| EVAL idx_share = CASE(p_idx_time > 0, TO_DOUBLE(idx_time) / TO_DOUBLE(p_idx_time), 0.0)
+| EVAL qry_share = CASE(p_qry_time > 0, TO_DOUBLE(qry_time) / TO_DOUBLE(p_qry_time), 0.0)
+| EVAL stg_share = CASE(p_stg_bytes > 0, stg_bytes / p_stg_bytes, 0.0)
+| EVAL idx_cost = COALESCE(idx_ecu, 0.0) * rate * idx_share
+| EVAL qry_cost = COALESCE(qry_ecu, 0.0) * rate * qry_share
+| EVAL stg_cost = COALESCE(stg_ecu, 0.0) * rate * stg_share
 | EVAL total_ds_cost = idx_cost + qry_cost + stg_cost
 | EVAL namespace = COALESCE(ds_namespace, "other")
 | STATS cost = SUM(total_ds_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY namespace
@@ -1750,36 +1710,19 @@ def build_usage() -> dict:
         stable_uuid("cc-usage-dstype"),
         "Attributed cost by data stream type",
         make_bar_template("ds_type", "Data stream type"),
-        f"""FROM {DS_CONTRIB}
-| EVAL ts = @timestamp
-| LOOKUP JOIN {DEP_CONTRIB} ON composite_key
-| LOOKUP JOIN {POOL} ON composite_key
-| LOOKUP JOIN {CONF} ON ts >= conf_start_date AND ts <= conf_end_date
-| EVAL @timestamp = ts
+        f"""FROM {USAGE}
+| WHERE doc_type == "datastream"
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
-| EVAL unit = COALESCE(conf_chargeable_unit_rate_unit, "ECU")
-| EVAL currency_symbol = CASE(
-    conf_currency_symbol IS NOT NULL AND conf_currency_symbol != "", conf_currency_symbol,
-    conf_chargeable_unit_rate_unit == "ZAR", "R",
-    conf_chargeable_unit_rate_unit == "USD", "$",
-    conf_chargeable_unit_rate_unit == "EUR", "€",
-    conf_chargeable_unit_rate_unit == "GBP", "£",
-    conf_chargeable_unit_rate_unit == "JPY", "¥",
-    conf_chargeable_unit_rate_unit == "CNY", "¥",
-    conf_chargeable_unit_rate_unit == "INR", "₹",
-    conf_chargeable_unit_rate_unit == "CAD", "CA$",
-    conf_chargeable_unit_rate_unit == "AUD", "A$",
-    conf_chargeable_unit_rate_unit == "CHF", "CHF",
-    conf_chargeable_unit_rate_unit == "BRL", "R$",
-    conf_chargeable_unit_rate_unit IS NOT NULL AND conf_chargeable_unit_rate_unit != "", conf_chargeable_unit_rate_unit,
-    "ECU"
-  )
-| EVAL idx_share = CASE(COALESCE(deployment_sum_indexing_time, 0) > 0, TO_DOUBLE(datastream_sum_indexing_time) / TO_DOUBLE(deployment_sum_indexing_time), 0.0)
-| EVAL qry_share = CASE(COALESCE(deployment_sum_query_time, 0) > 0, TO_DOUBLE(datastream_sum_query_time) / TO_DOUBLE(deployment_sum_query_time), 0.0)
-| EVAL stg_share = CASE(COALESCE(deployment_sum_data_set_store_size, 0) > 0, TO_DOUBLE(datastream_sum_data_set_store_size) / TO_DOUBLE(deployment_sum_data_set_store_size), 0.0)
-| EVAL idx_cost = COALESCE(indexing_ecu, 0.0) * rate * idx_share
-| EVAL qry_cost = COALESCE(query_ecu, 0.0) * rate * qry_share
-| EVAL stg_cost = COALESCE(storage_ecu, 0.0) * rate * stg_share
+| EVAL unit = COALESCE(conf_chargeable_unit_rate_unit, "USD")
+| EVAL currency_symbol = COALESCE(conf_currency_symbol, "$")
+| STATS idx_time = SUM(datastream_sum_indexing_time), qry_time = SUM(datastream_sum_query_time), stg_bytes = AVG(TO_DOUBLE(datastream_sum_data_set_store_size)), idx_ecu = MAX(indexing_ecu), qry_ecu = MAX(query_ecu), stg_ecu = MAX(storage_ecu), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project_name, ds_type, datastream
+| INLINE STATS p_idx_time = SUM(idx_time), p_qry_time = SUM(qry_time), p_stg_bytes = SUM(stg_bytes) BY project_name
+| EVAL idx_share = CASE(p_idx_time > 0, TO_DOUBLE(idx_time) / TO_DOUBLE(p_idx_time), 0.0)
+| EVAL qry_share = CASE(p_qry_time > 0, TO_DOUBLE(qry_time) / TO_DOUBLE(p_qry_time), 0.0)
+| EVAL stg_share = CASE(p_stg_bytes > 0, stg_bytes / p_stg_bytes, 0.0)
+| EVAL idx_cost = COALESCE(idx_ecu, 0.0) * rate * idx_share
+| EVAL qry_cost = COALESCE(qry_ecu, 0.0) * rate * qry_share
+| EVAL stg_cost = COALESCE(stg_ecu, 0.0) * rate * stg_share
 | EVAL total_ds_cost = idx_cost + qry_cost + stg_cost
 | EVAL ds_type_label = COALESCE(ds_type, "other")
 | STATS cost = SUM(total_ds_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY ds_type_label
@@ -1798,39 +1741,20 @@ def build_usage() -> dict:
         stable_uuid("cc-usage-datastream-cost"),
         "Data stream cost attribution",
         DATASTREAM_COST_TABLE_TEMPLATE,
-        f"""FROM {DS_CONTRIB}
-| EVAL ts = @timestamp, ds_project_name = CASE(project_name IS NOT NULL AND project_name != "", project_name, cluster_name IS NOT NULL AND cluster_name != "", cluster_name, "unknown"), ds_project_type = COALESCE(project_type, "unknown"), data_type = COALESCE(ds_type, "other"), namespace = COALESCE(ds_namespace, "other")
-| LOOKUP JOIN {DEP_CONTRIB} ON composite_key
-| LOOKUP JOIN {POOL} ON composite_key
-| LOOKUP JOIN {CONF} ON ts >= conf_start_date AND ts <= conf_end_date
-| EVAL @timestamp = ts
+        f"""FROM {USAGE}
+| WHERE doc_type == "datastream"
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
-| EVAL unit = COALESCE(conf_chargeable_unit_rate_unit, "ECU")
-| EVAL currency_symbol = CASE(
-    conf_currency_symbol IS NOT NULL AND conf_currency_symbol != "", conf_currency_symbol,
-    conf_chargeable_unit_rate_unit == "ZAR", "R",
-    conf_chargeable_unit_rate_unit == "USD", "$",
-    conf_chargeable_unit_rate_unit == "EUR", "€",
-    conf_chargeable_unit_rate_unit == "GBP", "£",
-    conf_chargeable_unit_rate_unit == "JPY", "¥",
-    conf_chargeable_unit_rate_unit == "CNY", "¥",
-    conf_chargeable_unit_rate_unit == "INR", "₹",
-    conf_chargeable_unit_rate_unit == "CAD", "CA$",
-    conf_chargeable_unit_rate_unit == "AUD", "A$",
-    conf_chargeable_unit_rate_unit == "CHF", "CHF",
-    conf_chargeable_unit_rate_unit == "BRL", "R$",
-    conf_chargeable_unit_rate_unit IS NOT NULL AND conf_chargeable_unit_rate_unit != "", conf_chargeable_unit_rate_unit,
-    "ECU"
-  )
-| EVAL idx_share = CASE(COALESCE(deployment_sum_indexing_time, 0) > 0, TO_DOUBLE(datastream_sum_indexing_time) / TO_DOUBLE(deployment_sum_indexing_time), 0.0)
-| EVAL qry_share = CASE(COALESCE(deployment_sum_query_time, 0) > 0, TO_DOUBLE(datastream_sum_query_time) / TO_DOUBLE(deployment_sum_query_time), 0.0)
-| EVAL stg_share = CASE(COALESCE(deployment_sum_data_set_store_size, 0) > 0, TO_DOUBLE(datastream_sum_data_set_store_size) / TO_DOUBLE(deployment_sum_data_set_store_size), 0.0)
-| EVAL idx_cost = COALESCE(indexing_ecu, 0.0) * rate * idx_share
-| EVAL qry_cost = COALESCE(query_ecu, 0.0) * rate * qry_share
-| EVAL stg_cost = COALESCE(storage_ecu, 0.0) * rate * stg_share
-| EVAL total_ds_cost = idx_cost + qry_cost + stg_cost
-| STATS indexing_cost = SUM(idx_cost), query_cost = SUM(qry_cost), storage_cost = SUM(stg_cost), attributed_cost = SUM(total_ds_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY ds_project_name, ds_project_type, data_type, namespace, datastream
-| RENAME ds_project_name AS project, ds_project_type AS project_type, data_type AS ds_type, namespace AS ds_namespace
+| EVAL unit = COALESCE(conf_chargeable_unit_rate_unit, "USD")
+| EVAL currency_symbol = COALESCE(conf_currency_symbol, "$")
+| STATS idx_time = SUM(datastream_sum_indexing_time), qry_time = SUM(datastream_sum_query_time), stg_bytes = AVG(TO_DOUBLE(datastream_sum_data_set_store_size)), idx_ecu = MAX(indexing_ecu), qry_ecu = MAX(query_ecu), stg_ecu = MAX(storage_ecu), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project = project_name, project_type, ds_type, ds_namespace, datastream
+| INLINE STATS p_idx_time = SUM(idx_time), p_qry_time = SUM(qry_time), p_stg_bytes = SUM(stg_bytes) BY project
+| EVAL idx_share = CASE(p_idx_time > 0, TO_DOUBLE(idx_time) / TO_DOUBLE(p_idx_time), 0.0)
+| EVAL qry_share = CASE(p_qry_time > 0, TO_DOUBLE(qry_time) / TO_DOUBLE(p_qry_time), 0.0)
+| EVAL stg_share = CASE(p_stg_bytes > 0, stg_bytes / p_stg_bytes, 0.0)
+| EVAL indexing_cost = COALESCE(idx_ecu, 0.0) * rate * idx_share
+| EVAL query_cost = COALESCE(qry_ecu, 0.0) * rate * qry_share
+| EVAL storage_cost = COALESCE(stg_ecu, 0.0) * rate * stg_share
+| EVAL attributed_cost = indexing_cost + query_cost + storage_cost
 | SORT attributed_cost DESC
 | LIMIT 200
 | KEEP project, project_type, ds_type, ds_namespace, datastream, indexing_cost, query_cost, storage_cost, attributed_cost, currency_symbol, unit""",
@@ -1841,7 +1765,8 @@ def build_usage() -> dict:
     )
     panels.append(p)
 
-    esql = f"""FROM {DS_CONTRIB}
+    esql = f"""FROM {USAGE}
+| WHERE doc_type == "datastream"
 | EVAL `Project` = CASE(project_name IS NOT NULL AND project_name != "", project_name, cluster_name IS NOT NULL AND cluster_name != "", cluster_name, "unknown"), `Project type` = COALESCE(project_type, "unknown"), `Data stream type` = COALESCE(ds_type, "other"), `Namespace` = COALESCE(ds_namespace, "other")
 | STATS `Indexing time (ms)` = SUM(datastream_sum_indexing_time), `Search query time (ms)` = SUM(datastream_sum_query_time), `Avg dataset size (MB)` = ROUND(AVG(TO_DOUBLE(datastream_sum_data_set_store_size)) / 1048576.0, 2) BY `Project`, `Project type`, `Data stream type`, `Namespace`, datastream
 | RENAME datastream AS `Data stream`
@@ -1878,33 +1803,15 @@ def build_usage() -> dict:
         50,
         48,
         14,
-        index=DS_CONTRIB,
+        index=USAGE,
     )
     panels.append(p)
 
-    ai_kpi_esql = f"""FROM {AI_CONTRIB}
-| EVAL ts = @timestamp
-| LOOKUP JOIN {POOL} ON composite_key
-| LOOKUP JOIN {CONF} ON ts >= conf_start_date AND ts <= conf_end_date
-| EVAL @timestamp = ts
+    ai_kpi_esql = f"""FROM {USAGE}
+| WHERE doc_type == "ai_model"
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
-| EVAL unit = COALESCE(conf_chargeable_unit_rate_unit, "ECU")
-| EVAL currency_symbol = CASE(
-    conf_currency_symbol IS NOT NULL AND conf_currency_symbol != "", conf_currency_symbol,
-    conf_chargeable_unit_rate_unit == "ZAR", "R",
-    conf_chargeable_unit_rate_unit == "USD", "$",
-    conf_chargeable_unit_rate_unit == "EUR", "€",
-    conf_chargeable_unit_rate_unit == "GBP", "£",
-    conf_chargeable_unit_rate_unit == "JPY", "¥",
-    conf_chargeable_unit_rate_unit == "CNY", "¥",
-    conf_chargeable_unit_rate_unit == "INR", "₹",
-    conf_chargeable_unit_rate_unit == "CAD", "CA$",
-    conf_chargeable_unit_rate_unit == "AUD", "A$",
-    conf_chargeable_unit_rate_unit == "CHF", "CHF",
-    conf_chargeable_unit_rate_unit == "BRL", "R$",
-    conf_chargeable_unit_rate_unit IS NOT NULL AND conf_chargeable_unit_rate_unit != "", conf_chargeable_unit_rate_unit,
-    "ECU"
-  )
+| EVAL unit = COALESCE(conf_chargeable_unit_rate_unit, "USD")
+| EVAL currency_symbol = COALESCE(conf_currency_symbol, "$")
 | EVAL ai_pool_cost = COALESCE(ai_ecu, query_ecu, 0.0) * rate
 | STATS proj_spend = MAX(ai_pool_cost), proj_inf = SUM(inference_count), proj_latency = AVG(average_inference_time_ms), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY composite_key
 | STATS ai_spend = SUM(proj_spend), total_inferences = SUM(proj_inf), avg_latency_ms = ROUND(AVG(proj_latency), 1), currency_symbol = MAX(currency_symbol), unit = MAX(unit)
@@ -1923,29 +1830,11 @@ def build_usage() -> dict:
     )
     panels.append(p)
 
-    ai_models_esql = f"""FROM {AI_CONTRIB}
-| EVAL ts = @timestamp
-| LOOKUP JOIN {POOL} ON composite_key
-| LOOKUP JOIN {CONF} ON ts >= conf_start_date AND ts <= conf_end_date
-| EVAL @timestamp = ts
+    ai_models_esql = f"""FROM {USAGE}
+| WHERE doc_type == "ai_model"
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
-| EVAL unit = COALESCE(conf_chargeable_unit_rate_unit, "ECU")
-| EVAL currency_symbol = CASE(
-    conf_currency_symbol IS NOT NULL AND conf_currency_symbol != "", conf_currency_symbol,
-    conf_chargeable_unit_rate_unit == "ZAR", "R",
-    conf_chargeable_unit_rate_unit == "USD", "$",
-    conf_chargeable_unit_rate_unit == "EUR", "€",
-    conf_chargeable_unit_rate_unit == "GBP", "£",
-    conf_chargeable_unit_rate_unit == "JPY", "¥",
-    conf_chargeable_unit_rate_unit == "CNY", "¥",
-    conf_chargeable_unit_rate_unit == "INR", "₹",
-    conf_chargeable_unit_rate_unit == "CAD", "CA$",
-    conf_chargeable_unit_rate_unit == "AUD", "A$",
-    conf_chargeable_unit_rate_unit == "CHF", "CHF",
-    conf_chargeable_unit_rate_unit == "BRL", "R$",
-    conf_chargeable_unit_rate_unit IS NOT NULL AND conf_chargeable_unit_rate_unit != "", conf_chargeable_unit_rate_unit,
-    "ECU"
-  )
+| EVAL unit = COALESCE(conf_chargeable_unit_rate_unit, "USD")
+| EVAL currency_symbol = COALESCE(conf_currency_symbol, "$")
 | EVAL compute_time = COALESCE(total_inference_time_ms, 0)
 | EVAL ai_pool_cost = COALESCE(ai_ecu, query_ecu, 0.0) * rate
 | STATS total_compute = SUM(compute_time), total_inf = SUM(inference_count), ai_pool = MAX(ai_pool_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY model_id, task_type
@@ -2002,25 +1891,20 @@ def build_config() -> dict:
     overflow-x: auto;
   }
 </style>
-{% assign r = rows[0] %}
 <div class="cb-dsl">
   <div>
-    <h4>1. Currency Rate Window (Dev Tools)</h4>
-    <p>Set active rate, currency, and date bounds in chargeback_conf_lookup.</p>
-    <pre>PUT chargeback_conf_lookup/_doc/config
-{
-  "@timestamp": "1970-01-01T00:00:00.000Z",
-  "config_join_key": "config",
-  "conf_start_date": "{{ r["conf_start_date"].value | default: "2020-01-01T00:00:00.000Z" }}",
-  "conf_end_date": "{{ r["conf_end_date"].value | default: "2099-12-31T23:59:59.999Z" }}",
-  "conf_chargeable_unit_rate": {{ r["conf_chargeable_unit_rate"].value | default: 1.0 }},
-  "conf_chargeable_unit_rate_unit": "{{ r["conf_chargeable_unit_rate_unit"].value | default: "USD" }}",
-  "conf_currency_symbol": "{{ r["conf_currency_symbol"].value | default: "$" }}"
-}</pre>
+    <h4>1. Fleet Integration Settings</h4>
+    <p>Set Organization ID, API keys, and Currency in Integrations → Chargeback Serverless → Settings.</p>
+    <pre># Configured in Kibana Fleet UI:
+Organization ID:  &lt;YOUR_ORG_ID&gt;
+Cloud API Key:    ••••••••••••••••
+Currency Unit:    USD (or EUR, ZAR, etc.)
+Currency Symbol:  $ (or €, R, £, etc.)
+Unit Rate:        1.0</pre>
   </div>
   <div>
     <h4>2. Remote Least-Privilege Key (Dev Tools)</h4>
-    <p>Run on remote project. Grants index metadata read only (no data access).</p>
+    <p>Run on remote project to grant index metadata monitor only (no data read access).</p>
     <pre>POST _security/api_key
 {
   "name": "chargeback-usage-harvesting",
@@ -2038,26 +1922,24 @@ def build_config() -> dict:
 }</pre>
   </div>
   <div>
-    <h4>3. Register Remote Key on Hub (Dev Tools)</h4>
-    <p>Run on Hub to register encoded key for remote project ID.</p>
-    <pre>POST chargeback-serverless-config/_update/config
-{
-  "doc": {
-    "project_api_keys": {
-      "&lt;REMOTE_PROJECT_ID&gt;": "&lt;ENCODED_API_KEY&gt;"
-    }
-  }
-}</pre>
+    <h4>3. Add Key to Integration Policy</h4>
+    <p>Add key under Remote Project API Keys in Settings (<project_id>:<encoded_key>).</p>
+    <pre># In Integration Settings:
+Remote Project API Keys:
+  - &lt;PROJECT_ID&gt;:&lt;ENCODED_KEY&gt;
+
+Fleet masks and encrypts all keys.
+No secrets are stored in indices.</pre>
   </div>
 </div>
 """
     p, _ = custom_panel(
         stable_uuid("cc-config-help"),
-        "Dev Tools DSL — Configuration",
+        "Fleet Configuration Guide",
         config_dsl,
-        f"""FROM {CONF}
-| KEEP conf_start_date, conf_end_date, conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_currency_symbol
-| SORT conf_start_date DESC
+        f"""FROM {BILLING}
+| KEEP conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_currency_symbol
+| SORT @timestamp DESC
 | LIMIT 1""",
         0,
         2,
@@ -2066,16 +1948,15 @@ def build_config() -> dict:
     )
     panels.append(p)
 
-    esql = f"""FROM {CONF}
-| KEEP conf_start_date, conf_end_date, conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_currency_symbol
-| SORT conf_start_date DESC"""
+    esql = f"""FROM {BILLING}
+| KEEP conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_currency_symbol
+| SORT @timestamp DESC
+| LIMIT 10"""
     p, _ = lens_esql(
         stable_uuid("lens-config-rates"),
-        "Configured currency rates by date window",
+        "Configured currency settings from Fleet policy",
         esql,
         [
-            col("conf_start_date", "date", "Start date"),
-            col("conf_end_date", "date", "End date"),
             col("conf_chargeable_unit_rate", "double", "Unit rate"),
             col("conf_chargeable_unit_rate_unit", "keyword", "Currency"),
             col("conf_currency_symbol", "keyword", "Symbol"),
@@ -2083,8 +1964,6 @@ def build_config() -> dict:
         "lnsDatatable",
         table_vis(
             [
-                "conf_start_date",
-                "conf_end_date",
                 "conf_chargeable_unit_rate",
                 "conf_chargeable_unit_rate_unit",
                 "conf_currency_symbol",
@@ -2094,14 +1973,14 @@ def build_config() -> dict:
         13,
         20,
         10,
-        index=CONF,
+        index=BILLING,
         time_field=None,
     )
     panels.append(p)
 
-    esql = f"""FROM {PROJECTS}
-| KEEP project_name, project_id, project_type, optimized_for, es_url
-| RENAME project_name AS `Project`, project_id AS `Project ID`, project_type AS `Type`, optimized_for AS `Optimized for`, es_url AS `Elasticsearch endpoint`
+    esql = f"""FROM {USAGE}
+| WHERE doc_type == "project_status"
+| STATS `Type` = MAX(project_type), `Optimized for` = MAX(optimized_for), `Elasticsearch endpoint` = MAX(es_url), `Last status` = MAX(last_status), `Discovered indices` = MAX(index_count) BY `Project` = project_name, `Project ID` = project_id
 | SORT `Project` ASC
 | LIMIT 200"""
     p, _ = lens_esql(
@@ -2114,6 +1993,8 @@ def build_config() -> dict:
             col("Type", "keyword"),
             col("Optimized for", "keyword"),
             col("Elasticsearch endpoint", "keyword"),
+            col("Last status", "keyword"),
+            col("Discovered indices", "long"),
         ],
         "lnsDatatable",
         table_vis(
@@ -2123,13 +2004,15 @@ def build_config() -> dict:
                 "Type",
                 "Optimized for",
                 "Elasticsearch endpoint",
+                "Last status",
+                "Discovered indices",
             ]
         ),
         20,
         13,
         28,
         10,
-        index=PROJECTS,
+        index=USAGE,
         time_field=None,
     )
     panels.append(p)
@@ -2138,11 +2021,13 @@ def build_config() -> dict:
         stable_uuid("cc-config-state"),
         "Project usage harvest status",
         STATUS_BOARD_TEMPLATE,
-        f"""FROM {STATE}
+        f"""FROM {USAGE}
+| WHERE doc_type == "project_status"
+| STATS project_type = MAX(project_type), index_count = MAX(index_count), last_status = MAX(last_status), updated_at = MAX(updated_at) BY project_id, project_name
+| EVAL health = CASE(last_status == "empty_or_unauthorized", "empty_or_unauthorized", updated_at IS NOT NULL AND updated_at > NOW() - 2 hours, "ok", "stale")
 | SORT updated_at DESC NULLS LAST
 | LIMIT 100
-| EVAL health = CASE(COALESCE(last_status, "") == "empty_or_unauthorized", "empty_or_unauthorized", updated_at IS NOT NULL AND updated_at > NOW() - 2 hours, "ok", "stale")
-| KEEP project_id, project_name, project_type, index_count, health, day, updated_at""",
+| KEEP project_id, project_name, project_type, index_count, health, updated_at""",
         0,
         23,
         48,
@@ -2200,8 +2085,8 @@ def build_alerts() -> list[dict]:
         alert_template(
             ALERT_STALE_STATE,
             "[Chargeback Serverless] Stale project usage harvest",
-            f"""FROM {STATE}
-| WHERE COALESCE(last_status, "") != "ok" OR updated_at IS NULL OR updated_at < NOW() - 6 hours
+            f"""FROM {USAGE}
+| WHERE doc_type == "project_status" AND (COALESCE(last_status, "") != "ok" OR updated_at IS NULL OR updated_at < NOW() - 6 hours)
 | EVAL result = CONCAT("Project `", COALESCE(project_name, project_id, "unknown"), "` (", COALESCE(project_id, "unknown"), ") status=", COALESCE(last_status, "stale"), " last updated ", COALESCE(TO_STRING(updated_at), "never"), ".")
 | STATS result = VALUES(result)
 | MV_EXPAND result""",
@@ -2213,7 +2098,7 @@ def build_alerts() -> list[dict]:
             f"""FROM {BILLING}
 | WHERE deployment_id IS NOT NULL AND deployment_id != "" AND (deployment_name IS NULL OR deployment_name == "" OR deployment_name == deployment_id)
 | STATS ecu = ROUND(SUM(COALESCE(total_ecu, 0.0)), 2) BY deployment_id, deployment_type
-| EVAL result = CONCAT("Billed project `", deployment_id, "` (", COALESCE(deployment_type, "unknown"), ", ", TO_STRING(ecu), " ECU) has no resolved project_name from chargeback-serverless-projects.")
+| EVAL result = CONCAT("Billed project `", deployment_id, "` (", COALESCE(deployment_type, "unknown"), ", ", TO_STRING(ecu), " ECU) has no resolved project_name.")
 | STATS result = VALUES(result)
 | MV_EXPAND result""",
             "12h",

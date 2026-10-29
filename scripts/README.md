@@ -11,9 +11,9 @@ Scripts for running Chargeback integration tests locally. **Use the automated E2
 
 ---
 
-## Chargeback Serverless (E2E Hub Deployment)
+## Chargeback Serverless (Native Fleet & CEL Deployment)
 
-For deploying and verifying the **native Chargeback Serverless hub integration** (`chargeback_serverless` package 0.1.6+ with Kibana Workflows, EPM API, and least-privileged harvesting keys):
+For deploying and verifying the **native Chargeback Serverless hub integration** (`chargeback_serverless` package 0.2.0+ with Elastic Agent CEL scheduled data streams, Fleet package policy automation, and least-privileged harvesting keys):
 
 ```bash
 # Full E2E deployment to test env (uses macOS Keychain or prompts for credentials)
@@ -22,15 +22,18 @@ For deploying and verifying the **native Chargeback Serverless hub integration**
 # Fast deployment skipping build step (uses existing package zip in dist/)
 ./scripts/deploy_chargeback_serverless.sh --skip-build
 
-# Verification and health check only (prints index counts & project harvest status)
+# Upload package without creating/updating Fleet package policy
+./scripts/deploy_chargeback_serverless.sh --skip-policy
+
+# Verification and health check only (prints data stream counts & recent ES|QL ingestion status)
 ./scripts/deploy_chargeback_serverless.sh --verify-only
 ```
 
 Modular components:
 - [`keychain.sh`](keychain.sh): macOS Keychain credential manager. Securely stores, loads, lists, and manages environment variables in Keychain (`elasticsearch-chargeback` service) instead of plaintext `.env`.
-- [`deploy_chargeback_serverless.sh`](deploy_chargeback_serverless.sh): Orchestrates dashboard generation, `elastic-package build`, Fleet package upload, infrastructure install, credentials sync, workflow triggering, and verification queries.
-- [`install_chargeback_serverless.sh`](install_chargeback_serverless.sh): Installs ingest pipeline, sets up 8 core lean index mappings, imports Workflows, and calls configuration.
-- [`configure_chargeback_serverless.sh`](configure_chargeback_serverless.sh): Configures `chargeback-serverless-config` (Cloud Org ID, Billing/Usage API keys, Hub ES API key, remote project harvesting keys) and `chargeback_conf_lookup` (currency rate, unit, currency symbol).
+- [`deploy_chargeback_serverless.sh`](deploy_chargeback_serverless.sh): Orchestrates dashboard generation, `elastic-package build`, Fleet package upload, Fleet package policy creation/update, and data stream verification queries.
+- [`configure_chargeback_serverless.sh`](configure_chargeback_serverless.sh): Updates the Fleet package policy settings (Cloud Org ID, Cloud API key, Hub ES API key, remote project harvesting keys, currency rates) via Kibana Fleet API with zero plaintext secret indices.
+- [`install_chargeback_serverless.sh`](install_chargeback_serverless.sh): Legacy installer (deprecated in v0.2.0 in favor of native Fleet EPM and `deploy_chargeback_serverless.sh`).
 
 ### Managing Credentials with macOS Keychain
 

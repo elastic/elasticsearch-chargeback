@@ -1,25 +1,19 @@
-#!/usr/bin/env bash
-# Install Chargeback Serverless hub assets (native design).
-# Requires the chargeback_serverless Fleet package on the hub, and Kibana Workflows.
+# Install Chargeback Serverless hub assets.
 #
-# Export before running:
-#   ES_URL              Hub Elasticsearch URL
-#   ES_API_KEY          Hub ES API key (manage indices, pipelines, docs)
-#   KIBANA_URL          Hub Kibana URL
-#   KIBANA_API_KEY      Hub Kibana API key (create/update workflows)
-#   ORGANIZATION_ID     Elastic Cloud organization ID (billing)
-#   BILLING_API_KEY     Elastic Cloud API key with billing read
-#   USAGE_API_KEY       Elastic Cloud API key with project list + ES monitor
+# NOTE: As of v0.2.0, Chargeback Serverless operates as a native Elastic Agent CEL
+# integration package (following the ess_billing design).
+# Kibana Workflows and the plaintext chargeback-serverless-config index are superseded.
 #
-# Optional:
-#   BILLING_API_BASE    default https://billing.elastic-cloud.com
-#   CLOUD_API_BASE      default https://api.elastic-cloud.com
-#   CONF_RATE           ECU rate for chargeback_conf_lookup (default 1)
-#   CONF_RATE_UNIT      default ECU
-#   CURL_INSECURE=1     skip TLS verification for all destinations
-#   ALLOW_MISSING_WORKFLOWS=1  continue when Workflows API returns 404
+# Recommended deployment:
+#   ./scripts/deploy_chargeback_serverless.sh
+#
+# ==============================================================================
 
 set -euo pipefail
+
+echo "Notice: Chargeback Serverless 0.2.0+ uses native Elastic Agent CEL integration."
+echo "Use ./scripts/deploy_chargeback_serverless.sh for automated package & policy deployment."
+echo ""
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "$SCRIPT_DIR/keychain.sh" ]]; then

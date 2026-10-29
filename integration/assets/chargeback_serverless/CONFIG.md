@@ -1,41 +1,52 @@
-# Chargeback Serverless — configuration (ECH model)
+# Chargeback Serverless — Configuration Guide
 
 ## Principle
 
-Day-2 configuration is **Fleet Integration Settings** (Organization ID, Billing API key, Usage API key) + **Configuration dashboard** + **Kibana Workflows**. Collection does not need an Elastic Agent. For custom zip installs, use the default Fleet deployment mode so Settings can be saved (Fleet rejects agentless for upload packages). The shell installer is optional bootstrap only.
+All configuration for Chargeback Serverless is managed **100% within the Fleet Integration Policy** (matching the native `ess_billing` architecture).
 
-## Credentials (Integration UI)
+- **Zero secrets in indices**: API keys are securely encrypted by Fleet and never written to plaintext Elasticsearch indices.
+- **Zero workflows**: Scheduled collection runs automatically via native Elastic Agent CEL streams (`billing` every 24h, `usage` every 1h).
+- **Single pane of glass**: Configure organization credentials, remote project keys, backfill windows, and currency rates directly in **Fleet → Agent Policies → Chargeback Serverless** or via `./scripts/deploy_chargeback_serverless.sh`.
 
-Set these in **Integrations → Chargeback Serverless → Settings**:
+---
 
-| Field | Secret | Stored in |
-| --- | --- | --- |
-| Organization ID | No | Package policy | Elastic Cloud organization identifier |
-| Billing API key | Yes | Package policy (encrypted) | Cloud Billing API reader |
-| Usage API key | Yes | Package policy (encrypted) | Cloud API key to list projects across the org |
+## Policy Configuration Settings
 
-Workflows read `chargeback-serverless-config`. After changing Integration settings, upsert the same values into that document (via bootstrap script or Dev Tools).
+Set these parameters in **Kibana → Management → Fleet → Integrations → Chargeback Serverless**:
+
+| Variable | Type | Secret | Default | Description |
+|---|---|---|---|---|
+| `organization_id` | Text | No | *(required)* | Elastic Cloud organization ID (from Cloud Console → Organization). |
+| `cloud_api_key` | Password | **Yes** | *(required)* | Cloud API key with billing read and Serverless project read access. |
+| `hub_es_api_key` | Password | **Yes** | *(optional)* | Elasticsearch API key for the local Hub project (if harvesting local data streams). |
+| `project_api_keys` | Password (Multi) | **Yes** | `[]` | List of remote project harvesting keys in `<project_id>:<encoded_api_key>` format. |
+| `lookbehind` | Integer | No | `30` | Number of historical days of billing data to backfill on initial install. |
+| `currency_unit` | Text | No | `USD` | Target display currency unit code (e.g. `USD`, `EUR`, `ZAR`, `GBP`, `ECU`). |
+| `currency_symbol` | Text | No | `$` | Target display currency symbol (e.g. `$`, `€`, `R`, `£`). |
+| `unit_rate` | Text | No | `1.0` | Currency conversion rate per ECU (e.g. `1.0` for 1:1, or `18.5` for local currency). |
+| `billing_api_base` | Text | No | `https://billing.elastic-cloud.com` | Base URL of Elastic Cloud Billing API. |
+| `cloud_api_base` | Text | No | `https://api.elastic-cloud.com` | Base URL of Elastic Cloud Control Plane API. |
+
+---
 
 ## Harvesting Remote Projects: Least-Privileged API Keys
 
-In Elastic Cloud Serverless, a Cloud Organization API key can list projects via the Control Plane (`api.elastic-cloud.com`), but **cannot** authenticate against the Elasticsearch Data Plane (`https://<project-id>.es.<region>.<csp>.elastic.cloud/`) of remote projects across regions or separate clusters.
+In Elastic Cloud Serverless, a Cloud Organization API key can discover projects via the Control Plane (`api.elastic-cloud.com`), but **cannot** authenticate against the Elasticsearch Data Plane (`https://<project-id>.es.<region>.<csp>.elastic.cloud/`) of remote projects across regions or separate clusters.
 
 * **Billing data** (spend per project, SKU breakdown) works with **zero** remote project keys.
-* **Granular datastream / index allocation** on remote projects requires an Elasticsearch API key with strictly least-privileged permissions.
+* **Granular data stream & index allocation** on remote projects requires an Elasticsearch API key with strictly least-privileged permissions.
 
 ### 1. Principle of Least Privilege
 
 The key created on remote projects requires **only cluster and index metadata permissions**. It has **no access to documents, indices data, or search**:
 
-* **Cluster:** `monitor` (allows reading `_cat/indices` metrics: shard sizes, indexing time, query time)
+* **Cluster:** `monitor` (allows reading `_cat/indices` metrics: shard sizes, indexing time, query time, and ML stats)
 * **Indices:** `monitor` on `*`
 * **Data:** *None* (cannot search, query, read, write, or delete documents)
 
-Even if an unauthorized user inspects the workflow config document or execution history, this key cannot access any business data.
-
 ### 2. Generate the Key on Remote Project(s)
 
-In the Kibana Dev Tools of each remote project (e.g., `telco`):
+In the Kibana Dev Tools of each remote project (e.g., `telco-analytics`):
 
 ```json
 POST _security/api_key
@@ -57,77 +68,53 @@ POST _security/api_key
 
 Copy the resulting `encoded` API key string.
 
-### 3. Register the Key on the Hub Project
+### 3. Register the Key in Fleet Integration Policy
 
-In Dev Tools on your **Hub project**, update `chargeback-serverless-config` using `_update` to avoid replacing other fields:
+In **Kibana Fleet UI**:
+1. Navigate to **Fleet → Agent Policies → your policy → Chargeback Serverless**.
+2. Under **Remote Project Elasticsearch API Keys**, click **Add** (or paste):
+   ```text
+   <remote_project_id>:<encoded_api_key>
+   ```
+   *Example:*
+   ```text
+   bf694be853c246c0b5304648ec385fb4:VjFSa0Jad0J4...
+   ```
+3. Click **Save integration**. Fleet encrypts the key and pushes the configuration immediately to the agent collector.
 
-```json
-POST chargeback-serverless-config/_update/config
-{
-  "doc": {
-    "project_api_keys": {
-      "<REMOTE_PROJECT_ID>": "<ENCODED_API_KEY>"
-    }
-  }
-}
+Alternatively, register via CLI:
+```bash
+PROJECT_ID="bf694be853c246c0b5304648ec385fb4" \
+SL_API_KEY="VjFSa0Jad0J4..." \
+./scripts/configure_chargeback_serverless.sh
 ```
 
-*Example for project `bf694be853c246c0b5304648ec385fb4` (`telco`):*
-```json
-POST chargeback-serverless-config/_update/config
-{
-  "doc": {
-    "project_api_keys": {
-      "bf694be853c246c0b5304648ec385fb4": "<ENCODED_API_KEY>"
-    }
-  }
-}
-```
+---
 
-### 4. Optional Project Filtering
+## Currency & Rate Multipliers
 
-If you have test, staging, or transient projects that should not have their usage harvested:
-* `include_project_ids`: List of project IDs to harvest (leave empty to harvest all discovered projects).
-* `exclude_project_ids`: List of project IDs to skip from data stream harvesting.
+To display all billing and usage metrics in your local accounting currency:
+1. In the integration policy settings, set:
+   - **Currency Unit:** e.g., `ZAR`, `EUR`, `GBP`
+   - **Currency Symbol:** e.g., `R`, `€`, `£`
+   - **Chargeable Unit Rate:** e.g., `18.5` (1 ECU = 18.50 ZAR)
+2. All dashboard calculations compute spend as:
+   ```
+   cost = total_chargeable_units * unit_rate
+   ```
+   with the appropriate currency symbol prepended.
 
-```json
-POST chargeback-serverless-config/_update/config
-{
-  "doc": {
-    "exclude_project_ids": ["bf694be853c246c0b5304648ec385fb4"]
-  }
-}
-```
+---
 
-## Security Best Practice: Restricting Access (RBAC)
+## Data Streams & Retention
 
-Because `chargeback-serverless-config` stores operational API keys:
+Chargeback Serverless produces two native metrics data streams:
 
-1. **FinOps Analysts / Dashboard Consumers:**
-   * Grant `read` on lookup indices: `billing_*_lookup`, `cluster_*_lookup`, `chargeback_conf_lookup`.
-   * **Do not grant access** to `chargeback-serverless-config` or `chargeback-serverless-state`.
-2. **Kibana Workflows:**
-   * Restrict access to **Stack Management → Workflows** to workspace administrators so non-admin users cannot view workflow execution run history.
+1. `metrics-chargeback_serverless.billing-default`:
+   - Daily billing events per project and SKU.
+   - Run interval: Every 24 hours (with automatic initial backfill up to `lookbehind` days).
+2. `metrics-chargeback_serverless.usage-default`:
+   - Hourly usage events per project, data stream, and AI model.
+   - Run interval: Every 1 hour.
 
-## Rates / local currency
-
-Edit `chargeback_conf_lookup` from the Configuration dashboard:
-
-- `conf_chargeable_unit_rate`
-- `conf_chargeable_unit_rate_unit`
-- `conf_start_date` / `conf_end_date`
-
-All spend visuals use:
-
-```
-LOOKUP JOIN chargeback_conf_lookup ON ts >= conf_start_date AND ts <= conf_end_date
-| EVAL cost = total_chargeable_units * COALESCE(conf_chargeable_unit_rate, 1.0)
-```
-
-## Projects (not deployments)
-
-Serverless billable units are **projects**. Dashboards and docs say project. Index mappings expose `project_*` aliases over the billing API’s `deployment_*` field names for compatibility.
-
-## Custom Liquid panels
-
-Custom panels work on Serverless hubs and ship in the package (KPI strips, allocation flow, harvest status, allocation table).
+No index management jobs or manual mapping templates are required. Fleet automatically creates and manages index templates, component templates, and lifecycle policies.
