@@ -835,53 +835,73 @@ AI_MODELS_TEMPLATE = f"""\
 """
 
 
-DAILY_PROJECT_COST_TEMPLATE = f"""\
+def make_daily_cost_template(group_field: str, is_category: bool = False) -> str:
+    if is_category:
+        palette_colors = (
+            "#0077CC,#2EB88A,#DE5477,#F0B020,#5B8FF9,#9972C4,#E0752F,#00BFB3,#1B85B8,#D36086"
+        )
+        legend_color_code = """\
+      {% if itm == "compute" %}{% assign item_color = "#0077CC" %}
+      {% elsif itm == "storage" %}{% assign item_color = "#2EB88A" %}
+      {% elsif itm == "support" %}{% assign item_color = "#DE5477" %}
+      {% elsif itm == "network" %}{% assign item_color = "#F0B020" %}
+      {% else %}
+        {% assign c_idx = forloop.index0 | modulo: 10 %}
+        {% assign item_color = colors[c_idx] %}
+      {% endif %}"""
+        seg_color_code = """\
+          {% if p_name == "compute" %}{% assign item_color = "#0077CC" %}
+          {% elsif p_name == "storage" %}{% assign item_color = "#2EB88A" %}
+          {% elsif p_name == "support" %}{% assign item_color = "#DE5477" %}
+          {% elsif p_name == "network" %}{% assign item_color = "#F0B020" %}
+          {% else %}
+            {% assign item_color = "#98A2B3" %}
+            {% for itm in items %}
+              {% if itm == p_name %}
+                {% assign c_idx = forloop.index0 | modulo: 10 %}
+                {% assign item_color = colors[c_idx] %}
+              {% endif %}
+            {% endfor %}
+          {% endif %}"""
+    else:
+        palette_colors = (
+            "#0077CC,#2EB88A,#5B8FF9,#DE5477,#F0B020,#9972C4,#E0752F,#00BFB3,#1B85B8,#D36086"
+        )
+        legend_color_code = """\
+      {% assign c_idx = forloop.index0 | modulo: 10 %}
+      {% assign item_color = colors[c_idx] %}"""
+        seg_color_code = """\
+          {% assign item_color = "#0077CC" %}
+          {% for itm in items %}
+            {% if itm == p_name %}
+              {% assign c_idx = forloop.index0 | modulo: 10 %}
+              {% assign item_color = colors[c_idx] %}
+            {% endif %}
+          {% endfor %}"""
+
+    return f"""\
 {{% assign _total_rows = rows.size | default: 0 %}}
 {{% if _total_rows > 0 %}}
 <style>
-  .cb-hist-wrap {{
+  .cb-daily-wrap {{
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    align-items: stretch;
     height: 100%;
     min-height: 250px;
     font-family: inherit;
     box-sizing: border-box;
-    padding: 10px 14px 14px 14px;
+    padding: 10px 14px 14px 10px;
+    gap: 16px;
     overflow: hidden;
   }}
-  .cb-hist-head {{
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-bottom: 12px;
-  }}
-  .cb-hist-legend {{
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    font-size: 0.78rem;
-  }}
-  .cb-legend-item {{
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    font-weight: 500;
-    color: var(--cc-color-text, #1a1c21);
-  }}
-  .cb-legend-dot {{
-    width: 9px;
-    height: 9px;
-    border-radius: 2px;
-    display: inline-block;
-  }}
-  .cb-hist-body {{
+  .cb-daily-main {{
     display: flex;
     flex: 1;
     position: relative;
     min-height: 180px;
-    gap: 10px;
+    gap: 8px;
+    min-width: 0;
   }}
   .cb-hist-y {{
     display: flex;
@@ -891,30 +911,34 @@ DAILY_PROJECT_COST_TEMPLATE = f"""\
     color: var(--cc-color-text-secondary, #69707d);
     text-align: right;
     padding-right: 8px;
-    min-width: 55px;
+    min-width: 44px;
     border-right: 1px solid var(--cc-color-border, #d3dae6);
     user-select: none;
-    margin-bottom: 26px;
+    margin-top: 1px;
+    margin-bottom: 20px;
+    box-sizing: border-box;
   }}
   .cb-hist-plot {{
     display: flex;
     flex: 1;
     overflow-x: auto;
     position: relative;
+    min-width: 0;
   }}
   .cb-hist-canvas {{
     display: flex;
     align-items: flex-end;
-    gap: 12px;
+    justify-content: space-between;
     min-width: 100%;
     height: 100%;
     position: relative;
     padding-bottom: 26px;
+    padding-top: 6px;
     box-sizing: border-box;
   }}
   .cb-hist-grid {{
     position: absolute;
-    top: 0;
+    top: 6px;
     left: 0;
     right: 0;
     bottom: 26px;
@@ -937,27 +961,19 @@ DAILY_PROJECT_COST_TEMPLATE = f"""\
     flex-direction: column;
     align-items: center;
     flex: 1;
-    min-width: 44px;
-    max-width: 72px;
+    min-width: 14px;
+    max-width: 38px;
     height: 100%;
     justify-content: flex-end;
     position: relative;
     z-index: 1;
-  }}
-  .cb-col-tip {{
-    font-size: 0.68rem;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-    color: var(--cc-color-text-secondary, #69707d);
-    margin-bottom: 4px;
-    white-space: nowrap;
+    margin: 0 3px;
   }}
   .cb-hist-stack {{
     display: flex;
     flex-direction: column-reverse;
     width: 100%;
-    height: 100%;
-    border-radius: 4px 4px 0 0;
+    border-radius: 2px 2px 0 0;
     overflow: hidden;
   }}
   .cb-hist-seg {{
@@ -972,111 +988,212 @@ DAILY_PROJECT_COST_TEMPLATE = f"""\
   .cb-hist-date {{
     position: absolute;
     bottom: -22px;
-    font-size: 0.72rem;
+    font-size: 0.70rem;
     font-weight: 500;
     font-variant-numeric: tabular-nums;
     color: var(--cc-color-text-secondary, #69707d);
+    white-space: nowrap;
+    text-align: center;
+    left: 50%;
+    transform: translateX(-50%);
+  }}
+  .cb-daily-legend {{
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 12px;
+    min-width: 110px;
+    max-width: 145px;
+    padding-left: 6px;
+    box-sizing: border-box;
+    user-select: none;
+    overflow-y: auto;
+  }}
+  .cb-legend-item {{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.76rem;
+    font-weight: 500;
+    color: var(--cc-color-text, #1a1c21);
+  }}
+  .cb-legend-box {{
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    flex-shrink: 0;
+    display: inline-block;
+  }}
+  .cb-legend-label {{
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
   }}
 </style>
 {{% assign unit = rows[0]["unit"].value | default: "ECU" %}}
 {{% assign sym = rows[0]["currency_symbol"].value | default: unit %}}
-{{% assign colors = "#3274D9,#54B399,#E0752F,#8E63CE,#00BFB3,#F2BE42,#FA6E6E,#1B85B8,#11A987,#46B3A4" | split: "," %}}
+{{% assign colors = "{palette_colors}" | split: "," %}}
 
-{{% assign proj_str = "" %}}
+{{% assign item_str = "" %}}
+{{% assign b_str = "" %}}
 {{% assign max_day_cost = 1.0 %}}
 {{% for r in rows %}}
-  {{% assign pn = r["project"].value | default: "unknown" %}}
-  {{% unless proj_str contains pn %}}
-    {{% assign proj_str = proj_str | append: pn | append: "||" %}}
+  {{% assign itm = r["{group_field}"].value | default: "unknown" %}}
+  {{% unless item_str contains itm %}}
+    {{% assign item_str = item_str | append: itm | append: "||" %}}
+  {{% endunless %}}
+  {{% assign b_val = r["day"].value | default: "" %}}
+  {{% unless b_str contains b_val %}}
+    {{% assign b_str = b_str | append: b_val | append: "||" %}}
   {{% endunless %}}
   {{% assign dc = r["day_cost"].value | default: 0.0 %}}
   {{% if dc > max_day_cost %}}
     {{% assign max_day_cost = dc %}}
   {{% endif %}}
 {{% endfor %}}
-{{% assign projects = proj_str | split: "||" %}}
+{{% assign items = item_str | split: "||" %}}
+{{% assign all_b = b_str | split: "||" %}}
+{{% assign b_count = all_b.size | minus: 1 %}}
 
-{{% assign half_cost = max_day_cost | times: 0.5 %}}
-{liquid_money_block("max_day_cost", "fmt_max_cost", with_decimals=True)}
-{liquid_money_block("half_cost", "fmt_half_cost", with_decimals=True)}
+{{% if b_count <= 8 %}}
+  {{% assign step_mod = 1 %}}
+{{% elsif b_count <= 16 %}}
+  {{% assign step_mod = 2 %}}
+{{% elsif b_count <= 24 %}}
+  {{% assign step_mod = 3 %}}
+{{% else %}}
+  {{% assign step_mod = 4 %}}
+{{% endif %}}
 
-<div class="cb-hist-wrap">
-  <div class="cb-hist-head">
-    <div class="cb-hist-legend">
-      {{% for p in projects %}}
-        {{% if p != "" %}}
-          {{% assign c_idx = forloop.index0 | modulo: 10 %}}
-          <div class="cb-legend-item">
-            <span class="cb-legend-dot" style="background: {{{{ colors[c_idx] }}}};"></span>
-            <span>{{{{ p }}}}</span>
-          </div>
-        {{% endif %}}
-      {{% endfor %}}
-    </div>
-  </div>
-  <div class="cb-hist-body">
+{{% assign raw_top = max_day_cost | times: 1.15 %}}
+{{% if raw_top <= 4 %}}{{% assign y_top = 4 }}
+{{% elsif raw_top <= 8 %}}{{% assign y_top = 8 }}
+{{% elsif raw_top <= 16 %}}{{% assign y_top = 16 }}
+{{% elsif raw_top <= 40 %}}{{% assign y_top = 40 }}
+{{% elsif raw_top <= 80 %}}{{% assign y_top = 80 }}
+{{% elsif raw_top <= 120 %}}{{% assign y_top = 120 }}
+{{% elsif raw_top <= 200 %}}{{% assign y_top = 200 }}
+{{% elsif raw_top <= 320 %}}{{% assign y_top = 320 }}
+{{% elsif raw_top <= 480 %}}{{% assign y_top = 480 }}
+{{% elsif raw_top <= 800 %}}{{% assign y_top = 800 }}
+{{% elsif raw_top <= 1200 %}}{{% assign y_top = 1200 }}
+{{% elsif raw_top <= 2000 %}}{{% assign y_top = 2000 }}
+{{% elsif raw_top <= 4000 %}}{{% assign y_top = 4000 }}
+{{% elsif raw_top <= 8000 %}}{{% assign y_top = 8000 }}
+{{% elsif raw_top <= 20000 %}}{{% assign y_top = 20000 }}
+{{% elsif raw_top <= 40000 %}}{{% assign y_top = 40000 }}
+{{% else %}}
+  {{% assign y_top = raw_top | divided_by: 10000 | floor | plus: 1 | times: 10000 }}
+{{% endif %}}
+{{% assign y_1 = y_top | times: 0.25 | round %}}
+{{% assign y_2 = y_top | times: 0.50 | round %}}
+{{% assign y_3 = y_top | times: 0.75 | round %}}
+{{% assign y_4 = y_top %}}
+
+{liquid_money_block("y_4", "fmt_y_4", with_decimals=False)}
+{liquid_money_block("y_3", "fmt_y_3", with_decimals=False)}
+{liquid_money_block("y_2", "fmt_y_2", with_decimals=False)}
+{liquid_money_block("y_1", "fmt_y_1", with_decimals=False)}
+
+{{% assign m_arr = "Jan,Feb,Mar,Apr,May,Jun,Jul,Aug,Sep,Oct,Nov,Dec" | split: "," %}}
+
+<div class="cb-daily-wrap">
+  <div class="cb-daily-main">
     <div class="cb-hist-y">
-      <div>{{{{ sym }}}}{{{{ fmt_max_cost }}}}</div>
-      <div>{{{{ sym }}}}{{{{ fmt_half_cost }}}}</div>
-      <div>0</div>
+      <div>{{{{ sym }}}}{{{{ fmt_y_4 }}}}</div>
+      <div>{{{{ sym }}}}{{{{ fmt_y_3 }}}}</div>
+      <div>{{{{ sym }}}}{{{{ fmt_y_2 }}}}</div>
+      <div>{{{{ sym }}}}{{{{ fmt_y_1 }}}}</div>
+      <div>{{{{ sym }}}}0</div>
     </div>
     <div class="cb-hist-plot">
       <div class="cb-hist-canvas">
         <div class="cb-hist-grid">
           <div class="cb-grid-line"></div>
           <div class="cb-grid-line"></div>
+          <div class="cb-grid-line"></div>
+          <div class="cb-grid-line"></div>
           <div class="cb-grid-line cb-grid-line-zero"></div>
         </div>
         {{% assign cur_bucket = "" %}}
+        {{% assign cur_label = "" %}}
+        {{% assign b_idx = -1 %}}
         {{% for r in rows %}}
           {{% assign b_raw = r["day"].value | default: "" %}}
           {{% if b_raw != cur_bucket %}}
             {{% if cur_bucket != "" %}}
                 </div>
-                <div class="cb-hist-date">{{{{ cur_label }}}}</div>
+                {{% assign show_lbl = b_idx | modulo: step_mod %}}
+                {{% if show_lbl == 0 %}}
+                  <div class="cb-hist-date">{{{{ cur_label }}}}</div>
+                {{% endif %}}
               </div>
             {{% endif %}}
             {{% assign cur_bucket = b_raw %}}
+            {{% assign b_idx = b_idx | plus: 1 %}}
             {{% assign time_sub = cur_bucket | slice: 11, 8 %}}
             {{% if time_sub == "00:00:00" or time_sub == "" %}}
-              {{% assign cur_label = cur_bucket | slice: 5, 5 %}}
+              {{% assign m_idx = cur_bucket | slice: 5, 2 | plus: 0 | minus: 1 %}}
+              {{% assign m_name = m_arr[m_idx] | default: "" %}}
+              {{% assign d_num = cur_bucket | slice: 8, 2 | plus: 0 %}}
+              {{% if m_name != "" %}}
+                {{% assign cur_label = m_name | append: " " | append: d_num %}}
+              {{% else %}}
+                {{% assign cur_label = cur_bucket | slice: 5, 5 %}}
+              {{% endif %}}
               {{% assign cur_tip = cur_bucket | slice: 0, 10 %}}
             {{% else %}}
               {{% assign cur_label = cur_bucket | slice: 11, 5 %}}
               {{% assign cur_tip = cur_bucket | slice: 0, 16 | replace: "T", " " %}}
             {{% endif %}}
             {{% assign d_cost = r["day_cost"].value | default: 0.0 %}}
+            {{% assign stack_pct = d_cost | times: 100.0 | divided_by: y_top | round: 2 %}}
+            {{% if stack_pct > 100.0 %}}{{% assign stack_pct = 100.0 %}}{{% endif %}}
             {liquid_money_block("d_cost", "fmt_d_cost", with_decimals=True)}
             <div class="cb-hist-col" title="{{{{ cur_tip }}}}: {{{{ sym }}}}{{{{ fmt_d_cost }}}}">
-              <div class="cb-col-tip">{{{{ sym }}}}{{{{ fmt_d_cost }}}}</div>
-              <div class="cb-hist-stack">
+              <div class="cb-hist-stack" style="height: {{{{ stack_pct }}}}%;">
           {{% endif %}}
           {{% assign p_cost = r["cost"].value | default: 0.0 %}}
-          {{% assign p_pct = p_cost | times: 100.0 | divided_by: max_day_cost | round: 2 %}}
-          {{% if p_pct < 0.5 and p_cost > 0 %}}{{% assign p_pct = 0.5 %}}{{% endif %}}
-          {{% assign p_name = r["project"].value | default: "unknown" %}}
-          {{% assign p_color = "#3274D9" %}}
-          {{% for p in projects %}}
-            {{% if p == p_name %}}
-              {{% assign c_idx = forloop.index0 | modulo: 10 %}}
-              {{% assign p_color = colors[c_idx] %}}
-            {{% endif %}}
-          {{% endfor %}}
-          {liquid_money_block("p_cost", "fmt_p_cost", with_decimals=True)}
-          <div class="cb-hist-seg" style="height: {{{{ p_pct }}}}%; background: {{{{ p_color }}}};" title="{{{{ p_name }}}}: {{{{ sym }}}}{{{{ fmt_p_cost }}}} ({{{{ cur_tip }}}})"></div>
+          {{% assign p_name = r["{group_field}"].value | default: "unknown" %}}
+          {{% assign seg_pct = 0.0 %}}
+          {{% if d_cost > 0 %}}
+            {{% assign seg_pct = p_cost | times: 100.0 | divided_by: d_cost | round: 2 %}}
+          {{% endif %}}
+          {{% if seg_pct > 0 %}}
+{seg_color_code}
+            {liquid_money_block("p_cost", "fmt_p_cost", with_decimals=True)}
+            <div class="cb-hist-seg" style="flex: 0 0 {{{{ seg_pct }}}}%; height: {{{{ seg_pct }}}}%; background: {{{{ item_color }}}};" title="{{{{ p_name }}}}: {{{{ sym }}}}{{{{ fmt_p_cost }}}} ({{{{ cur_tip }}}})"></div>
+          {{% endif %}}
         {{% endfor %}}
         {{% if cur_bucket != "" %}}
             </div>
-            <div class="cb-hist-date">{{{{ cur_label }}}}</div>
+            {{% assign show_lbl = b_idx | modulo: step_mod %}}
+            {{% if show_lbl == 0 %}}
+              <div class="cb-hist-date">{{{{ cur_label }}}}</div>
+            {{% endif %}}
           </div>
         {{% endif %}}
       </div>
     </div>
   </div>
+  <div class="cb-daily-legend">
+    {{% for itm in items %}}
+      {{% if itm != "" %}}
+{legend_color_code}
+        <div class="cb-legend-item">
+          <span class="cb-legend-box" style="background: {{{{ item_color }}}};"></span>
+          <span class="cb-legend-label" title="{{{{ itm }}}}">{{{{ itm }}}}</span>
+        </div>
+      {{% endif %}}
+    {{% endfor %}}
+  </div>
 </div>
 {{% endif %}}
 """
+
+
+DAILY_PROJECT_COST_TEMPLATE = make_daily_cost_template("project", is_category=False)
+DAILY_CATEGORY_COST_TEMPLATE = make_daily_cost_template("category", is_category=True)
 
 
 def make_bar_template(label_key: str, label_header: str) -> str:
@@ -1523,12 +1640,34 @@ def build_billing() -> dict:
 | STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY b = BUCKET(@timestamp, 30, ?_tstart, ?_tend), project
 | EVAL day = TO_STRING(b)
 | INLINE STATS day_cost = SUM(cost) BY day
-| SORT day ASC, cost DESC
+| INLINE STATS proj_total = SUM(cost) BY project
+| SORT day ASC, proj_total DESC, project ASC
 | LIMIT 500
 | KEEP day, project, cost, day_cost, currency_symbol, unit""",
         0,
         8,
-        48,
+        24,
+        14,
+    )
+    panels.append(p)
+
+    p, _ = custom_panel(
+        stable_uuid("cc-billing-daily-category"),
+        "Daily cost by cost category",
+        DAILY_CATEGORY_COST_TEMPLATE,
+        f"""{COST_PRELUDE}
+| WHERE @timestamp >= ?_tstart AND @timestamp <= ?_tend
+| STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY b = BUCKET(@timestamp, 30, ?_tstart, ?_tend), category_label
+| RENAME category_label AS category
+| EVAL day = TO_STRING(b)
+| INLINE STATS day_cost = SUM(cost) BY day
+| EVAL cat_order = CASE(category == "compute", 1, category == "storage", 2, category == "support", 3, category == "network", 4, 5)
+| SORT day ASC, cat_order ASC, cost DESC
+| LIMIT 500
+| KEEP day, category, cost, day_cost, currency_symbol, unit""",
+        24,
+        8,
+        24,
         14,
     )
     panels.append(p)
