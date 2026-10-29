@@ -31,7 +31,7 @@ HUB_ES_API_KEY = get_env("HUB_ES_API_KEY") or ES_API_KEY
 BILLING_API_BASE = get_env("BILLING_API_BASE", "https://billing.elastic-cloud.com").rstrip("/")
 CLOUD_API_BASE = get_env("CLOUD_API_BASE", "https://api.elastic-cloud.com").rstrip("/")
 
-LOOKBEHIND = int(get_env("LOOKBEHIND", "30") or 30)
+LOOKBEHIND = int(get_env("LOOKBEHIND", "60") or 60)
 CONF_RATE = float(get_env("CONF_RATE", "1.0") or 1.0)
 CONF_RATE_UNIT = get_env("CONF_RATE_UNIT", "USD") or "USD"
 CONF_CURRENCY_SYMBOL = get_env("CONF_CURRENCY_SYMBOL", "$") or "$"
@@ -498,8 +498,6 @@ def main():
                 "es_url": es_endpoint,
                 "last_status": harvest_status,
                 "index_count": len(indices),
-                "datastream_count": len(ds_map),
-                "total_size_bytes": proj_total_size,
                 "updated_at": ts_now,
                 "conf_chargeable_unit_rate": CONF_RATE,
                 "conf_chargeable_unit_rate_unit": CONF_RATE_UNIT,

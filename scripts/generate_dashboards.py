@@ -114,7 +114,7 @@ def links_panel(panel_id: str, current: str) -> tuple[dict, list]:
                 "options": {
                     "openInNewTab": False,
                     "useCurrentDateRange": True,
-                    "useCurrentFilters": True,
+                    "useCurrentFilters": False,
                 },
                 "order": order,
                 "type": "dashboardLink",
@@ -425,6 +425,16 @@ PAGED_BASE_CSS = """\
     cursor: not-allowed !important;
     pointer-events: none !important;
   }
+  .cb-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 12px;
+    font-size: 0.84rem;
+    color: var(--cc-color-text);
+    opacity: 0.65;
+    text-align: center;
+  }
 """
 
 
@@ -512,15 +522,17 @@ BILLING_KPI_TEMPLATE = f"""\
 {{% assign total = r["total_spend"].value | default: 0.0 %}}
 {{% assign alloc = r["allocatable_spend"].value | default: 0.0 %}}
 {{% assign unalloc = r["unallocatable_spend"].value | default: 0.0 %}}
-{{% assign unit = r["unit"].value | default: "ECU" %}}
-{{% assign sym = r["currency_symbol"].value | default: unit %}}
+{{% assign unit = r["unit"].value | default: "USD" %}}
+{{% assign sym = r["currency_symbol"].value | default: "$" %}}
 {{% assign denom = total %}}
 {{% if denom <= 0 %}}{{% assign denom = 1.0 %}}{{% endif %}}
-{{% assign alloc_pct = alloc | times: 100.0 | divided_by: denom | round %}}
-{{% assign unalloc_pct = unalloc | times: 100.0 | divided_by: denom | round %}}
-{liquid_money_block("total", "fmt_total", with_decimals=False)}
-{liquid_money_block("alloc", "fmt_alloc", with_decimals=False)}
-{liquid_money_block("unalloc", "fmt_unalloc", with_decimals=False)}
+{{% assign alloc_pct = alloc | times: 100.0 | divided_by: denom | round: 1 %}}
+{{% assign unalloc_pct = unalloc | times: 100.0 | divided_by: denom | round: 1 %}}
+{{% assign l_day = r["latest_day"].value | default: "" | slice: 0, 10 %}}
+{{% if l_day == "" or l_day == "null" %}}{{% assign l_day = "—" %}}{{% endif %}}
+{liquid_money_block("total", "fmt_total", with_decimals=True)}
+{liquid_money_block("alloc", "fmt_alloc", with_decimals=True)}
+{liquid_money_block("unalloc", "fmt_unalloc", with_decimals=True)}
 <div class="cb-kpis">
   <div class="cb-kpi">
     <div class="cb-kpi-label">Total Spend ({{{{ unit }}}})</div>
@@ -549,7 +561,7 @@ BILLING_KPI_TEMPLATE = f"""\
   </div>
   <div class="cb-kpi">
     <div class="cb-kpi-label">Latest Billed Day</div>
-    <div class="cb-kpi-value">{{{{ r["latest_day"].value | default: "—" | slice: 0, 10 }}}}</div>
+    <div class="cb-kpi-value">{{{{ l_day }}}}</div>
     <div class="cb-kpi-sub">UTC invoice snapshot</div>
   </div>
 </div>
@@ -575,17 +587,17 @@ USAGE_KPI_TEMPLATE = f"""\
 {{% assign idx_s = r["indexing_spend"].value | default: 0.0 %}}
 {{% assign qry_s = r["query_spend"].value | default: 0.0 %}}
 {{% assign stg_s = r["storage_spend"].value | default: 0.0 %}}
-{{% assign unit = r["unit"].value | default: "ECU" %}}
-{{% assign sym = r["currency_symbol"].value | default: unit %}}
+{{% assign unit = r["unit"].value | default: "USD" %}}
+{{% assign sym = r["currency_symbol"].value | default: "$" %}}
 {{% assign denom = pool %}}
 {{% if denom <= 0 %}}{{% assign denom = 1.0 %}}{{% endif %}}
-{{% assign idx_pct = idx_s | times: 100.0 | divided_by: denom | round %}}
-{{% assign qry_pct = qry_s | times: 100.0 | divided_by: denom | round %}}
-{{% assign stg_pct = stg_s | times: 100.0 | divided_by: denom | round %}}
-{liquid_money_block("pool", "fmt_pool", with_decimals=False)}
-{liquid_money_block("idx_s", "fmt_idx_s", with_decimals=False)}
-{liquid_money_block("qry_s", "fmt_qry_s", with_decimals=False)}
-{liquid_money_block("stg_s", "fmt_stg_s", with_decimals=False)}
+{{% assign idx_pct = idx_s | times: 100.0 | divided_by: denom | round: 1 %}}
+{{% assign qry_pct = qry_s | times: 100.0 | divided_by: denom | round: 1 %}}
+{{% assign stg_pct = stg_s | times: 100.0 | divided_by: denom | round: 1 %}}
+{liquid_money_block("pool", "fmt_pool", with_decimals=True)}
+{liquid_money_block("idx_s", "fmt_idx_s", with_decimals=True)}
+{liquid_money_block("qry_s", "fmt_qry_s", with_decimals=True)}
+{liquid_money_block("stg_s", "fmt_stg_s", with_decimals=True)}
 <div class="cb-kpis">
   <div class="cb-kpi">
     <div class="cb-kpi-label">Total Allocatable Pool ({{{{ unit }}}})</div>
@@ -600,7 +612,7 @@ USAGE_KPI_TEMPLATE = f"""\
   <div class="cb-kpi">
     <div class="cb-kpi-label">Search &amp; Query Pool ({{{{ unit }}}})</div>
     <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_qry_s }}}}</span></div>
-    <div class="cb-kpi-sub">{{{{ qry_pct }}}}% · search-vcu + ml-vcu</div>
+    <div class="cb-kpi-sub">{{{{ qry_pct }}}}% · search-vcu</div>
   </div>
   <div class="cb-kpi">
     <div class="cb-kpi-label">Storage Pool ({{{{ unit }}}})</div>
@@ -631,11 +643,14 @@ SANKEY_TEMPLATE = f"""\
   .cb-cost {{ text-align: right; font-variant-numeric: tabular-nums; font-size: 0.88rem; white-space: nowrap; color: var(--cc-color-text); }}
   .cb-sym {{ font-weight: 500; opacity: 0.85; margin-right: 2px; }}
 </style>
-{{% assign unit = rows[0]["unit"].value | default: "ECU" %}}
-{{% assign sym = rows[0]["currency_symbol"].value | default: unit %}}
+{{% assign unit = rows[0]["unit"].value | default: "USD" %}}
+{{% assign sym = rows[0]["currency_symbol"].value | default: "$" %}}
 {{% assign max_cost = rows[0]["cost"].value | default: 1.0 %}}
 {{% if max_cost <= 0 %}}{{% assign max_cost = 1.0 %}}{{% endif %}}
 {paged_top("sankey", 10, 6)}
+{{% if _total_items == 0 %}}
+  <div class="cb-empty">No billing spend flows recorded in the selected time range.</div>
+{{% else %}}
 <div class="cb-flow">
 {{% for row in rows %}}
   {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
@@ -651,55 +666,55 @@ SANKEY_TEMPLATE = f"""\
   </div>
 {{% endfor %}}
 </div>
+{{% endif %}}
 {paged_bottom("sankey")}
 """
 
 
 AI_KPIS_TEMPLATE = f"""\
 <style>
-  .cb-ai-kpis {{
+  .cb-kpis {{
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: var(--cc-space-m, 16px);
-    font-family: inherit;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: var(--cc-space-s, 8px);
+    margin: 0 0 14px 0;
+    padding: 0 0 8px 0;
   }}
-  .cb-ai-card {{
+  .cb-kpi {{
     background: var(--cc-color-surface);
     border: 1px solid var(--cc-color-border);
     border-radius: var(--cc-radius);
     padding: 10px 14px 12px 14px;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
   }}
-  .cb-ai-label {{
+  .cb-kpi-label {{
     font-size: 0.78rem;
-    font-weight: 600;
     color: var(--cc-color-text);
     opacity: 0.72;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
-    margin-bottom: 8px;
+    letter-spacing: 0.03em;
     line-height: 1.1;
   }}
-  .cb-ai-val {{
-    font-size: 1.65rem;
-    font-weight: 700;
-    line-height: 1.2;
+  .cb-kpi-value {{
+    font-size: 1.45rem;
+    font-weight: 600;
+    margin-top: 4px;
+    line-height: 1.1;
     color: var(--cc-color-text);
     font-variant-numeric: tabular-nums;
+    display: flex;
+    align-items: baseline;
   }}
-  .cb-ai-val .sym {{
-    font-size: 1.1rem;
+  .cb-sym {{
+    font-size: 1.05rem;
     font-weight: 500;
-    opacity: 0.75;
-    margin-right: 2px;
+    opacity: 0.85;
+    margin-right: 4px;
   }}
-  .cb-ai-sub {{
-    font-size: 0.78rem;
+  .cb-kpi-sub {{
+    font-size: 0.75rem;
     color: var(--cc-color-text);
     opacity: 0.68;
-    margin-top: 8px;
+    margin-top: 4px;
     display: flex;
     align-items: center;
     gap: 4px;
@@ -709,14 +724,14 @@ AI_KPIS_TEMPLATE = f"""\
     display: inline-block;
     padding: 1px 6px;
     border-radius: 10px;
-    font-size: 0.7rem;
+    font-size: 0.68rem;
     font-weight: 600;
     background: color-mix(in srgb, var(--cc-color-primary) 15%, transparent);
     color: var(--cc-color-primary);
   }}
 </style>
-{{% assign unit = rows[0]["unit"].value | default: "ECU" %}}
-{{% assign sym = rows[0]["currency_symbol"].value | default: unit %}}
+{{% assign unit = rows[0]["unit"].value | default: "USD" %}}
+{{% assign sym = rows[0]["currency_symbol"].value | default: "$" %}}
 {{% assign ai_spend = rows[0]["ai_spend"].value | default: 0.0 %}}
 {{% assign inf_count = rows[0]["total_inferences"].value | default: 0 %}}
 {{% assign avg_latency = rows[0]["avg_latency_ms"].value | default: 0.0 | round: 1 %}}
@@ -726,26 +741,26 @@ AI_KPIS_TEMPLATE = f"""\
 {liquid_money_block("inf_count", "fmt_inf_count", with_decimals=False)}
 {liquid_money_block("cost_per_k", "fmt_cost_per_k", with_decimals=True)}
 
-<div class="cb-ai-kpis">
-  <div class="cb-ai-card">
-    <div class="cb-ai-label">Total AI &amp; ML Spend</div>
-    <div class="cb-ai-val"><span class="sym">{{{{ sym }}}}</span>{{{{ fmt_ai_spend }}}}</div>
-    <div class="cb-ai-sub"><span class="cb-ai-pill">ml-vcu + inference</span> attributable</div>
+<div class="cb-kpis">
+  <div class="cb-kpi">
+    <div class="cb-kpi-label">Total AI &amp; ML Spend ({{{{ unit }}}})</div>
+    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_ai_spend }}}}</span></div>
+    <div class="cb-kpi-sub"><span class="cb-ai-pill">ml-vcu + inference</span> · query pool fallback</div>
   </div>
-  <div class="cb-ai-card">
-    <div class="cb-ai-label">Inference Volume</div>
-    <div class="cb-ai-val">{{{{ fmt_inf_count }}}}</div>
-    <div class="cb-ai-sub">Total model inference calls</div>
+  <div class="cb-kpi">
+    <div class="cb-kpi-label">Inference Volume</div>
+    <div class="cb-kpi-value">{{{{ fmt_inf_count }}}}</div>
+    <div class="cb-kpi-sub">Total model inference calls</div>
   </div>
-  <div class="cb-ai-card">
-    <div class="cb-ai-label">Avg Model Latency</div>
-    <div class="cb-ai-val">{{{{ avg_latency }}}} <span style="font-size: 1rem; font-weight: 500;">ms</span></div>
-    <div class="cb-ai-sub">Compute execution speed</div>
+  <div class="cb-kpi">
+    <div class="cb-kpi-label">Avg Model Latency</div>
+    <div class="cb-kpi-value">{{{{ avg_latency }}}} <span style="font-size: 0.95rem; font-weight: 500; margin-left: 4px; opacity: 0.85;">ms</span></div>
+    <div class="cb-kpi-sub">Compute execution speed</div>
   </div>
-  <div class="cb-ai-card">
-    <div class="cb-ai-label">Unit Cost (1k Inferences)</div>
-    <div class="cb-ai-val"><span class="sym">{{{{ sym }}}}</span>{{{{ fmt_cost_per_k }}}}</div>
-    <div class="cb-ai-sub">Effective unit economics</div>
+  <div class="cb-kpi">
+    <div class="cb-kpi-label">Unit Cost (1k Inferences)</div>
+    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_cost_per_k }}}}</span></div>
+    <div class="cb-kpi-sub">Effective unit economics</div>
   </div>
 </div>
 """
@@ -818,14 +833,15 @@ AI_MODELS_TEMPLATE = f"""\
     height: 100%;
     background: var(--cc-vis-0);
     border-radius: 6px;
+    min-width: 2px;
   }}
   .cb-num {{
     text-align: right;
     font-variant-numeric: tabular-nums;
   }}
 </style>
-{{% assign unit = rows[0]["unit"].value | default: "ECU" %}}
-{{% assign sym = rows[0]["currency_symbol"].value | default: unit %}}
+{{% assign unit = rows[0]["unit"].value | default: "USD" %}}
+{{% assign sym = rows[0]["currency_symbol"].value | default: "$" %}}
 {{% assign max_time = rows[0]["total_compute"].value | default: 1.0 %}}
 {{% if max_time <= 0 %}}{{% assign max_time = 1.0 %}}{{% endif %}}
 {{% assign tot_compute = 0.0 %}}
@@ -841,8 +857,11 @@ AI_MODELS_TEMPLATE = f"""\
     <div>Task Type</div>
     <div>Compute Allocation Share</div>
     <div class="num">Inferences</div>
-    <div class="num">Attributed Cost</div>
+    <div class="num">Attributed Cost ({{{{ unit }}}})</div>
   </div>
+{{% if _total_items == 0 %}}
+  <div class="cb-empty">No AI model inferences recorded in the selected time range.</div>
+{{% else %}}
 {{% for r in rows %}}
   {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
   {{% assign c_time = r["total_compute"].value | default: 0 %}}
@@ -870,6 +889,7 @@ AI_MODELS_TEMPLATE = f"""\
     <div class="cb-num" style="font-weight: 600;"><span style="font-size:0.8rem; opacity:0.8;">{{{{ sym }}}}</span> {{{{ fmt_cost }}}}</div>
   </div>
 {{% endfor %}}
+{{% endif %}}
 </div>
 {paged_bottom("aimod")}
 """
@@ -1033,14 +1053,14 @@ def make_daily_cost_template(group_field: str, header_label: str = "Project", is
     display: flex;
     flex-direction: column;
     align-items: center;
-    flex: 1;
-    min-width: 14px;
+    flex: 1 1 0;
+    min-width: 4px;
     max-width: 38px;
     height: 100%;
     justify-content: flex-end;
     position: relative;
     z-index: 1;
-    margin: 0 3px;
+    margin: 0 1px;
   }}
   .cb-hist-stack {{
     display: flex;
@@ -1123,16 +1143,18 @@ def make_daily_cost_template(group_field: str, header_label: str = "Project", is
 {{% endfor %}}
 {{% assign colors = "{palette_colors}" | split: "," %}}
 
-{{% assign item_str = "" %}}
-{{% assign b_str = "" %}}
+{{% assign item_str = "||" %}}
+{{% assign b_str = "||" %}}
 {{% assign max_day_cost = 1.0 %}}
 {{% for r in rows %}}
   {{% assign itm = r["{group_field}"].value | default: "unknown" %}}
-  {{% unless item_str contains itm %}}
+  {{% assign itm_tok = "||" | append: itm | append: "||" %}}
+  {{% unless item_str contains itm_tok %}}
     {{% assign item_str = item_str | append: itm | append: "||" %}}
   {{% endunless %}}
   {{% assign b_val = r["day"].value | default: "" %}}
-  {{% unless b_str contains b_val %}}
+  {{% assign b_tok = "||" | append: b_val | append: "||" %}}
+  {{% unless b_str contains b_tok %}}
     {{% assign b_str = b_str | append: b_val | append: "||" %}}
   {{% endunless %}}
   {{% assign dc = r["day_cost"].value | default: 0.0 %}}
@@ -1140,8 +1162,8 @@ def make_daily_cost_template(group_field: str, header_label: str = "Project", is
     {{% assign max_day_cost = dc %}}
   {{% endif %}}
 {{% endfor %}}
-{{% assign items = item_str | split: "||" %}}
-{{% assign all_b = b_str | split: "||" %}}
+{{% assign items = item_str | remove_first: "||" | split: "||" %}}
+{{% assign all_b = b_str | remove_first: "||" | split: "||" %}}
 {{% assign b_count = all_b.size | minus: 1 %}}
 
 {{% if b_count <= 8 %}}
@@ -1150,8 +1172,15 @@ def make_daily_cost_template(group_field: str, header_label: str = "Project", is
   {{% assign step_mod = 2 %}}
 {{% elsif b_count <= 24 %}}
   {{% assign step_mod = 3 %}}
+{{% elsif b_count <= 35 %}}
+  {{% assign step_mod = 5 %}}
+{{% elsif b_count <= 50 %}}
+  {{% assign step_mod = 7 %}}
+{{% elsif b_count <= 75 %}}
+  {{% assign step_mod = 10 %}}
 {{% else %}}
-  {{% assign step_mod = 4 %}}
+  {{% assign step_mod = b_count | divided_by: 6 | floor %}}
+  {{% if step_mod < 10 %}}{{% assign step_mod = 10 %}}{{% endif %}}
 {{% endif %}}
 
 {{% assign raw_top = max_day_cost | times: 1.15 %}}
@@ -1188,9 +1217,9 @@ def make_daily_cost_template(group_field: str, header_label: str = "Project", is
 
 <div class="cb-daily-container">
   <div class="cb-daily-head">
-    <div>{header_label}</div>
+    <div>Cost ({{{{ unit }}}})</div>
     <div></div>
-    <div class="num">Cost ({{{{ unit }}}})</div>
+    <div class="num">{header_label}</div>
   </div>
   <div class="cb-daily-wrap">
     <div class="cb-daily-main">
@@ -1284,6 +1313,9 @@ def make_daily_cost_template(group_field: str, header_label: str = "Project", is
     </div>
   </div>
 </div>
+{{% else %}}
+<style>.cb-empty {{ display:flex; align-items:center; justify-content:center; height:100%; min-height:200px; font-size:0.84rem; color:var(--cc-color-text); opacity:0.65; }}</style>
+<div class="cb-empty">No daily cost data in the selected time range.</div>
 {{% endif %}}
 """
 
@@ -1325,8 +1357,8 @@ def make_bar_template(label_key: str, label_header: str) -> str:
   .cb-bar-val {{ text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--cc-color-text); }}
   .cb-sym {{ font-weight: 500; opacity: 0.85; margin-right: 2px; }}
 </style>
-{{% assign unit = rows[0]["unit"].value | default: "ECU" %}}
-{{% assign sym = rows[0]["currency_symbol"].value | default: unit %}}
+{{% assign unit = rows[0]["unit"].value | default: "USD" %}}
+{{% assign sym = rows[0]["currency_symbol"].value | default: "$" %}}
 {{% assign max_cost = rows[0]["cost"].value | default: 1.0 %}}
 {{% if max_cost <= 0 %}}{{% assign max_cost = 1.0 %}}{{% endif %}}
 {paged_top(pfx, 10, 8)}
@@ -1336,6 +1368,9 @@ def make_bar_template(label_key: str, label_header: str) -> str:
     <div>Share</div>
     <div class="num">Cost ({{{{ unit }}}})</div>
   </div>
+{{% if _total_items == 0 %}}
+  <div class="cb-empty">No data in the selected time range.</div>
+{{% else %}}
 {{% for row in rows %}}
   {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
   {{% assign cost = row["cost"].value | default: 0.0 %}}
@@ -1347,6 +1382,7 @@ def make_bar_template(label_key: str, label_header: str) -> str:
     <div class="cb-bar-val"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_cost }}}}</span></div>
   </div>
 {{% endfor %}}
+{{% endif %}}
 </div>
 {paged_bottom(pfx)}
 """
@@ -1367,14 +1403,17 @@ UNALLOC_TABLE_TEMPLATE = f"""\
   table.cb-t th.num, table.cb-t td.num {{ text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }}
   .cb-sym {{ font-weight: 500; opacity: 0.85; margin-right: 2px; }}
 </style>
-{{% assign unit = rows[0]["unit"].value | default: "ECU" %}}
-{{% assign sym = rows[0]["currency_symbol"].value | default: unit %}}
+{{% assign unit = rows[0]["unit"].value | default: "USD" %}}
+{{% assign sym = rows[0]["currency_symbol"].value | default: "$" %}}
 {paged_top("unalloc", 10, 10)}
 <table class="cb-t">
   <thead>
     <tr><th>Category</th><th>Cost Type</th><th>SKU</th><th>Project</th><th class="num">Units (ECU)</th><th class="num">Cost ({{{{ unit }}}})</th></tr>
   </thead>
   <tbody>
+  {{% if _total_items == 0 %}}
+    <tr><td colspan="6" class="cb-empty">No unallocatable or pass-through charges in the selected time range.</td></tr>
+  {{% else %}}
   {{% for row in rows %}}
     {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
     {{% assign cost = row["cost"].value | default: 0.0 %}}
@@ -1390,6 +1429,7 @@ UNALLOC_TABLE_TEMPLATE = f"""\
       <td class="num"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_cost }}}}</span></td>
     </tr>
   {{% endfor %}}
+  {{% endif %}}
   </tbody>
 </table>
 {paged_bottom("unalloc")}
@@ -1411,14 +1451,17 @@ INVOICE_TABLE_TEMPLATE = f"""\
   table.cb-t th.num, table.cb-t td.num {{ text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }}
   .cb-sym {{ font-weight: 500; opacity: 0.85; margin-right: 2px; }}
 </style>
-{{% assign unit = rows[0]["unit"].value | default: "ECU" %}}
-{{% assign sym = rows[0]["currency_symbol"].value | default: unit %}}
+{{% assign unit = rows[0]["unit"].value | default: "USD" %}}
+{{% assign sym = rows[0]["currency_symbol"].value | default: "$" %}}
 {paged_top("inv", 10, 25)}
 <table class="cb-t">
   <thead>
     <tr><th>Project</th><th>Type</th><th>Category</th><th>Cost Type</th><th>SKU</th><th>Driver</th><th class="num">Quantity</th><th class="num">Units (ECU)</th><th class="num">Cost ({{{{ unit }}}})</th></tr>
   </thead>
   <tbody>
+  {{% if _total_items == 0 %}}
+    <tr><td colspan="9" class="cb-empty">No invoice line items in the selected time range.</td></tr>
+  {{% else %}}
   {{% for row in rows %}}
     {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
     {{% assign cost = row["cost"].value | default: 0.0 %}}
@@ -1439,6 +1482,7 @@ INVOICE_TABLE_TEMPLATE = f"""\
       <td class="num"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_cost }}}}</span></td>
     </tr>
   {{% endfor %}}
+  {{% endif %}}
   </tbody>
 </table>
 {paged_bottom("inv")}
@@ -1460,14 +1504,17 @@ DATASTREAM_COST_TABLE_TEMPLATE = f"""\
   table.cb-t th.num, table.cb-t td.num {{ text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }}
   .cb-sym {{ font-weight: 500; opacity: 0.85; margin-right: 2px; }}
 </style>
-{{% assign unit = rows[0]["unit"].value | default: "ECU" %}}
-{{% assign sym = rows[0]["currency_symbol"].value | default: unit %}}
+{{% assign unit = rows[0]["unit"].value | default: "USD" %}}
+{{% assign sym = rows[0]["currency_symbol"].value | default: "$" %}}
 {paged_top("dscost", 10, 25)}
 <table class="cb-t">
   <thead>
     <tr><th>Project</th><th>Project Type</th><th>Type</th><th>Namespace</th><th>Data Stream</th><th class="num">Indexing ({{{{ sym }}}})</th><th class="num">Search ({{{{ sym }}}})</th><th class="num">Storage ({{{{ sym }}}})</th><th class="num">Attributed Cost ({{{{ unit }}}})</th></tr>
   </thead>
   <tbody>
+  {{% if _total_items == 0 %}}
+    <tr><td colspan="9" class="cb-empty">No data stream usage attribution data in the selected time range.</td></tr>
+  {{% else %}}
   {{% for row in rows %}}
     {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
     {{% assign idx = row["indexing_cost"].value | default: 0.0 %}}
@@ -1490,6 +1537,7 @@ DATASTREAM_COST_TABLE_TEMPLATE = f"""\
       <td class="num"><strong><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_total }}}}</span></strong></td>
     </tr>
   {{% endfor %}}
+  {{% endif %}}
   </tbody>
 </table>
 {paged_bottom("dscost")}
@@ -1500,6 +1548,12 @@ STATUS_BOARD_TEMPLATE = f"""\
 {PAGED_BASE_CSS}
 {paged_css("statbrd", 20, "grid")}
   .cb-status {{ display: flex; flex-direction: column; gap: var(--cc-space-xs); }}
+  .cb-status-head {{
+    display: grid; grid-template-columns: 18px 1.4fr 0.9fr 0.8fr 1.3fr 1.1fr; gap: var(--cc-space-s);
+    font-size: 0.78rem; font-weight: 600; opacity: 0.75; text-transform: uppercase; letter-spacing: 0.03em;
+    padding: 0 var(--cc-space-s) 4px var(--cc-space-s); border-bottom: 1px solid var(--cc-color-border);
+    color: var(--cc-color-text);
+  }}
   .cb-item {{
     display: grid; grid-template-columns: 18px 1.4fr 0.9fr 0.8fr 1.3fr 1.1fr; gap: var(--cc-space-s);
     align-items: center; padding: 6px var(--cc-space-s);
@@ -1519,6 +1573,17 @@ STATUS_BOARD_TEMPLATE = f"""\
 </style>
 {paged_top("statbrd", 10, 20)}
 <div class="cb-status">
+  <div class="cb-status-head">
+    <div></div>
+    <div>Project</div>
+    <div>Type</div>
+    <div>Indices</div>
+    <div>Harvest Status</div>
+    <div>Last Polled (UTC)</div>
+  </div>
+{{% if _total_items == 0 %}}
+  <div class="cb-empty">No Serverless projects discovered yet.</div>
+{{% else %}}
 {{% for row in rows %}}
   {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
   {{% assign h = row["health"].value | default: "stale" %}}
@@ -1536,9 +1601,10 @@ STATUS_BOARD_TEMPLATE = f"""\
         <span class="cb-badge cb-badge-warn">Pending Poll</span>
       {{% endif %}}
     </div>
-    <div class="cb-meta">Polled: {{{{ row["updated_at"].value | default: "never" | slice: 0, 19 }}}}</div>
+    <div class="cb-meta">{{{{ row["updated_at"].value | default: "never" | slice: 0, 19 | replace: "T", " " }}}}</div>
   </div>
 {{% endfor %}}
+{{% endif %}}
 </div>
 {paged_bottom("statbrd")}
 """
@@ -1563,16 +1629,19 @@ ALLOC_TABLE_TEMPLATE = f"""\
   }}
   .cb-bar {{ height: 100%; background: var(--cc-vis-0); min-width: 2px; }}
 </style>
-{{% assign unit = rows[0]["unit"].value | default: "ECU" %}}
-{{% assign sym = rows[0]["currency_symbol"].value | default: unit %}}
+{{% assign unit = rows[0]["unit"].value | default: "USD" %}}
+{{% assign sym = rows[0]["currency_symbol"].value | default: "$" %}}
 {{% assign max_cost = rows[0]["cost"].value | default: 1.0 %}}
 {{% if max_cost <= 0 %}}{{% assign max_cost = 1.0 %}}{{% endif %}}
 {paged_top("alloc", 10, 10)}
 <table class="cb-t">
   <thead>
-    <tr><th>Project</th><th>Type</th><th>Cost Type</th><th>Driver</th><th class="num">Cost ({{{{ unit }}}})</th><th>Share</th></tr>
+    <tr><th>Project</th><th>Type</th><th>Cost Type</th><th>Driver</th><th>Share</th><th class="num">Cost ({{{{ unit }}}})</th></tr>
   </thead>
   <tbody>
+  {{% if _total_items == 0 %}}
+    <tr><td colspan="6" class="cb-empty">No allocatable workload cost in the selected time range.</td></tr>
+  {{% else %}}
   {{% for row in rows %}}
     {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
     {{% assign cost = row["cost"].value | default: 0.0 %}}
@@ -1583,10 +1652,11 @@ ALLOC_TABLE_TEMPLATE = f"""\
       <td>{{{{ row["project_type_label"].value }}}}</td>
       <td>{{{{ row["cost_type_label"].value }}}}</td>
       <td>{{{{ row["scope"].value }}}}</td>
-      <td class="num"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_cost }}}}</span></td>
       <td><div class="cb-bar-track"><div class="cb-bar" style="width: {{{{ bar_pct }}}}%;"></div></div></td>
+      <td class="num"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_cost }}}}</span></td>
     </tr>
   {{% endfor %}}
+  {{% endif %}}
   </tbody>
 </table>
 {paged_bottom("alloc")}
@@ -1729,6 +1799,7 @@ def build_billing() -> dict:
         "Billing Summary",
         BILLING_KPI_TEMPLATE,
         f"""{COST_PRELUDE}
+| WHERE @timestamp >= DATE_TRUNC(1 day, NOW() - 30 days) OR (@timestamp >= ?_tstart AND @timestamp <= ?_tend)
 | EVAL alloc_cost = CASE(COALESCE(is_allocatable, false) == true AND allocation_driver != "none", cost, 0.0)
 | EVAL unalloc_cost = CASE(COALESCE(is_allocatable, false) == false OR allocation_driver == "none", cost, 0.0)
 | EVAL day = DATE_TRUNC(1 day, ts)
@@ -1745,13 +1816,13 @@ def build_billing() -> dict:
         "Daily cost by project",
         DAILY_PROJECT_COST_TEMPLATE,
         f"""{COST_PRELUDE}
-| WHERE @timestamp >= ?_tstart AND @timestamp <= ?_tend
-| STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY b = BUCKET(@timestamp, 30, ?_tstart, ?_tend), project
+| WHERE @timestamp >= DATE_TRUNC(1 day, NOW() - 30 days) OR (@timestamp >= ?_tstart AND @timestamp <= ?_tend)
+| STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY b = DATE_TRUNC(1 day, @timestamp), project
 | EVAL day = TO_STRING(b)
 | INLINE STATS day_cost = SUM(cost) BY day
 | INLINE STATS proj_total = SUM(cost) BY project
 | SORT day ASC, proj_total DESC, project ASC
-| LIMIT 500
+| LIMIT 5000
 | KEEP day, project, cost, day_cost, currency_symbol, unit""",
         0,
         8,
@@ -1765,14 +1836,14 @@ def build_billing() -> dict:
         "Daily cost by cost category",
         DAILY_CATEGORY_COST_TEMPLATE,
         f"""{COST_PRELUDE}
-| WHERE @timestamp >= ?_tstart AND @timestamp <= ?_tend
-| STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY b = BUCKET(@timestamp, 30, ?_tstart, ?_tend), category_label
+| WHERE @timestamp >= DATE_TRUNC(1 day, NOW() - 30 days) OR (@timestamp >= ?_tstart AND @timestamp <= ?_tend)
+| STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY b = DATE_TRUNC(1 day, @timestamp), category_label
 | RENAME category_label AS category
 | EVAL day = TO_STRING(b)
 | INLINE STATS day_cost = SUM(cost) BY day
 | EVAL cat_order = CASE(category == "data_tier", 1, category == "platform", 2, category == "transfer", 3, category == "snapshot", 4, category == "support", 5, 6)
 | SORT day ASC, cat_order ASC, cost DESC
-| LIMIT 500
+| LIMIT 5000
 | KEEP day, category, cost, day_cost, currency_symbol, unit""",
         24,
         8,
@@ -1786,6 +1857,7 @@ def build_billing() -> dict:
         "Cost by project",
         make_bar_template("project", "Project"),
         f"""{COST_PRELUDE}
+| WHERE @timestamp >= DATE_TRUNC(1 day, NOW() - 30 days) OR (@timestamp >= ?_tstart AND @timestamp <= ?_tend)
 | STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project
 | SORT cost DESC
 | LIMIT 25
@@ -1802,6 +1874,7 @@ def build_billing() -> dict:
         "Cost by cost category",
         make_bar_template("category", "Cost category"),
         f"""{COST_PRELUDE}
+| WHERE @timestamp >= DATE_TRUNC(1 day, NOW() - 30 days) OR (@timestamp >= ?_tstart AND @timestamp <= ?_tend)
 | STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY category_label
 | RENAME category_label AS category
 | SORT cost DESC
@@ -1819,6 +1892,7 @@ def build_billing() -> dict:
         "Spend flow (Cost category → Cost type → Project type)",
         SANKEY_TEMPLATE,
         f"""{COST_PRELUDE}
+| WHERE @timestamp >= DATE_TRUNC(1 day, NOW() - 30 days) OR (@timestamp >= ?_tstart AND @timestamp <= ?_tend)
 | STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY category_label, cost_type_label, project_type_label
 | SORT cost DESC
 | LIMIT 25
@@ -1836,6 +1910,7 @@ def build_billing() -> dict:
         "Unallocatable & pass-through charges",
         UNALLOC_TABLE_TEMPLATE,
         f"""{COST_PRELUDE}
+| WHERE @timestamp >= DATE_TRUNC(1 day, NOW() - 30 days) OR (@timestamp >= ?_tstart AND @timestamp <= ?_tend)
 | WHERE COALESCE(is_allocatable, false) == false OR allocation_driver == "none"
 | STATS cost = SUM(cost), ecu = SUM(units), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY category_label, cost_type_label, sku, project
 | RENAME category_label AS category, cost_type_label AS cost_type
@@ -1854,6 +1929,7 @@ def build_billing() -> dict:
         "Invoice reconciliation detail",
         INVOICE_TABLE_TEMPLATE,
         f"""{COST_PRELUDE}
+| WHERE @timestamp >= DATE_TRUNC(1 day, NOW() - 30 days) OR (@timestamp >= ?_tstart AND @timestamp <= ?_tend)
 | STATS qty = SUM(COALESCE(quantity_value, 0.0)), ecu = SUM(units), cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project, project_type_label, category_label, cost_type_label, sku, allocation_driver
 | RENAME project_type_label AS project_type, category_label AS category, cost_type_label AS cost_type, allocation_driver AS driver
 | SORT cost DESC
@@ -1891,7 +1967,7 @@ def build_usage() -> dict:
         f"""{COST_PRELUDE}
 | WHERE COALESCE(is_allocatable, false) == true AND allocation_driver != "none"
 | EVAL idx_c = CASE(cost_type_label IN ("ingest-vcu", "ingest"), cost, 0.0)
-| EVAL qry_c = CASE(cost_type_label IN ("search-vcu", "ml-vcu"), cost, 0.0)
+| EVAL qry_c = CASE(cost_type_label IN ("search-vcu", "search"), cost, 0.0)
 | EVAL stg_c = CASE(cost_type_label == "retained", cost, 0.0)
 | STATS pool_spend = SUM(cost), indexing_spend = SUM(idx_c), query_spend = SUM(qry_c), storage_spend = SUM(stg_c), currency_symbol = MAX(currency_symbol), unit = MAX(unit)""",
         0,
@@ -2029,7 +2105,7 @@ def build_usage() -> dict:
 | LIMIT 200"""
     p, _ = lens_esql(
         stable_uuid("lens-usage-datastream-metrics"),
-        "Data stream harvested usage metrics (_cat/indices deltas)",
+        "Data stream harvested usage metrics (_cat/indices)",
         esql,
         [
             col("Project", "keyword"),
@@ -2195,7 +2271,7 @@ Zero secrets are stored in indices.</pre>
         0,
         2,
         48,
-        13,
+        11,
     )
     panels.append(p)
 

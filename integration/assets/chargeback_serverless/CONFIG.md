@@ -123,9 +123,9 @@ Chargeback Serverless produces two native metrics data streams:
 
 1. `metrics-chargeback_serverless.billing-default`:
    - Daily billing events per project and SKU.
-   - Run interval: Every 24 hours (with automatic initial backfill up to `lookbehind` days).
+   - Run interval: Polling check every 1 hour (advancing once per completed UTC day, with automatic initial backfill up to `lookbehind` days).
 2. `metrics-chargeback_serverless.usage-default`:
-   - Hourly usage events per project, data stream, and AI model.
-   - Run interval: Every 1 hour.
+   - Daily usage events per project, data stream, and AI model.
+   - Run interval: Polling check every 1 hour (harvesting once per completed UTC day).
 
-No index management jobs or manual mapping templates are required. Fleet automatically creates and manages index templates, component templates, and lifecycle policies.
+No manual index management jobs or manual mapping templates are required. Fleet automatically creates and manages index templates, component templates, transforms, and lookup indices.
