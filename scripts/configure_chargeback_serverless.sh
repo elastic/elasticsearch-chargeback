@@ -158,6 +158,12 @@ for inp in inputs:
             curr_keys.append(new_entry)
         vars_dict["project_api_keys"] = {"value": curr_keys, "type": "password"}
 
+    for s in inp.get("streams", []):
+        if s.get("data_stream", {}).get("dataset") == "chargeback_serverless.billing":
+            s_vars = s.setdefault("vars", {})
+            if "lookbehind" not in s_vars:
+                s_vars["lookbehind"] = {"value": 30, "type": "integer"}
+
 # Keep payload clean for Fleet API update
 clean_payload = {
     "name": policy.get("name", "chargeback_serverless"),

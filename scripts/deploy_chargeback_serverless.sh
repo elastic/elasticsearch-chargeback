@@ -511,11 +511,15 @@ payload = {
             "streams": [
                 {
                     "data_stream": { "type": "metrics", "dataset": "chargeback_serverless.billing" },
-                    "enabled": True
+                    "enabled": True,
+                    "vars": {
+                        "lookbehind": { "value": lookbehind, "type": "integer" }
+                    }
                 },
                 {
                     "data_stream": { "type": "metrics", "dataset": "chargeback_serverless.usage" },
-                    "enabled": True
+                    "enabled": True,
+                    "vars": {}
                 }
             ]
         }
