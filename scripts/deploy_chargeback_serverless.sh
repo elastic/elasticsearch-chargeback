@@ -325,7 +325,7 @@ TARGET_ZIP="$DIST_DIR/$ZIP_NAME"
 if [[ "$SKIP_BUILD" -eq 0 ]]; then
   echo ""
   echo ">>> Step 1: Re-generating latest dashboard definitions..."
-  python3 "$REPO_ROOT/scripts/generate_dashboards.py" "$ASSETS_DIR/kibana"
+  python3 "$REPO_ROOT/scripts/generate_dashboards.py" "$ASSETS_DIR/kibana" "/tmp/cbs_dashboards.ndjson"
 
   if [[ ! -d "$PACKAGE_DIR" ]]; then
     echo "ERROR: Package source not found at $PACKAGE_DIR" >&2
@@ -388,8 +388,18 @@ if [[ "$UPLOAD_HTTP" != "200" && "$UPLOAD_HTTP" != "201" ]]; then
   cat /tmp/cbs-upload.json >&2
   echo ""
   exit 1
-fi
 echo "  ✓ Fleet package $ZIP_NAME uploaded and activated successfully."
+
+if [[ -f "/tmp/cbs_dashboards.ndjson" ]]; then
+  SO_HTTP=$(kbn_curl -o /tmp/cbs-so-import.json -w '%{http_code}' \
+    -X POST "${KIBANA_URL%/}/api/saved_objects/_import?overwrite=true" \
+    -H "Authorization: ApiKey ${KIBANA_API_KEY}" \
+    -H "kbn-xsrf: true" \
+    --form file=@/tmp/cbs_dashboards.ndjson || true)
+  if [[ "$SO_HTTP" == "200" ]]; then
+    echo "  ✓ Dashboard saved objects refreshed in Kibana (overwrite=true)."
+  fi
+fi
 
 # ------------------------------------------------------------------------------
 # 6. Configure Fleet Integration Policy
