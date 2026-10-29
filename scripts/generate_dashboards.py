@@ -881,19 +881,23 @@ def make_daily_cost_template(group_field: str, header_label: str = "Project", is
     )
     if is_category:
         legend_color_code = """\
-      {% if itm == "compute" %}{% assign item_color = "var(--cc-vis-0)" %}
-      {% elsif itm == "storage" %}{% assign item_color = "var(--cc-vis-1)" %}
-      {% elsif itm == "support" %}{% assign item_color = "var(--cc-vis-2)" %}
-      {% elsif itm == "network" %}{% assign item_color = "var(--cc-vis-3)" %}
+      {% if itm == "data_tier" %}{% assign item_color = "var(--cc-vis-0)" %}
+      {% elsif itm == "platform" %}{% assign item_color = "var(--cc-vis-1)" %}
+      {% elsif itm == "transfer" %}{% assign item_color = "var(--cc-vis-2)" %}
+      {% elsif itm == "snapshot" %}{% assign item_color = "var(--cc-vis-3)" %}
+      {% elsif itm == "support" %}{% assign item_color = "var(--cc-vis-4)" %}
+      {% elsif itm == "other" %}{% assign item_color = "var(--cc-vis-5)" %}
       {% else %}
         {% assign c_idx = forloop.index0 | modulo: 10 %}
         {% assign item_color = colors[c_idx] %}
       {% endif %}"""
         seg_color_code = """\
-          {% if p_name == "compute" %}{% assign item_color = "var(--cc-vis-0)" %}
-          {% elsif p_name == "storage" %}{% assign item_color = "var(--cc-vis-1)" %}
-          {% elsif p_name == "support" %}{% assign item_color = "var(--cc-vis-2)" %}
-          {% elsif p_name == "network" %}{% assign item_color = "var(--cc-vis-3)" %}
+          {% if p_name == "data_tier" %}{% assign item_color = "var(--cc-vis-0)" %}
+          {% elsif p_name == "platform" %}{% assign item_color = "var(--cc-vis-1)" %}
+          {% elsif p_name == "transfer" %}{% assign item_color = "var(--cc-vis-2)" %}
+          {% elsif p_name == "snapshot" %}{% assign item_color = "var(--cc-vis-3)" %}
+          {% elsif p_name == "support" %}{% assign item_color = "var(--cc-vis-4)" %}
+          {% elsif p_name == "other" %}{% assign item_color = "var(--cc-vis-5)" %}
           {% else %}
             {% assign item_color = "var(--cc-vis-9)" %}
             {% for itm in items %}
@@ -1589,14 +1593,20 @@ ALLOC_TABLE_TEMPLATE = f"""\
 """
 
 
-def control_group() -> dict:
-    controls = [
-        (stable_uuid("ctrl-project-type"), "project_type", "Project type", 0),
-        (stable_uuid("ctrl-project-name"), "project_name", "Project name", 1),
-        (stable_uuid("ctrl-cost-category"), "cost_category", "Cost category", 2),
-        (stable_uuid("ctrl-cost-type"), "cost_type", "Cost type", 3),
-        (stable_uuid("ctrl-allocation-driver"), "allocation_driver", "Allocation driver", 4),
-    ]
+def control_group(mode: str = "billing") -> dict:
+    if mode == "usage":
+        controls = [
+            (stable_uuid("ctrl-usage-project-type"), "project_type", "Project type", 0),
+            (stable_uuid("ctrl-usage-project-name"), "project_name", "Project name", 1),
+        ]
+    else:
+        controls = [
+            (stable_uuid("ctrl-project-type"), "project_type", "Project type", 0),
+            (stable_uuid("ctrl-project-name"), "project_name", "Project name", 1),
+            (stable_uuid("ctrl-cost-category"), "cost_category", "Cost category", 2),
+            (stable_uuid("ctrl-cost-type"), "cost_type", "Cost type", 3),
+            (stable_uuid("ctrl-allocation-driver"), "allocation_driver", "Allocation driver", 4),
+        ]
     panels = {}
     refs = []
     for cid, field, title, order in controls:
@@ -1649,6 +1659,7 @@ def dashboard_doc(
     references: list,
     *,
     with_controls: bool = False,
+    controls_mode: str = "billing",
 ) -> dict:
     attrs: dict = {
         "description": description,
@@ -1671,7 +1682,7 @@ def dashboard_doc(
     }
     refs = list(references)
     if with_controls:
-        cg = control_group()
+        cg = control_group(controls_mode)
         attrs["controlGroupInput"] = cg["controlGroupInput"]
         refs.extend(cg["controlGroupInputReferences"])
     return {
@@ -1759,7 +1770,7 @@ def build_billing() -> dict:
 | RENAME category_label AS category
 | EVAL day = TO_STRING(b)
 | INLINE STATS day_cost = SUM(cost) BY day
-| EVAL cat_order = CASE(category == "compute", 1, category == "storage", 2, category == "support", 3, category == "network", 4, 5)
+| EVAL cat_order = CASE(category == "data_tier", 1, category == "platform", 2, category == "transfer", 3, category == "snapshot", 4, category == "support", 5, 6)
 | SORT day ASC, cat_order ASC, cost DESC
 | LIMIT 500
 | KEEP day, category, cost, day_cost, currency_symbol, unit""",
@@ -1896,7 +1907,7 @@ def build_usage() -> dict:
         make_bar_template("driver", "Workload driver"),
         f"""{COST_PRELUDE}
 | WHERE COALESCE(is_allocatable, false) == true AND allocation_driver != "none"
-| EVAL driver = CASE(cost_type_label IN ("ingest-vcu", "ingest"), "Indexing (ingest-vcu + ingest)", cost_type_label IN ("search-vcu", "ml-vcu"), "Search & Query (search-vcu + ml-vcu)", cost_type_label == "retained", "Storage (retained)", cost_type_label)
+| EVAL driver = CASE(cost_type_label IN ("ingest-vcu", "ingest"), "Indexing (ingest-vcu + ingest)", cost_type_label IN ("search-vcu", "search"), "Search & Query (search-vcu)", cost_type_label == "retained", "Storage (retained)", cost_type_label)
 | STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY driver
 | SORT cost DESC
 | LIMIT 25
@@ -2055,7 +2066,7 @@ def build_usage() -> dict:
 | LOOKUP JOIN {REALIZED_POOL} ON composite_key
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
 {CURRENCY_RESOLVE_ESQL}
-| EVAL ai_pool_cost = COALESCE(ai_ecu, query_ecu, 0.0) * rate
+| EVAL ai_pool_cost = CASE(COALESCE(ai_ecu, 0.0) > 0.0, ai_ecu, COALESCE(query_ecu, 0.0)) * rate
 | STATS proj_spend = MAX(ai_pool_cost), proj_inf = SUM(inference_count), proj_latency = AVG(average_inference_time_ms), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY composite_key
 | STATS ai_spend = SUM(proj_spend), total_inferences = SUM(proj_inf), avg_latency_ms = ROUND(AVG(proj_latency), 1), currency_symbol = MAX(currency_symbol), unit = MAX(unit)
 | EVAL cost_per_1k = CASE(total_inferences > 0, ai_spend * 1000.0 / total_inferences, 0.0)
@@ -2078,7 +2089,7 @@ def build_usage() -> dict:
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
 {CURRENCY_RESOLVE_ESQL}
 | EVAL compute_time = COALESCE(total_inference_time_ms, 0)
-| EVAL ai_pool_cost = COALESCE(ai_ecu, query_ecu, 0.0) * rate
+| EVAL ai_pool_cost = CASE(COALESCE(ai_ecu, 0.0) > 0.0, ai_ecu, COALESCE(query_ecu, 0.0)) * rate
 | INLINE STATS day_proj_compute = SUM(compute_time) BY composite_key
 | EVAL day_model_cost = CASE(day_proj_compute > 0, (TO_DOUBLE(compute_time) / TO_DOUBLE(day_proj_compute)) * ai_pool_cost, 0.0)
 | STATS total_compute = SUM(compute_time), total_inf = SUM(inference_count), attributed_cost = SUM(day_model_cost), ai_pool = SUM(ai_pool_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY model_id, task_type
@@ -2105,6 +2116,7 @@ def build_usage() -> dict:
         panels,
         refs,
         with_controls=True,
+        controls_mode="usage",
     )
 
 

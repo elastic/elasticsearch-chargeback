@@ -269,6 +269,24 @@ run_verification() {
     cnt=$(es_curl -sS "${ES_URL%/}/${ds}/_count" -H "Authorization: ApiKey ${ES_API_KEY}" | jq -r '._shards.successful as $s | if $s > 0 then .count else "error" end' 2>/dev/null || echo "not yet created")
     printf "%-50s | %-12s\n" "$ds" "$cnt"
   done
+
+  echo ""
+  echo ">>> Verifying Chargeback Serverless lookup indices..."
+  local lookups=(
+    "serverless_billing_cost_lookup"
+    "serverless_billing_realized_pool_lookup"
+    "serverless_datastream_contribution_lookup"
+    "serverless_project_contribution_lookup"
+    "serverless_ai_model_contribution_lookup"
+    "serverless_project_status_lookup"
+  )
+  printf "\n%-50s | %-12s\n" "Lookup Index" "Doc Count"
+  printf "%-50s-+-%-12s\n" "--------------------------------------------------" "------------"
+  for lk in "${lookups[@]}"; do
+    local cnt
+    cnt=$(es_curl -sS "${ES_URL%/}/${lk}/_count" -H "Authorization: ApiKey ${ES_API_KEY}" | jq -r '._shards.successful as $s | if $s > 0 then .count else "error" end' 2>/dev/null || echo "not yet created")
+    printf "%-50s | %-12s\n" "$lk" "$cnt"
+  done
   echo ""
 
   echo ">>> Recent Ingestion Summary (ES|QL):"

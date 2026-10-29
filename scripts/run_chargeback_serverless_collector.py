@@ -191,10 +191,15 @@ def main():
 
     # 2. Collect Historical Billing Metrics (Day-by-Day, single figure per day per project+sku)
     now = datetime.now(timezone.utc)
-    print(f"\n>>> Step 2: Collecting daily Billing metrics (last {LOOKBEHIND} days, 1 figure/day/SKU)...")
+    print(f"\n>>> Step 2: Collecting daily Billing metrics (last {LOOKBEHIND} days up to yesterday)...")
 
-    start_date = (now - timedelta(days=LOOKBEHIND)).date()
-    end_date = now.date()
+    # Exclude today: only collect completed UTC days up to yesterday
+    yesterday = (now - timedelta(days=1)).date()
+    end_date = yesterday
+    start_date = end_date - timedelta(days=LOOKBEHIND - 1)
+    today_start_iso = now.strftime("%Y-%m-%dT00:00:00.000Z")
+
+    print(f"  Window: {start_date} to {end_date} (inclusive, {LOOKBEHIND} days; excluding today {now.date()})")
 
     billing_docs = []
     latest_billing_instances = []
@@ -202,14 +207,7 @@ def main():
     current_date = start_date
     while current_date <= end_date:
         day_start = datetime(current_date.year, current_date.month, current_date.day, 0, 0, 0, tzinfo=timezone.utc)
-        if current_date == end_date:
-            day_end = now
-        else:
-            day_end = day_start + timedelta(days=1)
-
-        if day_end <= day_start:
-            current_date += timedelta(days=1)
-            continue
+        day_end = day_start + timedelta(days=1)
 
         day_from_str = day_start.strftime("%Y-%m-%dT%H:%M:%SZ")
         day_to_str = day_end.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -234,8 +232,8 @@ def main():
                 inst_type = inst.get("type", "elasticsearch")
 
                 proj = project_map.get(inst_id, {})
-                pname = proj.get("name", inst_name)
-                ptype = proj.get("project_type", inst_type)
+                pname = proj.get("name", inst_name) or inst_name or inst_id
+                ptype = proj.get("project_type", inst_type) or inst_type
 
                 line_items = inst.get("product_line_items", [])
                 for li in line_items:
@@ -250,6 +248,7 @@ def main():
 
                     doc = {
                         "@timestamp": day_timestamp,
+                        "period_start": day_timestamp,
                         "composite_key": f"{day_str}_{inst_id}",
                         "project_id": inst_id,
                         "project_name": pname,
@@ -273,6 +272,19 @@ def main():
             print(f"  ⚠ Failed to fetch billing instances for {current_date}: {e}")
 
         current_date += timedelta(days=1)
+
+    # Purge any records of today or future from target indices
+    delete_existing_window(ES_URL, ES_API_KEY, "metrics-chargeback_serverless.billing-default", today_start_iso, "now+1d")
+    delete_existing_window(ES_URL, ES_API_KEY, "metrics-chargeback_serverless.usage-default", today_start_iso, "now+1d")
+    for lk_idx in [
+        "serverless_billing_cost_lookup",
+        "serverless_billing_realized_pool_lookup",
+        "serverless_datastream_contribution_lookup",
+        "serverless_project_contribution_lookup",
+        "serverless_ai_model_contribution_lookup",
+        "serverless_project_status_lookup"
+    ]:
+        delete_existing_window(ES_URL, ES_API_KEY, lk_idx, today_start_iso, "now+1d")
 
     if billing_docs:
         min_ts = billing_docs[0]["@timestamp"]
@@ -415,96 +427,93 @@ def main():
         proj_total_idx = sum(v["idx_time"] for v in ds_map.values()) or 1
         proj_total_qry = sum(v["qry_time"] for v in ds_map.values()) or 1
 
-        # Emit 1 daily record per datastream, AI model, and project
-        usage_day_str = end_date.strftime("%Y-%m-%d")
-        usage_day_ts = f"{usage_day_str}T00:00:00.000Z"
-        comp_key = f"{usage_day_str}_{pid}"
         ts_now = now.strftime("%Y-%m-%dT%H:%M:%SZ")
-        for ds_name, v in ds_map.items():
+
+        # Emit daily records across the entire window (start_date to end_date = yesterday)
+        u_curr = start_date
+        while u_curr <= end_date:
+            usage_day_str = u_curr.strftime("%Y-%m-%d")
+            usage_day_ts = f"{usage_day_str}T00:00:00.000Z"
+            comp_key = f"{usage_day_str}_{pid}"
+
+            for ds_name, v in ds_map.items():
+                doc = {
+                    "@timestamp": usage_day_ts,
+                    "period_start": usage_day_ts,
+                    "composite_key": comp_key,
+                    "doc_type": "datastream",
+                    "project_id": pid,
+                    "project_name": pname,
+                    "project_type": ptype,
+                    "datastream": ds_name,
+                    "ds_type": v["ds_type"],
+                    "ds_namespace": v["ds_namespace"],
+                    "datastream_sum_indexing_time": v["idx_time"],
+                    "datastream_sum_query_time": v["qry_time"],
+                    "datastream_sum_data_set_store_size": v["size"],
+                    "conf_chargeable_unit_rate": CONF_RATE,
+                    "conf_chargeable_unit_rate_unit": CONF_RATE_UNIT,
+                    "conf_currency_symbol": CONF_CURRENCY_SYMBOL
+                }
+                usage_docs.append(doc)
+
+            # Emit AI models
+            for m in ml_models:
+                mid = m.get("model_id", "unknown")
+                counts = m.get("inference_stats", {})
+                inf_count = int(counts.get("inference_count") or 0)
+                nodes = (m.get("deployment_stats") or {}).get("nodes") or []
+                avg_inf_ms = float(nodes[0].get("average_inference_time_ms") or 0.0) if nodes else 0.0
+                total_inf_ms = int(inf_count * avg_inf_ms)
+                task_type = "ingest_inference" if int(m.get("pipeline_count") or 0) > 0 else "query_inference"
+                doc = {
+                    "@timestamp": usage_day_ts,
+                    "period_start": usage_day_ts,
+                    "composite_key": comp_key,
+                    "doc_type": "ai_model",
+                    "project_id": pid,
+                    "project_name": pname,
+                    "project_type": ptype,
+                    "model_id": mid,
+                    "task_type": task_type,
+                    "inference_count": inf_count,
+                    "average_inference_time_ms": avg_inf_ms,
+                    "total_inference_time_ms": total_inf_ms,
+                    "conf_chargeable_unit_rate": CONF_RATE,
+                    "conf_chargeable_unit_rate_unit": CONF_RATE_UNIT,
+                    "conf_currency_symbol": CONF_CURRENCY_SYMBOL
+                }
+                usage_docs.append(doc)
+
+            # Emit project status record
             doc = {
                 "@timestamp": usage_day_ts,
+                "period_start": usage_day_ts,
                 "composite_key": comp_key,
-                "doc_type": "datastream",
+                "doc_type": "project_status",
                 "project_id": pid,
                 "project_name": pname,
                 "project_type": ptype,
-                "datastream": ds_name,
-                "ds_type": v["ds_type"],
-                "ds_namespace": v["ds_namespace"],
-                "datastream_sum_indexing_time": v["idx_time"],
-                "datastream_sum_query_time": v["qry_time"],
-                "datastream_sum_data_set_store_size": v["size"],
-                "indexing_ecu": pool["indexing_ecu"],
-                "query_ecu": pool["query_ecu"],
-                "storage_ecu": pool["storage_ecu"],
-                "ai_ecu": pool["ai_ecu"],
-                "total_ecu": pool["total_ecu"],
+                "optimized_for": p.get("optimized_for", "general_purpose"),
+                "es_url": es_endpoint,
+                "last_status": harvest_status,
+                "index_count": len(indices),
+                "datastream_count": len(ds_map),
+                "total_size_bytes": proj_total_size,
+                "updated_at": ts_now,
                 "conf_chargeable_unit_rate": CONF_RATE,
                 "conf_chargeable_unit_rate_unit": CONF_RATE_UNIT,
                 "conf_currency_symbol": CONF_CURRENCY_SYMBOL
             }
             usage_docs.append(doc)
+            u_curr += timedelta(days=1)
 
-        # Emit AI models
-        for m in ml_models:
-            mid = m.get("model_id", "unknown")
-            counts = m.get("inference_stats", {})
-            inf_count = int(counts.get("inference_count") or 0)
-            nodes = (m.get("deployment_stats") or {}).get("nodes") or []
-            avg_inf_ms = float(nodes[0].get("average_inference_time_ms") or 0.0) if nodes else 0.0
-            total_inf_ms = int(inf_count * avg_inf_ms)
-            task_type = "ingest_inference" if int(m.get("pipeline_count") or 0) > 0 else "query_inference"
-            doc = {
-                "@timestamp": usage_day_ts,
-                "composite_key": comp_key,
-                "doc_type": "ai_model",
-                "project_id": pid,
-                "project_name": pname,
-                "project_type": ptype,
-                "model_id": mid,
-                "task_type": task_type,
-                "inference_count": inf_count,
-                "average_inference_time_ms": avg_inf_ms,
-                "total_inference_time_ms": total_inf_ms,
-                "ai_ecu": pool["ai_ecu"],
-                "query_ecu": pool["query_ecu"],
-                "conf_chargeable_unit_rate": CONF_RATE,
-                "conf_chargeable_unit_rate_unit": CONF_RATE_UNIT,
-                "conf_currency_symbol": CONF_CURRENCY_SYMBOL
-            }
-            usage_docs.append(doc)
-
-        # Emit project status record
-        doc = {
-            "@timestamp": usage_day_ts,
-            "composite_key": comp_key,
-            "doc_type": "project_status",
-            "project_id": pid,
-            "project_name": pname,
-            "project_type": ptype,
-            "optimized_for": p.get("optimized_for", "general_purpose"),
-            "es_url": es_endpoint,
-            "last_status": harvest_status,
-            "index_count": len(indices),
-            "datastream_count": len(ds_map),
-            "total_size_bytes": proj_total_size,
-            "updated_at": ts_now,
-            "indexing_ecu": pool["indexing_ecu"],
-            "query_ecu": pool["query_ecu"],
-            "storage_ecu": pool["storage_ecu"],
-            "ai_ecu": pool["ai_ecu"],
-            "total_ecu": pool["total_ecu"],
-            "conf_chargeable_unit_rate": CONF_RATE,
-            "conf_chargeable_unit_rate_unit": CONF_RATE_UNIT,
-            "conf_currency_symbol": CONF_CURRENCY_SYMBOL
-        }
-        usage_docs.append(doc)
         print(f"  • {pname} ({pid}): status={harvest_status}, datastreams={len(ds_map)}, ai_models={len(ml_models)}")
 
     if usage_docs:
-        usage_day_ts = f"{end_date.strftime('%Y-%m-%d')}T00:00:00.000Z"
-        ts_now = now.strftime("%Y-%m-%dT%H:%M:%SZ")
-        delete_existing_window(ES_URL, ES_API_KEY, "metrics-chargeback_serverless.usage-default", usage_day_ts, ts_now)
+        min_u_ts = f"{start_date.strftime('%Y-%m-%d')}T00:00:00.000Z"
+        max_u_ts = f"{end_date.strftime('%Y-%m-%d')}T00:00:00.000Z"
+        delete_existing_window(ES_URL, ES_API_KEY, "metrics-chargeback_serverless.usage-default", min_u_ts, max_u_ts)
         print(f"\n  Ingesting {len(usage_docs)} daily usage documents into metrics-chargeback_serverless.usage-default...")
         bulk_lines = []
         for d in usage_docs:

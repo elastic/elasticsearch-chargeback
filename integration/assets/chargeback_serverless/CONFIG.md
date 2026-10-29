@@ -5,7 +5,7 @@
 All configuration for Chargeback Serverless is managed **100% within the Fleet Integration Policy** (matching the native `ess_billing` architecture).
 
 - **Zero secrets in indices**: API keys are securely encrypted by Fleet and never written to plaintext Elasticsearch indices.
-- **Zero workflows**: Scheduled collection runs automatically via native Elastic Agent CEL streams (`billing` every 24h, `usage` every 1h).
+- **Zero workflows**: Scheduled collection runs automatically via native Elastic Agent CEL streams (`billing` and `usage` both checking every 1h, bounded to completed UTC days from 30 days ago up to yesterday `D-1`).
 - **Single pane of glass**: Configure organization credentials, remote project keys, backfill windows, and currency rates directly in **Fleet → Agent Policies → Chargeback Serverless** or via `./scripts/deploy_chargeback_serverless.sh`.
 
 ---
