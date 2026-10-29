@@ -30,8 +30,12 @@ TITLE_BILLING = "[Chargeback Serverless] Billing Components Overview"
 TITLE_USAGE = "[Chargeback Serverless] Usage & Cost Allocation"
 TITLE_CONFIG = "[Chargeback Serverless] Configuration"
 
-BILLING = "metrics-chargeback_serverless.billing-*"
-USAGE = "metrics-chargeback_serverless.usage-*"
+BILLING = "serverless_billing_cost_lookup"
+REALIZED_POOL = "serverless_billing_realized_pool_lookup"
+USAGE = "serverless_datastream_contribution_lookup"
+PROJECT_CONTRIB = "serverless_project_contribution_lookup"
+AI_USAGE = "serverless_ai_model_contribution_lookup"
+PROJECT_STATUS = "serverless_project_status_lookup"
 
 ALERT_UNALLOCATED = "chargeback_serverless-alert-unallocated-ecu"
 ALERT_STALE_STATE = "chargeback_serverless-alert-stale-project-state"
@@ -1927,17 +1931,16 @@ def build_usage() -> dict:
         "Attributed cost by namespace",
         make_bar_template("namespace", "Namespace"),
         f"""FROM {USAGE}
-| WHERE doc_type == "datastream"
+| LOOKUP JOIN {REALIZED_POOL} ON composite_key
+| LOOKUP JOIN {PROJECT_CONTRIB} ON composite_key
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
 {CURRENCY_RESOLVE_ESQL}
-| STATS idx_time = SUM(datastream_sum_indexing_time), qry_time = SUM(datastream_sum_query_time), stg_bytes = AVG(TO_DOUBLE(datastream_sum_data_set_store_size)), idx_ecu = MAX(indexing_ecu), qry_ecu = MAX(query_ecu), stg_ecu = MAX(storage_ecu), rate = MAX(rate), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project_name, ds_namespace, datastream
-| INLINE STATS p_idx_time = SUM(idx_time), p_qry_time = SUM(qry_time), p_stg_bytes = SUM(stg_bytes) BY project_name
-| EVAL idx_share = CASE(p_idx_time > 0, TO_DOUBLE(idx_time) / TO_DOUBLE(p_idx_time), 0.0)
-| EVAL qry_share = CASE(p_qry_time > 0, TO_DOUBLE(qry_time) / TO_DOUBLE(p_qry_time), 0.0)
-| EVAL stg_share = CASE(p_stg_bytes > 0, stg_bytes / p_stg_bytes, 0.0)
-| EVAL idx_cost = COALESCE(idx_ecu, 0.0) * rate * idx_share
-| EVAL qry_cost = COALESCE(qry_ecu, 0.0) * rate * qry_share
-| EVAL stg_cost = COALESCE(stg_ecu, 0.0) * rate * stg_share
+| EVAL idx_share = CASE(deployment_sum_indexing_time > 0, TO_DOUBLE(datastream_sum_indexing_time) / TO_DOUBLE(deployment_sum_indexing_time), 0.0)
+| EVAL qry_share = CASE(deployment_sum_query_time > 0, TO_DOUBLE(datastream_sum_query_time) / TO_DOUBLE(deployment_sum_query_time), 0.0)
+| EVAL stg_share = CASE(deployment_sum_data_set_store_size > 0, TO_DOUBLE(datastream_sum_data_set_store_size) / TO_DOUBLE(deployment_sum_data_set_store_size), 0.0)
+| EVAL idx_cost = COALESCE(indexing_ecu, 0.0) * rate * idx_share
+| EVAL qry_cost = COALESCE(query_ecu, 0.0) * rate * qry_share
+| EVAL stg_cost = COALESCE(storage_ecu, 0.0) * rate * stg_share
 | EVAL total_ds_cost = idx_cost + qry_cost + stg_cost
 | EVAL namespace = COALESCE(ds_namespace, "other")
 | STATS cost = SUM(total_ds_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY namespace
@@ -1956,17 +1959,16 @@ def build_usage() -> dict:
         "Attributed cost by data stream type",
         make_bar_template("ds_type", "Data stream type"),
         f"""FROM {USAGE}
-| WHERE doc_type == "datastream"
+| LOOKUP JOIN {REALIZED_POOL} ON composite_key
+| LOOKUP JOIN {PROJECT_CONTRIB} ON composite_key
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
 {CURRENCY_RESOLVE_ESQL}
-| STATS idx_time = SUM(datastream_sum_indexing_time), qry_time = SUM(datastream_sum_query_time), stg_bytes = AVG(TO_DOUBLE(datastream_sum_data_set_store_size)), idx_ecu = MAX(indexing_ecu), qry_ecu = MAX(query_ecu), stg_ecu = MAX(storage_ecu), rate = MAX(rate), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project_name, ds_type, datastream
-| INLINE STATS p_idx_time = SUM(idx_time), p_qry_time = SUM(qry_time), p_stg_bytes = SUM(stg_bytes) BY project_name
-| EVAL idx_share = CASE(p_idx_time > 0, TO_DOUBLE(idx_time) / TO_DOUBLE(p_idx_time), 0.0)
-| EVAL qry_share = CASE(p_qry_time > 0, TO_DOUBLE(qry_time) / TO_DOUBLE(p_qry_time), 0.0)
-| EVAL stg_share = CASE(p_stg_bytes > 0, stg_bytes / p_stg_bytes, 0.0)
-| EVAL idx_cost = COALESCE(idx_ecu, 0.0) * rate * idx_share
-| EVAL qry_cost = COALESCE(qry_ecu, 0.0) * rate * qry_share
-| EVAL stg_cost = COALESCE(stg_ecu, 0.0) * rate * stg_share
+| EVAL idx_share = CASE(deployment_sum_indexing_time > 0, TO_DOUBLE(datastream_sum_indexing_time) / TO_DOUBLE(deployment_sum_indexing_time), 0.0)
+| EVAL qry_share = CASE(deployment_sum_query_time > 0, TO_DOUBLE(datastream_sum_query_time) / TO_DOUBLE(deployment_sum_query_time), 0.0)
+| EVAL stg_share = CASE(deployment_sum_data_set_store_size > 0, TO_DOUBLE(datastream_sum_data_set_store_size) / TO_DOUBLE(deployment_sum_data_set_store_size), 0.0)
+| EVAL idx_cost = COALESCE(indexing_ecu, 0.0) * rate * idx_share
+| EVAL qry_cost = COALESCE(query_ecu, 0.0) * rate * qry_share
+| EVAL stg_cost = COALESCE(storage_ecu, 0.0) * rate * stg_share
 | EVAL total_ds_cost = idx_cost + qry_cost + stg_cost
 | EVAL ds_type_label = COALESCE(ds_type, "other")
 | STATS cost = SUM(total_ds_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY ds_type_label
@@ -1986,18 +1988,18 @@ def build_usage() -> dict:
         "Data stream cost attribution",
         DATASTREAM_COST_TABLE_TEMPLATE,
         f"""FROM {USAGE}
-| WHERE doc_type == "datastream"
+| LOOKUP JOIN {REALIZED_POOL} ON composite_key
+| LOOKUP JOIN {PROJECT_CONTRIB} ON composite_key
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
 {CURRENCY_RESOLVE_ESQL}
-| STATS idx_time = SUM(datastream_sum_indexing_time), qry_time = SUM(datastream_sum_query_time), stg_bytes = AVG(TO_DOUBLE(datastream_sum_data_set_store_size)), idx_ecu = MAX(indexing_ecu), qry_ecu = MAX(query_ecu), stg_ecu = MAX(storage_ecu), rate = MAX(rate), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project = project_name, project_type, ds_type, ds_namespace, datastream
-| INLINE STATS p_idx_time = SUM(idx_time), p_qry_time = SUM(qry_time), p_stg_bytes = SUM(stg_bytes) BY project
-| EVAL idx_share = CASE(p_idx_time > 0, TO_DOUBLE(idx_time) / TO_DOUBLE(p_idx_time), 0.0)
-| EVAL qry_share = CASE(p_qry_time > 0, TO_DOUBLE(qry_time) / TO_DOUBLE(p_qry_time), 0.0)
-| EVAL stg_share = CASE(p_stg_bytes > 0, stg_bytes / p_stg_bytes, 0.0)
-| EVAL indexing_cost = COALESCE(idx_ecu, 0.0) * rate * idx_share
-| EVAL query_cost = COALESCE(qry_ecu, 0.0) * rate * qry_share
-| EVAL storage_cost = COALESCE(stg_ecu, 0.0) * rate * stg_share
-| EVAL attributed_cost = indexing_cost + query_cost + storage_cost
+| EVAL idx_share = CASE(deployment_sum_indexing_time > 0, TO_DOUBLE(datastream_sum_indexing_time) / TO_DOUBLE(deployment_sum_indexing_time), 0.0)
+| EVAL qry_share = CASE(deployment_sum_query_time > 0, TO_DOUBLE(datastream_sum_query_time) / TO_DOUBLE(deployment_sum_query_time), 0.0)
+| EVAL stg_share = CASE(deployment_sum_data_set_store_size > 0, TO_DOUBLE(datastream_sum_data_set_store_size) / TO_DOUBLE(deployment_sum_data_set_store_size), 0.0)
+| EVAL day_idx_cost = COALESCE(indexing_ecu, 0.0) * rate * idx_share
+| EVAL day_qry_cost = COALESCE(query_ecu, 0.0) * rate * qry_share
+| EVAL day_stg_cost = COALESCE(storage_ecu, 0.0) * rate * stg_share
+| EVAL day_attr_cost = day_idx_cost + day_qry_cost + day_stg_cost
+| STATS indexing_cost = SUM(day_idx_cost), query_cost = SUM(day_qry_cost), storage_cost = SUM(day_stg_cost), attributed_cost = SUM(day_attr_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project = project_name, project_type, ds_type, ds_namespace, datastream
 | SORT attributed_cost DESC
 | LIMIT 200
 | KEEP project, project_type, ds_type, ds_namespace, datastream, indexing_cost, query_cost, storage_cost, attributed_cost, currency_symbol, unit""",
@@ -2009,7 +2011,6 @@ def build_usage() -> dict:
     panels.append(p)
 
     esql = f"""FROM {USAGE}
-| WHERE doc_type == "datastream"
 | EVAL `Project` = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "unknown"), `Project type` = COALESCE(project_type, "unknown"), `Data stream type` = COALESCE(ds_type, "other"), `Namespace` = COALESCE(ds_namespace, "other")
 | STATS `Indexing time (ms)` = SUM(datastream_sum_indexing_time), `Search query time (ms)` = SUM(datastream_sum_query_time), `Avg dataset size (MB)` = ROUND(AVG(TO_DOUBLE(datastream_sum_data_set_store_size)) / 1048576.0, 2) BY `Project`, `Project type`, `Data stream type`, `Namespace`, datastream
 | RENAME datastream AS `Data stream`
@@ -2050,8 +2051,8 @@ def build_usage() -> dict:
     )
     panels.append(p)
 
-    ai_kpi_esql = f"""FROM {USAGE}
-| WHERE doc_type == "ai_model"
+    ai_kpi_esql = f"""FROM {AI_USAGE}
+| LOOKUP JOIN {REALIZED_POOL} ON composite_key
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
 {CURRENCY_RESOLVE_ESQL}
 | EVAL ai_pool_cost = COALESCE(ai_ecu, query_ecu, 0.0) * rate
@@ -2072,19 +2073,18 @@ def build_usage() -> dict:
     )
     panels.append(p)
 
-    ai_models_esql = f"""FROM {USAGE}
-| WHERE doc_type == "ai_model"
+    ai_models_esql = f"""FROM {AI_USAGE}
+| LOOKUP JOIN {REALIZED_POOL} ON composite_key
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
 {CURRENCY_RESOLVE_ESQL}
 | EVAL compute_time = COALESCE(total_inference_time_ms, 0)
 | EVAL ai_pool_cost = COALESCE(ai_ecu, query_ecu, 0.0) * rate
-| STATS total_compute = SUM(compute_time), total_inf = SUM(inference_count), ai_pool = MAX(ai_pool_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY model_id, task_type
-| INLINE STATS all_compute = SUM(total_compute)
-| EVAL share = CASE(all_compute > 0, total_compute * 1.0 / all_compute, 0.0)
-| EVAL attributed_cost = share * ai_pool
+| INLINE STATS day_proj_compute = SUM(compute_time) BY composite_key
+| EVAL day_model_cost = CASE(day_proj_compute > 0, (TO_DOUBLE(compute_time) / TO_DOUBLE(day_proj_compute)) * ai_pool_cost, 0.0)
+| STATS total_compute = SUM(compute_time), total_inf = SUM(inference_count), attributed_cost = SUM(day_model_cost), ai_pool = SUM(ai_pool_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY model_id, task_type
 | SORT total_compute DESC
 | LIMIT 25
-| KEEP model_id, task_type, total_compute, total_inf, attributed_cost, currency_symbol, unit"""
+| KEEP model_id, task_type, total_compute, total_inf, attributed_cost, ai_pool, currency_symbol, unit"""
 
     p, _ = custom_panel(
         stable_uuid("cc-usage-ai-models"),
@@ -2217,8 +2217,7 @@ Zero secrets are stored in indices.</pre>
     )
     panels.append(p)
 
-    esql = f"""FROM {USAGE}
-| WHERE doc_type == "project_status"
+    esql = f"""FROM {PROJECT_STATUS}
 | STATS `Type` = MAX(project_type), `Optimized for` = MAX(optimized_for), `Elasticsearch endpoint` = MAX(es_url), `Last status` = MAX(last_status), `Discovered indices` = MAX(index_count) BY `Project` = project_name, `Project ID` = project_id
 | SORT `Project` ASC
 | LIMIT 200"""
@@ -2251,7 +2250,7 @@ Zero secrets are stored in indices.</pre>
         13,
         28,
         10,
-        index=USAGE,
+        index=PROJECT_STATUS,
         time_field=None,
     )
     panels.append(p)
@@ -2260,10 +2259,9 @@ Zero secrets are stored in indices.</pre>
         stable_uuid("cc-config-state"),
         "Project usage harvest status",
         STATUS_BOARD_TEMPLATE,
-        f"""FROM {USAGE}
-| WHERE doc_type == "project_status"
+        f"""FROM {PROJECT_STATUS}
 | STATS project_type = MAX(project_type), index_count = MAX(index_count), last_status = MAX(last_status), updated_at = MAX(updated_at) BY project_id, project_name
-| EVAL health = CASE(last_status == "empty_or_unauthorized", "empty_or_unauthorized", updated_at IS NOT NULL AND updated_at > NOW() - 2 hours, "ok", "stale")
+| EVAL health = CASE(last_status == "empty_or_unauthorized", "empty_or_unauthorized", updated_at IS NOT NULL AND updated_at > NOW() - 26 hours, "ok", "stale")
 | SORT updated_at DESC NULLS LAST
 | LIMIT 100
 | KEEP project_id, project_name, project_type, index_count, health, updated_at""",
@@ -2277,14 +2275,14 @@ Zero secrets are stored in indices.</pre>
     return dashboard_doc(
         DASH_CONFIG,
         TITLE_CONFIG,
-        "Fleet Integration Policy configuration guide, active currency settings, discovered Serverless projects, and hourly usage harvest status.",
+        "Fleet Integration Policy configuration guide, active currency settings, discovered Serverless projects, and daily usage harvest status.",
         panels,
         refs,
         with_controls=False,
     )
 
 
-def alert_template(alert_id: str, name: str, esql: str, interval: str = "1h") -> dict:
+def alert_template(alert_id: str, name: str, esql: str, interval: str = "24h") -> dict:
     return {
         "id": alert_id,
         "type": "alerting_rule_template",
@@ -2295,7 +2293,7 @@ def alert_template(alert_id: str, name: str, esql: str, interval: str = "1h") ->
             "schedule": {"interval": interval},
             "params": {
                 "searchType": "esqlQuery",
-                "timeWindowSize": 1,
+                "timeWindowSize": 2,
                 "timeWindowUnit": "d",
                 "esqlQuery": {"esql": esql},
                 "size": 100,
@@ -2319,17 +2317,17 @@ def build_alerts() -> list[dict]:
 | WHERE unallocated > 0
 | EVAL result = CONCAT("Unallocated cost: ", COALESCE(sym, "$"), " ", TO_STRING(unallocated), " (", COALESCE(unit, "USD"), ") across ", TO_STRING(rows), " billing rows.")
 | KEEP result""",
-            "6h",
+            "24h",
         ),
         alert_template(
             ALERT_STALE_STATE,
             "[Chargeback Serverless] Stale project usage harvest",
-            f"""FROM {USAGE}
-| WHERE doc_type == "project_status" AND (COALESCE(last_status, "") != "ok" OR updated_at IS NULL OR updated_at < NOW() - 6 hours)
+            f"""FROM {PROJECT_STATUS}
+| WHERE COALESCE(last_status, "") != "ok" OR updated_at IS NULL OR updated_at < NOW() - 26 hours
 | EVAL result = CONCAT("Project `", COALESCE(project_name, project_id, "unknown"), "` (", COALESCE(project_id, "unknown"), ") status=", COALESCE(last_status, "stale"), " last updated ", COALESCE(TO_STRING(updated_at), "never"), ".")
 | STATS result = VALUES(result)
 | MV_EXPAND result""",
-            "1h",
+            "24h",
         ),
         alert_template(
             ALERT_MISSING_PROJECTS,
@@ -2340,7 +2338,7 @@ def build_alerts() -> list[dict]:
 | EVAL result = CONCAT("Billed project `", project_id, "` (", COALESCE(project_type, "unknown"), ", ", TO_STRING(ecu), " ECU) has no resolved project_name.")
 | STATS result = VALUES(result)
 | MV_EXPAND result""",
-            "12h",
+            "24h",
         ),
     ]
 

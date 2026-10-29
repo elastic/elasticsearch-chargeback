@@ -11,6 +11,7 @@
 
 import json
 import os
+import re
 import ssl
 import sys
 import urllib.error
@@ -86,21 +87,69 @@ def http_post_bulk(url, headers, bulk_body_str, timeout=60):
         return resp.getcode(), json.loads(resp.read().decode("utf-8"))
 
 def classify_sku(sku, kind, item_type):
-    s = (sku or "").lower()
-    k = (kind or "").lower()
-    t = (item_type or "").lower()
+    s = (sku or "")
+    if not s:
+        return ("other", "other", False, "none")
 
-    if any(x in s for x in ["ingest", "indexing"]) or "index" in k:
-        return ("Indexing", "Indexing", True, "indexing_time")
-    if any(x in s for x in ["search", "query"]) or "query" in k:
-        return ("Query", "Search", True, "query_time")
-    if any(x in s for x in ["retained", "storage", "store"]) or "storage" in k:
-        return ("Storage", "Storage", True, "storage_size")
-    if any(x in s for x in ["ml-vcu", "inference", "ai", "trained"]) or "ml" in k:
-        return ("AI & ML", "Machine Learning", True, "inference_count")
-    if any(x in s for x in ["data-transfer", "egress", "network"]):
-        return ("Data Transfer", "Networking", False, "unallocated")
-    return ("Other Platform", "Platform", False, "unallocated")
+    if s.startswith("observability.") or s.startswith("security."):
+        if any(x in s for x in ["retained", "storage", "retention"]):
+            return ("retained", "data_tier", True, "storage")
+        if any(x in s for x in ["ingest", "logs", "metrics", "traces", "apm", "siem"]):
+            return ("ingest", "data_tier", True, "indexing")
+
+    if s.startswith("elasticsearch.") or s.startswith("vector.") or s.startswith("elasticsearch-vector."):
+        if "-ingest-vcu_" in s or "ingest-vcu" in s:
+            return ("ingest-vcu", "data_tier", True, "indexing")
+        if "-search-vcu_" in s or "search-vcu" in s:
+            return ("search-vcu", "data_tier", True, "query")
+        if s.startswith("elasticsearch.retained_") or "retained_" in s or "storage" in s:
+            return ("retained", "data_tier", True, "storage")
+        if "-ml-vcu_" in s or "ml-vcu" in s:
+            return ("ml-vcu", "platform", False, "none")
+
+    if s.startswith("serverless.support-"):
+        return ("serverless_premium_support", "support", False, "none")
+    if any(x in s for x in ["data-transfer", "data-out", "egress"]):
+        return ("data-transfer", "transfer", False, "none")
+    if "snapshot" in s:
+        return ("snapshots", "snapshot", False, "none")
+    if any(x in s for x in ["inference", "llm"]):
+        return ("inference", "platform", False, "none")
+    if "synthetics" in s:
+        return ("synthetics", "platform", False, "none")
+    if "workflow" in s:
+        return ("workflows", "platform", False, "none")
+    if "agent-builder" in s:
+        return ("agent-builder", "platform", False, "none")
+    if "cross-project" in s or "cps" in s:
+        return ("cross-project-search", "platform", False, "none")
+
+    return ("other", "other", False, "none")
+
+DS_INDEX_RE = re.compile(
+    r"^(?:partial-)?(?:restored-)?(?:shrink-.{4}-)?(?:\.ds-)?([a-zA-Z_0-9\-.]+?)(?:-\d{4}\.\d{2}(?:\.\d{2})?)?(?:-\d+)?$"
+)
+
+def delete_existing_window(es_url, api_key, target_stream, from_iso, to_iso):
+    url = f"{es_url.rstrip('/')}/{target_stream}/_delete_by_query?conflicts=proceed&refresh=true"
+    headers = {
+        "Authorization": f"ApiKey {api_key}",
+        "Content-Type": "application/json"
+    }
+    body = json.dumps({
+        "query": {
+            "range": {
+                "@timestamp": {
+                    "gte": from_iso,
+                    "lte": to_iso
+                }
+            }
+        }
+    })
+    try:
+        http_post_bulk(url, headers, body, timeout=30)
+    except Exception:
+        pass
 
 def main():
     print("=================================================================")
@@ -140,9 +189,9 @@ def main():
     project_map = {p["id"]: p for p in projects}
     print(f"  Total projects discovered across org: {len(projects)}")
 
-    # 2. Collect Historical Billing Metrics (Day-by-Day)
+    # 2. Collect Historical Billing Metrics (Day-by-Day, single figure per day per project+sku)
     now = datetime.now(timezone.utc)
-    print(f"\n>>> Step 2: Collecting Billing metrics day-by-day (last {LOOKBEHIND} days)...")
+    print(f"\n>>> Step 2: Collecting daily Billing metrics (last {LOOKBEHIND} days, 1 figure/day/SKU)...")
 
     start_date = (now - timedelta(days=LOOKBEHIND)).date()
     end_date = now.date()
@@ -165,6 +214,7 @@ def main():
         day_from_str = day_start.strftime("%Y-%m-%dT%H:%M:%SZ")
         day_to_str = day_end.strftime("%Y-%m-%dT%H:%M:%SZ")
         day_timestamp = day_start.strftime("%Y-%m-%dT00:00:00.000Z")
+        day_str = current_date.strftime("%Y-%m-%d")
 
         billing_url = f"{BILLING_API_BASE}/api/v2/billing/organizations/{ORG_ID}/costs/instances?from={urllib.parse.quote(day_from_str)}&to={urllib.parse.quote(day_to_str)}"
         try:
@@ -200,6 +250,7 @@ def main():
 
                     doc = {
                         "@timestamp": day_timestamp,
+                        "composite_key": f"{day_str}_{inst_id}",
                         "project_id": inst_id,
                         "project_name": pname,
                         "project_type": ptype,
@@ -217,14 +268,17 @@ def main():
                     billing_docs.append(doc)
                     day_line_count += 1
             if day_instances:
-                print(f"  • {current_date.strftime('%Y-%m-%d')}: {len(day_instances)} project instance(s), {day_line_count} line items")
+                print(f"  • {day_str}: {len(day_instances)} project instance(s), {day_line_count} line items")
         except Exception as e:
             print(f"  ⚠ Failed to fetch billing instances for {current_date}: {e}")
 
         current_date += timedelta(days=1)
 
     if billing_docs:
-        print(f"  • Ingesting {len(billing_docs)} billing metric documents into metrics-chargeback_serverless.billing-default...")
+        min_ts = billing_docs[0]["@timestamp"]
+        max_ts = billing_docs[-1]["@timestamp"]
+        delete_existing_window(ES_URL, ES_API_KEY, "metrics-chargeback_serverless.billing-default", min_ts, max_ts)
+        print(f"  • Ingesting {len(billing_docs)} daily billing metric documents into metrics-chargeback_serverless.billing-default...")
         bulk_lines = []
         for d in billing_docs:
             bulk_lines.append(json.dumps({"create": {}}))
@@ -239,7 +293,7 @@ def main():
                 err_items = [item for item in bulk_resp.get("items", []) if "error" in item.get("create", {})]
                 print(f"  ⚠ Bulk index reported {len(err_items)} errors: {err_items[:1]}")
             else:
-                print(f"  ✓ Successfully indexed {len(billing_docs)} billing records.")
+                print(f"  ✓ Successfully indexed {len(billing_docs)} daily billing records.")
         except Exception as e:
             print(f"  ⚠ Failed to bulk index billing metrics: {e}")
     else:
@@ -326,18 +380,15 @@ def main():
             except Exception:
                 pass
 
-        # Aggregate datastreams
+        # Aggregate datastreams (1 figure per day per datastream)
         ds_map = {}
         for row in indices:
             idx_name = row.get("index", "")
             if idx_name.startswith(".") and not idx_name.startswith(".ds-"):
                 continue
 
-            if idx_name.startswith(".ds-"):
-                parts = idx_name.split("-")
-                ds_name = parts[1] if len(parts) > 1 else idx_name
-            else:
-                ds_name = idx_name
+            m_ds = DS_INDEX_RE.match(idx_name)
+            ds_name = m_ds.group(1) if m_ds else idx_name
 
             ds_parts = ds_name.split("-")
             ds_type = ds_parts[0] if len(ds_parts) > 1 else "other"
@@ -364,11 +415,15 @@ def main():
         proj_total_idx = sum(v["idx_time"] for v in ds_map.values()) or 1
         proj_total_qry = sum(v["qry_time"] for v in ds_map.values()) or 1
 
-        # Emit datastream records
+        # Emit 1 daily record per datastream, AI model, and project
+        usage_day_str = end_date.strftime("%Y-%m-%d")
+        usage_day_ts = f"{usage_day_str}T00:00:00.000Z"
+        comp_key = f"{usage_day_str}_{pid}"
         ts_now = now.strftime("%Y-%m-%dT%H:%M:%SZ")
         for ds_name, v in ds_map.items():
             doc = {
-                "@timestamp": ts_now,
+                "@timestamp": usage_day_ts,
+                "composite_key": comp_key,
                 "doc_type": "datastream",
                 "project_id": pid,
                 "project_name": pname,
@@ -382,6 +437,7 @@ def main():
                 "indexing_ecu": pool["indexing_ecu"],
                 "query_ecu": pool["query_ecu"],
                 "storage_ecu": pool["storage_ecu"],
+                "ai_ecu": pool["ai_ecu"],
                 "total_ecu": pool["total_ecu"],
                 "conf_chargeable_unit_rate": CONF_RATE,
                 "conf_chargeable_unit_rate_unit": CONF_RATE_UNIT,
@@ -394,16 +450,22 @@ def main():
             mid = m.get("model_id", "unknown")
             counts = m.get("inference_stats", {})
             inf_count = int(counts.get("inference_count") or 0)
-            inf_time = int(counts.get("inference_time_ms") or 0)
+            nodes = (m.get("deployment_stats") or {}).get("nodes") or []
+            avg_inf_ms = float(nodes[0].get("average_inference_time_ms") or 0.0) if nodes else 0.0
+            total_inf_ms = int(inf_count * avg_inf_ms)
+            task_type = "ingest_inference" if int(m.get("pipeline_count") or 0) > 0 else "query_inference"
             doc = {
-                "@timestamp": ts_now,
+                "@timestamp": usage_day_ts,
+                "composite_key": comp_key,
                 "doc_type": "ai_model",
                 "project_id": pid,
                 "project_name": pname,
                 "project_type": ptype,
                 "model_id": mid,
+                "task_type": task_type,
                 "inference_count": inf_count,
-                "inference_time_ms": inf_time,
+                "average_inference_time_ms": avg_inf_ms,
+                "total_inference_time_ms": total_inf_ms,
                 "ai_ecu": pool["ai_ecu"],
                 "query_ecu": pool["query_ecu"],
                 "conf_chargeable_unit_rate": CONF_RATE,
@@ -414,27 +476,36 @@ def main():
 
         # Emit project status record
         doc = {
-            "@timestamp": ts_now,
+            "@timestamp": usage_day_ts,
+            "composite_key": comp_key,
             "doc_type": "project_status",
             "project_id": pid,
             "project_name": pname,
             "project_type": ptype,
+            "optimized_for": p.get("optimized_for", "general_purpose"),
+            "es_url": es_endpoint,
             "last_status": harvest_status,
             "index_count": len(indices),
             "datastream_count": len(ds_map),
             "total_size_bytes": proj_total_size,
-            "es_endpoint": es_endpoint,
+            "updated_at": ts_now,
             "indexing_ecu": pool["indexing_ecu"],
             "query_ecu": pool["query_ecu"],
             "storage_ecu": pool["storage_ecu"],
             "ai_ecu": pool["ai_ecu"],
-            "total_ecu": pool["total_ecu"]
+            "total_ecu": pool["total_ecu"],
+            "conf_chargeable_unit_rate": CONF_RATE,
+            "conf_chargeable_unit_rate_unit": CONF_RATE_UNIT,
+            "conf_currency_symbol": CONF_CURRENCY_SYMBOL
         }
         usage_docs.append(doc)
         print(f"  • {pname} ({pid}): status={harvest_status}, datastreams={len(ds_map)}, ai_models={len(ml_models)}")
 
     if usage_docs:
-        print(f"\n  Ingesting {len(usage_docs)} usage documents into metrics-chargeback_serverless.usage-default...")
+        usage_day_ts = f"{end_date.strftime('%Y-%m-%d')}T00:00:00.000Z"
+        ts_now = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+        delete_existing_window(ES_URL, ES_API_KEY, "metrics-chargeback_serverless.usage-default", usage_day_ts, ts_now)
+        print(f"\n  Ingesting {len(usage_docs)} daily usage documents into metrics-chargeback_serverless.usage-default...")
         bulk_lines = []
         for d in usage_docs:
             bulk_lines.append(json.dumps({"create": {}}))
@@ -449,7 +520,7 @@ def main():
                 err_items = [item for item in bulk_resp.get("items", []) if "error" in item.get("create", {})]
                 print(f"  ⚠ Bulk index reported {len(err_items)} errors: {err_items[:1]}")
             else:
-                print(f"  ✓ Successfully indexed {len(usage_docs)} usage records.")
+                print(f"  ✓ Successfully indexed {len(usage_docs)} daily usage records.")
         except Exception as e:
             print(f"  ⚠ Failed to bulk index usage metrics: {e}")
 

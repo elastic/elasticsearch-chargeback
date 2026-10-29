@@ -14,7 +14,7 @@ triggers:
   - type: manual
   - type: scheduled
     with:
-      every: 1h
+      every: 24h
 consts:
   staging_index: "monitoring-indices-serverless"
   projects_index: ".chargeback-serverless-projects"
