@@ -1066,24 +1066,24 @@ def make_daily_cost_template(group_field: str, is_category: bool = False) -> str
 {{% endif %}}
 
 {{% assign raw_top = max_day_cost | times: 1.15 %}}
-{{% if raw_top <= 4 %}}{{% assign y_top = 4 }}
-{{% elsif raw_top <= 8 %}}{{% assign y_top = 8 }}
-{{% elsif raw_top <= 16 %}}{{% assign y_top = 16 }}
-{{% elsif raw_top <= 40 %}}{{% assign y_top = 40 }}
-{{% elsif raw_top <= 80 %}}{{% assign y_top = 80 }}
-{{% elsif raw_top <= 120 %}}{{% assign y_top = 120 }}
-{{% elsif raw_top <= 200 %}}{{% assign y_top = 200 }}
-{{% elsif raw_top <= 320 %}}{{% assign y_top = 320 }}
-{{% elsif raw_top <= 480 %}}{{% assign y_top = 480 }}
-{{% elsif raw_top <= 800 %}}{{% assign y_top = 800 }}
-{{% elsif raw_top <= 1200 %}}{{% assign y_top = 1200 }}
-{{% elsif raw_top <= 2000 %}}{{% assign y_top = 2000 }}
-{{% elsif raw_top <= 4000 %}}{{% assign y_top = 4000 }}
-{{% elsif raw_top <= 8000 %}}{{% assign y_top = 8000 }}
-{{% elsif raw_top <= 20000 %}}{{% assign y_top = 20000 }}
-{{% elsif raw_top <= 40000 %}}{{% assign y_top = 40000 }}
+{{% if raw_top <= 4 %}}{{% assign y_top = 4 %}}
+{{% elsif raw_top <= 8 %}}{{% assign y_top = 8 %}}
+{{% elsif raw_top <= 16 %}}{{% assign y_top = 16 %}}
+{{% elsif raw_top <= 40 %}}{{% assign y_top = 40 %}}
+{{% elsif raw_top <= 80 %}}{{% assign y_top = 80 %}}
+{{% elsif raw_top <= 120 %}}{{% assign y_top = 120 %}}
+{{% elsif raw_top <= 200 %}}{{% assign y_top = 200 %}}
+{{% elsif raw_top <= 320 %}}{{% assign y_top = 320 %}}
+{{% elsif raw_top <= 480 %}}{{% assign y_top = 480 %}}
+{{% elsif raw_top <= 800 %}}{{% assign y_top = 800 %}}
+{{% elsif raw_top <= 1200 %}}{{% assign y_top = 1200 %}}
+{{% elsif raw_top <= 2000 %}}{{% assign y_top = 2000 %}}
+{{% elsif raw_top <= 4000 %}}{{% assign y_top = 4000 %}}
+{{% elsif raw_top <= 8000 %}}{{% assign y_top = 8000 %}}
+{{% elsif raw_top <= 20000 %}}{{% assign y_top = 20000 %}}
+{{% elsif raw_top <= 40000 %}}{{% assign y_top = 40000 %}}
 {{% else %}}
-  {{% assign y_top = raw_top | divided_by: 10000 | floor | plus: 1 | times: 10000 }}
+  {{% assign y_top = raw_top | divided_by: 10000 | floor | plus: 1 | times: 10000 %}}
 {{% endif %}}
 {{% assign y_1 = y_top | times: 0.25 | round %}}
 {{% assign y_2 = y_top | times: 0.50 | round %}}

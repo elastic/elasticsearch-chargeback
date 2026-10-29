@@ -391,9 +391,7 @@ if [[ "$UPLOAD_HTTP" != "200" && "$UPLOAD_HTTP" != "201" ]]; then
 fi
 echo "  ✓ Fleet package $ZIP_NAME uploaded and activated successfully."
 
-if [[ ! -f "/tmp/cbs_dashboards.ndjson" ]]; then
-  python3 "$REPO_ROOT/scripts/generate_dashboards.py" "$ASSETS_DIR/kibana" "/tmp/cbs_dashboards.ndjson" >/dev/null 2>&1 || true
-fi
+python3 "$REPO_ROOT/scripts/generate_dashboards.py" "$ASSETS_DIR/kibana" "/tmp/cbs_dashboards.ndjson" >/dev/null 2>&1 || true
 
 if [[ -f "/tmp/cbs_dashboards.ndjson" ]]; then
   SO_HTTP=$(kbn_curl -o /tmp/cbs-so-import.json -w '%{http_code}' \
