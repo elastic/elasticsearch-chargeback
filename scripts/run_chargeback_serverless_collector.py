@@ -314,6 +314,16 @@ def main():
     # 3. Harvest Project Usage & AI Metrics
     print("\n>>> Step 3: Harvesting granular usage metrics across Serverless projects...")
 
+    u_rate = CONF_RATE
+    u_unit = CONF_RATE_UNIT
+    u_sym = CONF_CURRENCY_SYMBOL
+    if billing_docs:
+        b_unit = billing_docs[0].get("conf_chargeable_unit_rate_unit")
+        if b_unit and (CONF_RATE_UNIT == "USD" or not get_env("CONF_RATE_UNIT")):
+            u_unit = b_unit
+            u_sym = billing_docs[0].get("conf_currency_symbol", u_sym)
+            u_rate = billing_docs[0].get("conf_chargeable_unit_rate", u_rate)
+
     # Calculate latest daily realized pool per project
     pools = {}
     for inst in latest_billing_instances:
@@ -451,9 +461,9 @@ def main():
                     "datastream_sum_indexing_time": v["idx_time"],
                     "datastream_sum_query_time": v["qry_time"],
                     "datastream_sum_data_set_store_size": v["size"],
-                    "conf_chargeable_unit_rate": CONF_RATE,
-                    "conf_chargeable_unit_rate_unit": CONF_RATE_UNIT,
-                    "conf_currency_symbol": CONF_CURRENCY_SYMBOL
+                    "conf_chargeable_unit_rate": u_rate,
+                    "conf_chargeable_unit_rate_unit": u_unit,
+                    "conf_currency_symbol": u_sym
                 }
                 usage_docs.append(doc)
 
@@ -479,9 +489,9 @@ def main():
                     "inference_count": inf_count,
                     "average_inference_time_ms": avg_inf_ms,
                     "total_inference_time_ms": total_inf_ms,
-                    "conf_chargeable_unit_rate": CONF_RATE,
-                    "conf_chargeable_unit_rate_unit": CONF_RATE_UNIT,
-                    "conf_currency_symbol": CONF_CURRENCY_SYMBOL
+                    "conf_chargeable_unit_rate": u_rate,
+                    "conf_chargeable_unit_rate_unit": u_unit,
+                    "conf_currency_symbol": u_sym
                 }
                 usage_docs.append(doc)
 
@@ -499,9 +509,9 @@ def main():
                 "last_status": harvest_status,
                 "index_count": len(indices),
                 "updated_at": ts_now,
-                "conf_chargeable_unit_rate": CONF_RATE,
-                "conf_chargeable_unit_rate_unit": CONF_RATE_UNIT,
-                "conf_currency_symbol": CONF_CURRENCY_SYMBOL
+                "conf_chargeable_unit_rate": u_rate,
+                "conf_chargeable_unit_rate_unit": u_unit,
+                "conf_currency_symbol": u_sym
             }
             usage_docs.append(doc)
             u_curr += timedelta(days=1)
