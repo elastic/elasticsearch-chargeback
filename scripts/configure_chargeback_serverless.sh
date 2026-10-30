@@ -77,9 +77,6 @@ es() {
 
 : "${ES_URL:?Set ES_URL}"
 : "${ES_API_KEY:?Set ES_API_KEY (or HUB_ES_API_KEY / HUB_KIBANA_API_KEY)}"
-: "${ORGANIZATION_ID:?Set ORGANIZATION_ID}"
-: "${BILLING_API_KEY:?Set BILLING_API_KEY}"
-: "${USAGE_API_KEY:?Set USAGE_API_KEY}"
 
 KIBANA_URL="${KIBANA_URL:-${KIBANA_HOST:-}}"
 if [[ -z "$KIBANA_URL" && -n "$ES_URL" && "$ES_URL" =~ \.es\. ]]; then
@@ -162,7 +159,7 @@ for inp in inputs:
         if s.get("data_stream", {}).get("dataset") == "chargeback_serverless.billing":
             s_vars = s.setdefault("vars", {})
             if "lookbehind" not in s_vars:
-                s_vars["lookbehind"] = {"value": 30, "type": "integer"}
+                s_vars["lookbehind"] = {"value": 60, "type": "integer"}
 
 # Keep payload clean for Fleet API update
 clean_payload = {

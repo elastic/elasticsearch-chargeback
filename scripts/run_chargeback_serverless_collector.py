@@ -364,37 +364,34 @@ def main():
             "total_ecu": 0.0
         })
 
-        # Determine target key
+        # Target key: only send HUB_ES_API_KEY to the local hub project, or explicit PROJECT_KEYS to remote projects.
+        # Do not send HUB_ES_API_KEY to remote projects.
         target_key = PROJECT_KEYS.get(pid)
         is_hub = False
         if not target_key and ES_URL:
-            # Check if this project is the hub
-            if pid in ES_URL or (es_endpoint and es_endpoint in ES_URL):
+            if pid in ES_URL or (es_endpoint and es_endpoint.rstrip("/") in ES_URL.rstrip("/")):
                 target_key = HUB_ES_API_KEY
                 is_hub = True
 
-        if not target_key:
-            # Fallback to general cloud api key or report unharvested
-            target_key = CLOUD_API_KEY
-
-        headers = {
-            "Authorization": f"ApiKey {target_key}",
-            "Content-Type": "application/json"
-        }
-
-        # Query _cat/indices
-        cat_url = f"{es_endpoint}/_cat/indices?h=index,dataset.size,indexing.index_time,search.query_time&format=json&bytes=b&time=ms&expand_wildcards=open,hidden"
         indices = []
         harvest_status = "ok"
-        try:
-            status, cat_data = http_get(cat_url, headers, timeout=15)
-            indices = cat_data if isinstance(cat_data, list) else []
-        except Exception:
+        if target_key:
+            headers = {
+                "Authorization": f"ApiKey {target_key}",
+                "Content-Type": "application/json"
+            }
+            cat_url = f"{es_endpoint}/_cat/indices?h=index,dataset.size,indexing.index_time,search.query_time&format=json&bytes=b&time=ms&expand_wildcards=open,hidden"
+            try:
+                status, cat_data = http_get(cat_url, headers, timeout=15)
+                indices = cat_data if isinstance(cat_data, list) else []
+            except Exception:
+                harvest_status = "empty_or_unauthorized"
+        else:
             harvest_status = "empty_or_unauthorized"
 
         # Query _ml/trained_models/_stats
         ml_models = []
-        if harvest_status == "ok":
+        if harvest_status == "ok" and target_key:
             ml_url = f"{es_endpoint}/_ml/trained_models/_stats"
             try:
                 status, ml_data = http_get(ml_url, headers, timeout=15)

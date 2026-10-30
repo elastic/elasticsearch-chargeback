@@ -73,6 +73,9 @@ CURRENCY_RESOLVE_ESQL = """\
     "$"
   )"""
 
+# Shared ES|QL time filter: respects Kibana dashboard time picker (?_tstart / ?_tend).
+TIME_FILTER_ESQL = "| WHERE @timestamp >= ?_tstart AND @timestamp <= ?_tend"
+
 # Shared ES|QL prelude: currency rate and symbol from policy config stamped on events.
 COST_PRELUDE = f"""FROM {BILLING}
 | EVAL ts = @timestamp
@@ -2119,7 +2122,7 @@ def build_billing() -> dict:
         "Billing Summary",
         BILLING_KPI_TEMPLATE,
         f"""{COST_PRELUDE}
-| WHERE @timestamp >= DATE_TRUNC(1 day, NOW() - 30 days) OR (@timestamp >= ?_tstart AND @timestamp <= ?_tend)
+{TIME_FILTER_ESQL}
 | EVAL alloc_cost = CASE(COALESCE(is_allocatable, false) == true AND allocation_driver != "none", cost, 0.0)
 | EVAL unalloc_cost = CASE(COALESCE(is_allocatable, false) == false OR allocation_driver == "none", cost, 0.0)
 | EVAL day = DATE_TRUNC(1 day, ts)
@@ -2136,7 +2139,7 @@ def build_billing() -> dict:
         "Daily cost by project",
         DAILY_PROJECT_COST_TEMPLATE,
         f"""{COST_PRELUDE}
-| WHERE @timestamp >= DATE_TRUNC(1 day, NOW() - 30 days) OR (@timestamp >= ?_tstart AND @timestamp <= ?_tend)
+{TIME_FILTER_ESQL}
 | STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY b = DATE_TRUNC(1 day, @timestamp), project
 | EVAL day = TO_STRING(b)
 | INLINE STATS day_cost = SUM(cost) BY day
@@ -2156,7 +2159,7 @@ def build_billing() -> dict:
         "Daily cost by cost category",
         DAILY_CATEGORY_COST_TEMPLATE,
         f"""{COST_PRELUDE}
-| WHERE @timestamp >= DATE_TRUNC(1 day, NOW() - 30 days) OR (@timestamp >= ?_tstart AND @timestamp <= ?_tend)
+{TIME_FILTER_ESQL}
 | STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY b = DATE_TRUNC(1 day, @timestamp), category_label
 | RENAME category_label AS category
 | EVAL day = TO_STRING(b)
@@ -2177,7 +2180,7 @@ def build_billing() -> dict:
         "Cost by project",
         make_bar_template("project", "Project"),
         f"""{COST_PRELUDE}
-| WHERE @timestamp >= DATE_TRUNC(1 day, NOW() - 30 days) OR (@timestamp >= ?_tstart AND @timestamp <= ?_tend)
+{TIME_FILTER_ESQL}
 | STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project
 | SORT cost DESC
 | LIMIT 25
@@ -2194,7 +2197,7 @@ def build_billing() -> dict:
         "Cost by cost category",
         make_bar_template("category", "Cost category"),
         f"""{COST_PRELUDE}
-| WHERE @timestamp >= DATE_TRUNC(1 day, NOW() - 30 days) OR (@timestamp >= ?_tstart AND @timestamp <= ?_tend)
+{TIME_FILTER_ESQL}
 | STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY category_label
 | RENAME category_label AS category
 | SORT cost DESC
@@ -2212,7 +2215,7 @@ def build_billing() -> dict:
         "Spend flow (Cost category → Cost type → Project type)",
         SANKEY_TEMPLATE,
         f"""{COST_PRELUDE}
-| WHERE @timestamp >= DATE_TRUNC(1 day, NOW() - 30 days) OR (@timestamp >= ?_tstart AND @timestamp <= ?_tend)
+{TIME_FILTER_ESQL}
 | STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY category_label, cost_type_label, project_type_label
 | SORT cost DESC
 | LIMIT 25
@@ -2230,7 +2233,7 @@ def build_billing() -> dict:
         "Unallocatable & pass-through charges",
         UNALLOC_TABLE_TEMPLATE,
         f"""{COST_PRELUDE}
-| WHERE @timestamp >= DATE_TRUNC(1 day, NOW() - 30 days) OR (@timestamp >= ?_tstart AND @timestamp <= ?_tend)
+{TIME_FILTER_ESQL}
 | WHERE COALESCE(is_allocatable, false) == false OR allocation_driver == "none"
 | STATS cost = SUM(cost), ecu = SUM(units), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY category_label, cost_type_label, sku, project
 | RENAME category_label AS category, cost_type_label AS cost_type
@@ -2249,7 +2252,7 @@ def build_billing() -> dict:
         "Invoice reconciliation detail",
         INVOICE_TABLE_TEMPLATE,
         f"""{COST_PRELUDE}
-| WHERE @timestamp >= DATE_TRUNC(1 day, NOW() - 30 days) OR (@timestamp >= ?_tstart AND @timestamp <= ?_tend)
+{TIME_FILTER_ESQL}
 | STATS qty = SUM(COALESCE(quantity_value, 0.0)), ecu = SUM(units), cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project, project_type_label, category_label, cost_type_label, sku, allocation_driver
 | RENAME project_type_label AS project_type, category_label AS category, cost_type_label AS cost_type, allocation_driver AS driver
 | SORT cost DESC
@@ -2316,6 +2319,7 @@ def build_usage() -> dict:
         "Workload Pool Summary",
         USAGE_KPI_TEMPLATE,
         f"""{COST_PRELUDE}
+{TIME_FILTER_ESQL}
 | WHERE COALESCE(is_allocatable, false) == true AND allocation_driver != "none"
 | EVAL idx_c = CASE(cost_type_label IN ("ingest-vcu", "ingest"), cost, 0.0)
 | EVAL qry_c = CASE(cost_type_label IN ("search-vcu", "search"), cost, 0.0)
@@ -2334,6 +2338,7 @@ def build_usage() -> dict:
         "Allocatable cost by workload driver",
         make_bar_template("driver", "Workload driver"),
         f"""{COST_PRELUDE}
+{TIME_FILTER_ESQL}
 | WHERE COALESCE(is_allocatable, false) == true AND allocation_driver != "none"
 | EVAL driver = CASE(cost_type_label IN ("ingest-vcu", "ingest"), "Indexing (ingest-vcu + ingest)", cost_type_label IN ("search-vcu", "search"), "Search & Query (search-vcu)", cost_type_label == "retained", "Storage (retained)", cost_type_label)
 | STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY driver
@@ -2353,6 +2358,7 @@ def build_usage() -> dict:
         "Cost allocation by project",
         ALLOC_TABLE_TEMPLATE,
         f"""{COST_PRELUDE}
+{TIME_FILTER_ESQL}
 | WHERE COALESCE(is_allocatable, false) == true AND allocation_driver != "none"
 | STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project, project_type_label, cost_type_label, allocation_driver
 | SORT cost DESC
@@ -2372,6 +2378,7 @@ def build_usage() -> dict:
         "Attributed cost by namespace",
         make_bar_template("namespace", "Namespace"),
         f"""FROM {USAGE}
+{TIME_FILTER_ESQL}
 | DROP conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_currency_symbol
 | LOOKUP JOIN {REALIZED_POOL} ON composite_key
 | LOOKUP JOIN {PROJECT_CONTRIB} ON composite_key
@@ -2402,6 +2409,7 @@ def build_usage() -> dict:
         "Attributed cost by data stream type",
         make_bar_template("ds_type", "Data stream type"),
         f"""FROM {USAGE}
+{TIME_FILTER_ESQL}
 | DROP conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_currency_symbol
 | LOOKUP JOIN {REALIZED_POOL} ON composite_key
 | LOOKUP JOIN {PROJECT_CONTRIB} ON composite_key
@@ -2433,6 +2441,7 @@ def build_usage() -> dict:
         "Data stream cost attribution",
         DATASTREAM_COST_TABLE_TEMPLATE,
         f"""FROM {USAGE}
+{TIME_FILTER_ESQL}
 | DROP conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_currency_symbol
 | LOOKUP JOIN {REALIZED_POOL} ON composite_key
 | LOOKUP JOIN {PROJECT_CONTRIB} ON composite_key
@@ -2500,6 +2509,7 @@ def build_usage() -> dict:
     panels.append(p)
 
     ai_kpi_esql = f"""FROM {AI_USAGE}
+{TIME_FILTER_ESQL}
 | DROP conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_currency_symbol
 | LOOKUP JOIN {REALIZED_POOL} ON composite_key
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
@@ -2524,6 +2534,7 @@ def build_usage() -> dict:
     panels.append(p)
 
     ai_models_esql = f"""FROM {AI_USAGE}
+{TIME_FILTER_ESQL}
 | DROP conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_currency_symbol
 | LOOKUP JOIN {REALIZED_POOL} ON composite_key
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
@@ -2576,7 +2587,10 @@ def build_config() -> dict:
         "Fleet Configuration, Policy Settings & Serverless Project Registry",
         CONFIG_UNIFIED_TEMPLATE,
         f"""FROM {PROJECT_STATUS}
+| INLINE STATS latest_ts = MAX(@timestamp) BY project_id
+| WHERE @timestamp == latest_ts
 | STATS
+    project_name = MAX(project_name),
     project_type = MAX(project_type),
     optimized_for = MAX(optimized_for),
     es_url = MAX(es_url),
@@ -2586,7 +2600,7 @@ def build_config() -> dict:
     conf_chargeable_unit_rate = MAX(conf_chargeable_unit_rate),
     conf_chargeable_unit_rate_unit = MAX(conf_chargeable_unit_rate_unit),
     conf_currency_symbol = MAX(conf_currency_symbol)
-  BY project_id, project_name
+  BY project_id
 | EVAL health = CASE(
     last_status == "empty_or_unauthorized", "empty_or_unauthorized",
     updated_at IS NOT NULL AND updated_at > NOW() - 26 hours, "ok",
@@ -2653,6 +2667,8 @@ def build_alerts() -> list[dict]:
             ALERT_STALE_STATE,
             "[Chargeback Serverless] Stale project usage harvest",
             f"""FROM {PROJECT_STATUS}
+| INLINE STATS latest_ts = MAX(@timestamp) BY project_id
+| WHERE @timestamp == latest_ts
 | WHERE COALESCE(last_status, "") != "ok" OR updated_at IS NULL OR updated_at < NOW() - 26 hours
 | EVAL result = CONCAT("Project `", COALESCE(project_name, project_id, "unknown"), "` (", COALESCE(project_id, "unknown"), ") status=", COALESCE(last_status, "stale"), " last updated ", COALESCE(TO_STRING(updated_at), "never"), ".")
 | STATS result = VALUES(result)

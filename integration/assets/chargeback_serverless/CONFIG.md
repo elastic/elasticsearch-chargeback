@@ -5,7 +5,7 @@
 All configuration for Chargeback Serverless is managed **100% within the Fleet Integration Policy** (matching the native `ess_billing` architecture).
 
 - **Zero secrets in indices**: API keys are securely encrypted by Fleet and never written to plaintext Elasticsearch indices.
-- **Zero workflows**: Scheduled collection runs automatically via native Elastic Agent CEL streams (`billing` and `usage` both checking every 1h, bounded to completed UTC days from 30 days ago up to yesterday `D-1`).
+- **Zero workflows**: Scheduled collection runs automatically via native Elastic Agent CEL streams (`billing` and `usage` polling every 1h, advancing once daily after 02:00 UTC for completed UTC days up to yesterday `D-1`, with an initial backfill up to 60 days).
 - **Single pane of glass**: Configure organization credentials, remote project keys, backfill windows, and currency rates directly in **Fleet → Agent Policies → Chargeback Serverless** or via `./scripts/deploy_chargeback_serverless.sh`.
 
 ---
@@ -20,7 +20,7 @@ Set these parameters in **Kibana → Management → Fleet → Integrations → C
 | `cloud_api_key` | Password | **Yes** | *(required)* | Cloud API key with billing read and Serverless project read access. |
 | `hub_es_api_key` | Password | **Yes** | *(optional)* | Elasticsearch API key for the local Hub project (if harvesting local data streams). |
 | `project_api_keys` | Password (Multi) | **Yes** | `[]` | List of remote project harvesting keys in `<project_id>:<encoded_api_key>` format. |
-| `lookbehind` | Integer | No | `30` | Number of historical days of billing data to backfill on initial install. |
+| `lookbehind` | Integer | No | `60` | Number of historical days of billing data to backfill on initial install. |
 | `currency_unit` | Text | No | `USD` | Target display currency unit code (e.g. `USD`, `EUR`, `ZAR`, `GBP`, `ECU`). |
 | `currency_symbol` | Text | No | `$` | Target display currency symbol (e.g. `$`, `€`, `R`, `£`). |
 | `unit_rate` | Text | No | `1.0` | Currency conversion rate per ECU (e.g. `1.0` for 1:1, or `18.5` for local currency). |
