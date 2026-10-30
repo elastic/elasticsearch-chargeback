@@ -1567,70 +1567,363 @@ DATASTREAM_COST_TABLE_TEMPLATE = f"""\
 {paged_bottom("dscost")}
 """
 
-STATUS_BOARD_TEMPLATE = f"""\
+CONFIG_UNIFIED_TEMPLATE = f"""\
 <style>
 {PAGED_BASE_CSS}
-{paged_css("statbrd", 20, "grid")}
-  .cb-status {{ display: flex; flex-direction: column; gap: var(--cc-space-xs); }}
-  .cb-status-head {{
-    display: grid; grid-template-columns: 18px 1.4fr 0.9fr 0.8fr 1.3fr 1.1fr; gap: var(--cc-space-s);
-    font-size: 0.78rem; font-weight: 600; opacity: 0.75; text-transform: uppercase; letter-spacing: 0.03em;
-    padding: 0 var(--cc-space-s) 4px var(--cc-space-s); border-bottom: 1px solid var(--cc-color-border);
-    color: var(--cc-color-text);
+{paged_css("cfgreg", 20, "table-row")}
+  .cb-cfg {{ display: flex; flex-direction: column; gap: var(--cc-space-m, 12px); color: var(--cc-color-text); }}
+
+  /* Top Banner */
+  .cb-cfg-banner {{
+    display: flex; align-items: center; justify-content: space-between; gap: var(--cc-space-m, 12px);
+    padding: 10px 16px;
+    background: color-mix(in srgb, var(--cc-color-primary, #0077cc) 6%, var(--cc-color-surface));
+    border: 1px solid color-mix(in srgb, var(--cc-color-primary, #0077cc) 20%, var(--cc-color-border));
+    border-radius: var(--cc-radius);
   }}
-  .cb-item {{
-    display: grid; grid-template-columns: 18px 1.4fr 0.9fr 0.8fr 1.3fr 1.1fr; gap: var(--cc-space-s);
-    align-items: center; padding: 6px var(--cc-space-s);
-    background: var(--cc-color-surface); border-radius: var(--cc-radius-s);
-    border: 1px solid var(--cc-color-border);
+  .cb-cfg-banner-title {{ font-size: 1.02rem; font-weight: 700; color: var(--cc-color-text); display: flex; align-items: center; gap: 8px; line-height: 1.2; }}
+  .cb-cfg-banner-sub {{ font-size: 0.76rem; opacity: 0.72; color: var(--cc-color-text); margin-top: 2px; }}
+  .cb-cfg-banner-pill {{
+    display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 20px;
+    font-size: 0.74rem; font-weight: 600; background: var(--cc-color-surface);
+    border: 1px solid var(--cc-color-border); white-space: nowrap; flex-shrink: 0;
   }}
-  .cb-dot {{ width: 10px; height: 10px; border-radius: 50%; }}
-  .cb-ok {{ background: var(--cc-color-accent, var(--cc-vis-1)); }}
-  .cb-warn {{ background: var(--cc-color-warning); }}
-  .cb-err {{ background: var(--cc-color-danger); }}
-  .cb-name {{ font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--cc-color-text); }}
-  .cb-meta {{ opacity: 0.75; font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--cc-color-text); }}
-  .cb-badge {{ display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.74rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }}
-  .cb-badge-ok {{ background: color-mix(in srgb, var(--cc-color-accent, var(--cc-vis-1)) 15%, transparent); color: var(--cc-color-accent, var(--cc-vis-1)); }}
-  .cb-badge-warn {{ background: color-mix(in srgb, var(--cc-color-warning) 15%, transparent); color: var(--cc-color-warning); }}
-  .cb-badge-err {{ background: color-mix(in srgb, var(--cc-color-danger) 15%, transparent); color: var(--cc-color-danger); }}
+
+  /* KPI Summary Strip */
+  .cb-cfg-kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--cc-space-s, 8px); }}
+  .cb-cfg-kpi {{
+    background: var(--cc-color-surface); border: 1px solid var(--cc-color-border);
+    border-radius: var(--cc-radius); padding: 10px 14px 12px 14px;
+    display: flex; flex-direction: column; justify-content: space-between;
+  }}
+  .cb-cfg-kpi-label {{ color: var(--cc-color-text); opacity: 0.72; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; line-height: 1.1; }}
+  .cb-cfg-kpi-val {{
+    color: var(--cc-color-text); font-size: 1.35rem; font-weight: 700; margin-top: 4px; line-height: 1.15;
+    font-variant-numeric: tabular-nums; display: flex; align-items: baseline; gap: 4px;
+  }}
+  .cb-cfg-kpi-sub {{ color: var(--cc-color-text); font-size: 0.72rem; opacity: 0.68; margin-top: 4px; line-height: 1.1; }}
+
+  /* Section Title Bar */
+  .cb-cfg-sec-bar {{
+    display: flex; align-items: center; justify-content: space-between;
+    padding-bottom: 4px; border-bottom: 1px solid var(--cc-color-border); margin-top: 4px;
+  }}
+  .cb-cfg-sec-title {{
+    font-size: 0.84rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--cc-color-text); display: flex; align-items: center; gap: 8px;
+  }}
+  .cb-cfg-sec-badge {{
+    background: color-mix(in srgb, var(--cc-color-primary, #0077cc) 12%, transparent);
+    color: var(--cc-color-primary, #0077cc); font-size: 0.7rem; padding: 2px 7px; border-radius: 4px; font-weight: 600;
+  }}
+
+  /* Guide Grid */
+  .cb-cfg-guide-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--cc-space-s, 8px); }}
+  .cb-cfg-card {{
+    background: var(--cc-color-surface); border: 1px solid var(--cc-color-border);
+    border-radius: var(--cc-radius); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px;
+  }}
+  .cb-cfg-card-head {{ display: flex; align-items: center; gap: 8px; }}
+  .cb-cfg-step-pill {{
+    background: var(--cc-color-primary, #0077cc); color: #ffffff; font-size: 0.68rem; font-weight: 700;
+    padding: 2px 7px; border-radius: 12px; text-transform: uppercase; letter-spacing: 0.04em; flex-shrink: 0;
+  }}
+  .cb-cfg-card-title {{ font-size: 0.86rem; font-weight: 600; color: var(--cc-color-text); }}
+  .cb-cfg-card-desc {{ font-size: 0.75rem; opacity: 0.75; margin: 0; line-height: 1.35; color: var(--cc-color-text); }}
+  .cb-cfg-code {{
+    background: color-mix(in srgb, var(--cc-color-surface) 60%, var(--cc-color-border) 40%);
+    border: 1px solid var(--cc-color-border); border-radius: var(--cc-radius-s);
+    padding: 8px 10px; margin: 0; font-family: monospace; font-size: 0.71rem; line-height: 1.35;
+    overflow-x: auto; color: var(--cc-color-text); flex: 1 1 auto;
+  }}
+  .cb-cfg-card-foot {{ font-size: 0.71rem; opacity: 0.72; display: flex; align-items: center; gap: 4px; }}
+
+  /* Registry Table */
+  .cb-paged-wrap-cfgreg {{ height: auto !important; min-height: 0; display: flex; flex-direction: column; }}
+  .cb-content-wrap-cfgreg {{ overflow-x: auto; overflow-y: visible !important; flex: none !important; }}
+  table.cb-cfg-table {{ width: 100%; border-collapse: collapse; font-size: 0.82rem; color: var(--cc-color-text); }}
+  table.cb-cfg-table th {{
+    position: sticky; top: 0; background: var(--cc-color-surface); z-index: 1; text-align: left;
+    padding: 7px 10px; border-bottom: 2px solid var(--cc-color-border); font-weight: 600; opacity: 0.75;
+    font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--cc-color-text);
+  }}
+  table.cb-cfg-table td {{ padding: 7px 10px; border-bottom: 1px solid var(--cc-color-border); color: var(--cc-color-text); vertical-align: middle; }}
+  table.cb-cfg-table tr:hover td {{ background: color-mix(in srgb, var(--cc-color-primary, #0077cc) 3%, transparent); }}
+
+  .cb-proj-cell {{ display: flex; flex-direction: column; gap: 2px; }}
+  .cb-proj-name {{ font-weight: 600; color: var(--cc-color-text); }}
+  .cb-proj-id {{ font-family: monospace; font-size: 0.71rem; opacity: 0.65; }}
+
+  .cb-type-pill {{
+    display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 0.71rem; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.02em;
+    background: color-mix(in srgb, var(--cc-color-border) 70%, transparent); color: var(--cc-color-text);
+  }}
+  .cb-prof-text {{ font-size: 0.71rem; opacity: 0.68; margin-top: 1px; }}
+  .cb-endpoint-text {{
+    font-family: monospace; font-size: 0.71rem; opacity: 0.8; max-width: 220px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block;
+  }}
+
+  .cb-dot {{ width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; flex-shrink: 0; }}
+  .cb-dot-ok {{ background: var(--cc-color-accent, var(--cc-vis-1, #00b474)); box-shadow: 0 0 6px var(--cc-color-accent, var(--cc-vis-1, #00b474)); }}
+  .cb-dot-err {{ background: var(--cc-color-danger, #e03131); box-shadow: 0 0 6px var(--cc-color-danger, #e03131); }}
+  .cb-dot-warn {{ background: var(--cc-color-warning, #f59f00); box-shadow: 0 0 6px var(--cc-color-warning, #f59f00); }}
+
+  .cb-badge {{
+    display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 12px;
+    font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap;
+  }}
+  .cb-badge-ok {{ background: color-mix(in srgb, var(--cc-color-accent, var(--cc-vis-1, #00b474)) 15%, transparent); color: var(--cc-color-accent, var(--cc-vis-1, #00b474)); }}
+  .cb-badge-err {{ background: color-mix(in srgb, var(--cc-color-danger, #e03131) 15%, transparent); color: var(--cc-color-danger, #e03131); }}
+  .cb-badge-warn {{ background: color-mix(in srgb, var(--cc-color-warning, #f59f00) 15%, transparent); color: var(--cc-color-warning, #f59f00); }}
+
+  .cb-indices-badge {{ font-variant-numeric: tabular-nums; font-weight: 600; font-size: 0.78rem; }}
+  .cb-time-col {{ font-variant-numeric: tabular-nums; font-size: 0.75rem; opacity: 0.75; white-space: nowrap; }}
 </style>
-{paged_top("statbrd", 10, 20)}
-<div class="cb-status">
-  <div class="cb-status-head">
-    <div></div>
-    <div>Project</div>
-    <div>Type</div>
-    <div>Indices</div>
-    <div>Harvest Status</div>
-    <div>Last Polled (UTC)</div>
-  </div>
-{{% if _total_items == 0 %}}
-  <div class="cb-empty">No Serverless projects discovered yet.</div>
-{{% else %}}
-{{% for row in rows %}}
-  {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
-  {{% assign h = row["health"].value | default: "stale" %}}
-  <div class="cb-item cb-pg-row-statbrd cb-pg-statbrd-{{{{ _row_pg }}}}">
-    <div class="cb-dot {{% if h == "ok" %}}cb-ok{{% elsif h == "empty_or_unauthorized" %}}cb-err{{% else %}}cb-warn{{% endif %}}"></div>
-    <div class="cb-name">{{{{ row["project_name"].value | default: row["project_id"].value }}}}</div>
-    <div class="cb-meta">{{{{ row["project_type"].value | default: "unknown" }}}}</div>
-    <div class="cb-meta">{{{{ row["index_count"].value | default: 0 }}}} indices</div>
+{{% assign _total_projects = rows.size | default: 0 | round %}}
+{{% assign _active_projects = 0 %}}
+{{% assign _needs_key_projects = 0 %}}
+{{% assign _stale_projects = 0 %}}
+{{% assign _total_indices = 0 %}}
+{{% assign _active_rate = 1.0 %}}
+{{% assign _active_unit = "USD" %}}
+{{% assign _active_sym = "$" %}}
+{{% assign _latest_poll = "—" %}}
+
+{{% for r in rows %}}
+  {{% assign h = r["health"].value | default: "stale" %}}
+  {{% if h == "ok" %}}
+    {{% assign _active_projects = _active_projects | plus: 1 %}}
+  {{% elsif h == "empty_or_unauthorized" %}}
+    {{% assign _needs_key_projects = _needs_key_projects | plus: 1 %}}
+  {{% else %}}
+    {{% assign _stale_projects = _stale_projects | plus: 1 %}}
+  {{% endif %}}
+
+  {{% assign ic = r["index_count"].value | default: 0 %}}
+  {{% assign _total_indices = _total_indices | plus: ic %}}
+
+  {{% if r["conf_chargeable_unit_rate"].value != null and r["conf_chargeable_unit_rate"].value != "" %}}
+    {{% assign _active_rate = r["conf_chargeable_unit_rate"].value %}}
+  {{% endif %}}
+  {{% if r["conf_chargeable_unit_rate_unit"].value != null and r["conf_chargeable_unit_rate_unit"].value != "" %}}
+    {{% assign _active_unit = r["conf_chargeable_unit_rate_unit"].value | upcase %}}
+  {{% endif %}}
+  {{% if r["conf_currency_symbol"].value != null and r["conf_currency_symbol"].value != "" %}}
+    {{% assign _active_sym = r["conf_currency_symbol"].value %}}
+  {{% endif %}}
+
+  {{% if forloop.first %}}
+    {{% assign upd = r["updated_at"].value | default: "" | slice: 0, 19 | replace: "T", " " %}}
+    {{% if upd != "" and upd != "null" %}}
+      {{% assign _latest_poll = upd %}}
+    {{% endif %}}
+  {{% endif %}}
+{{% endfor %}}
+
+<div class="cb-cfg">
+  <!-- Top Banner -->
+  <div class="cb-cfg-banner">
     <div>
-      {{% if h == "ok" %}}
-        <span class="cb-badge cb-badge-ok">Harvesting Active</span>
-      {{% elsif h == "empty_or_unauthorized" %}}
-        <span class="cb-badge cb-badge-err">Needs Remote API Key</span>
+      <div class="cb-cfg-banner-title">
+        <span>⚙️</span> Fleet Configuration, Policy Settings &amp; Serverless Workload Registry
+      </div>
+      <div class="cb-cfg-banner-sub">
+        Live integration policy parameters, least-privilege remote API key deployment, and real-time usage telemetry status
+      </div>
+    </div>
+    <div class="cb-cfg-banner-pill">
+      {{% if _needs_key_projects > 0 %}}
+        <span class="cb-dot cb-dot-err"></span> <span>{{{{ _needs_key_projects }}}} of {{{{ _total_projects }}}} Projects Need Key</span>
+      {{% elsif _total_projects > 0 %}}
+        <span class="cb-dot cb-dot-ok"></span> <span>{{{{ _active_projects }}}} of {{{{ _total_projects }}}} Projects Active</span>
       {{% else %}}
-        <span class="cb-badge cb-badge-warn">Pending Poll</span>
+        <span class="cb-dot cb-dot-warn"></span> <span>Awaiting First Discovery</span>
       {{% endif %}}
     </div>
-    <div class="cb-meta">{{{{ row["updated_at"].value | default: "never" | slice: 0, 19 | replace: "T", " " }}}}</div>
   </div>
-{{% endfor %}}
-{{% endif %}}
+
+  <!-- KPI Strip -->
+  <div class="cb-cfg-kpis">
+    <div class="cb-cfg-kpi">
+      <div class="cb-cfg-kpi-label">Discovered Projects</div>
+      <div class="cb-cfg-kpi-val">{{{{ _total_projects }}}}</div>
+      <div class="cb-cfg-kpi-sub">Serverless environments</div>
+    </div>
+    <div class="cb-cfg-kpi">
+      <div class="cb-cfg-kpi-label">Harvesting Status</div>
+      <div class="cb-cfg-kpi-val" style="color: {{% if _needs_key_projects > 0 %}}var(--cc-color-warning){{% else %}}var(--cc-color-accent, var(--cc-vis-1)){{% endif %}};">
+        {{{{ _active_projects }}}} / {{{{ _total_projects }}}}
+      </div>
+      <div class="cb-cfg-kpi-sub">
+        {{% if _needs_key_projects > 0 %}}
+          <strong style="color: var(--cc-color-danger);">{{{{ _needs_key_projects }}}} need remote API key</strong>
+        {{% else %}}
+          Active telemetry harvesting
+        {{% endif %}}
+      </div>
+    </div>
+    <div class="cb-cfg-kpi">
+      <div class="cb-cfg-kpi-label">Monitored Indices</div>
+      <div class="cb-cfg-kpi-val">{{{{ _total_indices }}}}</div>
+      <div class="cb-cfg-kpi-sub">Discovered across projects</div>
+    </div>
+    <div class="cb-cfg-kpi">
+      <div class="cb-cfg-kpi-label">Active Currency</div>
+      <div class="cb-cfg-kpi-val">
+        <span>{{{{ _active_sym }}}}</span> {{{{ _active_unit }}}}
+      </div>
+      <div class="cb-cfg-kpi-sub">1 ECU = {{{{ _active_sym }}}} {{{{ _active_rate }}}} (Fleet Policy)</div>
+    </div>
+    <div class="cb-cfg-kpi">
+      <div class="cb-cfg-kpi-label">Latest Harvest Poll</div>
+      <div class="cb-cfg-kpi-val" style="font-size: 1.05rem;">{{{{ _latest_poll }}}}</div>
+      <div class="cb-cfg-kpi-sub">UTC collection timestamp</div>
+    </div>
+  </div>
+
+  <!-- Setup Guide Section -->
+  <div class="cb-cfg-sec-bar">
+    <div class="cb-cfg-sec-title">
+      <span>📖</span> Fleet Integration &amp; Key Deployment Guide
+    </div>
+    <span class="cb-cfg-sec-badge">3 Steps to Full Coverage</span>
+  </div>
+
+  <div class="cb-cfg-guide-grid">
+    <!-- Step 1 -->
+    <div class="cb-cfg-card">
+      <div class="cb-cfg-card-head">
+        <span class="cb-cfg-step-pill">Step 1</span>
+        <span class="cb-cfg-card-title">Fleet Integration Settings</span>
+      </div>
+      <p class="cb-cfg-card-desc">Set Organization ID, Cloud API Key, and Currency Rates in Fleet Settings.</p>
+      <pre class="cb-cfg-code"># Configured in Kibana Fleet UI:
+Organization ID:  &lt;YOUR_ORG_ID&gt;
+Cloud API Key:    ••••••••••••••••
+Currency Unit:    USD (or EUR, ZAR, etc.)
+Currency Symbol:  $ (or €, R, £, etc.)
+Unit Rate:        1.0</pre>
+      <div class="cb-cfg-card-foot">
+        <span>Active Policy:</span> <strong>{{{{ _active_unit }}}} ({{{{ _active_sym }}}} {{{{ _active_rate }}}})</strong>
+      </div>
+    </div>
+
+    <!-- Step 2 -->
+    <div class="cb-cfg-card">
+      <div class="cb-cfg-card-head">
+        <span class="cb-cfg-step-pill">Step 2</span>
+        <span class="cb-cfg-card-title">Remote Least-Privilege API Key</span>
+      </div>
+      <p class="cb-cfg-card-desc">Generate on remote project (Dev Tools or API) for index storage metadata monitoring.</p>
+      <pre class="cb-cfg-code">POST _security/api_key
+{{
+  "name": "chargeback-usage-harvesting",
+  "role_descriptors": {{
+    "chargeback_usage": {{
+      "cluster": ["monitor"],
+      "indices": [
+        {{
+          "names": ["*"],
+          "privileges": ["monitor"]
+        }}
+      ]
+    }}
+  }}
+}}</pre>
+      <div class="cb-cfg-card-foot">
+        <span>🛡️ Read-only cluster &amp; index monitor (zero document access)</span>
+      </div>
+    </div>
+
+    <!-- Step 3 -->
+    <div class="cb-cfg-card">
+      <div class="cb-cfg-card-head">
+        <span class="cb-cfg-step-pill">Step 3</span>
+        <span class="cb-cfg-card-title">Add Keys to Integration Policy</span>
+      </div>
+      <p class="cb-cfg-card-desc">Add under Remote Project API Keys in Settings (&lt;project_id&gt;:&lt;encoded_key&gt;).</p>
+      <pre class="cb-cfg-code"># In Integration Settings:
+Remote Project API Keys:
+  - &lt;PROJECT_ID&gt;:&lt;ENCODED_KEY&gt;
+
+Fleet masks and encrypts all keys.
+Zero secrets are stored in indices.</pre>
+      <div class="cb-cfg-card-foot">
+        <span>🔒 Masked &amp; encrypted at rest in Fleet agent policy</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Registry Table Section -->
+  <div class="cb-cfg-sec-bar">
+    <div class="cb-cfg-sec-title">
+      <span>🖥️</span> Discovered Serverless Projects &amp; Harvest Registry
+    </div>
+    <span class="cb-cfg-sec-badge">{{{{ _total_projects }}}} Discovered</span>
+  </div>
+
+  {paged_top("cfgreg", 10, 20)}
+  <table class="cb-cfg-table">
+    <thead>
+      <tr>
+        <th style="width: 175px;">Harvest Status</th>
+        <th>Project</th>
+        <th>Type &amp; Profile</th>
+        <th>Elasticsearch Endpoint</th>
+        <th style="text-align: right; width: 90px;">Indices</th>
+        <th style="width: 155px; text-align: right;">Last Polled (UTC)</th>
+      </tr>
+    </thead>
+    <tbody>
+    {{% if _total_items == 0 %}}
+      <tr>
+        <td colspan="6" class="cb-empty">
+          No Serverless projects discovered yet. Configure Organization ID and Cloud API Key in Fleet Integration Settings above to initiate discovery.
+        </td>
+      </tr>
+    {{% else %}}
+    {{% for row in rows %}}
+      {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
+      {{% assign h = row["health"].value | default: "stale" %}}
+      <tr class="cb-pg-row-cfgreg cb-pg-cfgreg-{{{{ _row_pg }}}}">
+        <td>
+          {{% if h == "ok" %}}
+            <span class="cb-badge cb-badge-ok"><span class="cb-dot cb-dot-ok"></span>Harvesting Active</span>
+          {{% elsif h == "empty_or_unauthorized" %}}
+            <span class="cb-badge cb-badge-err"><span class="cb-dot cb-dot-err"></span>Needs Remote API Key</span>
+          {{% else %}}
+            <span class="cb-badge cb-badge-warn"><span class="cb-dot cb-dot-warn"></span>Pending Poll</span>
+          {{% endif %}}
+        </td>
+        <td>
+          <div class="cb-proj-cell">
+            <span class="cb-proj-name">{{{{ row["project_name"].value | default: row["project_id"].value }}}}</span>
+            <span class="cb-proj-id">{{{{ row["project_id"].value }}}}</span>
+          </div>
+        </td>
+        <td>
+          <span class="cb-type-pill">{{{{ row["project_type"].value | default: "unknown" }}}}</span>
+          <div class="cb-prof-text">{{{{ row["optimized_for"].value | default: "general_purpose" }}}}</div>
+        </td>
+        <td>
+          {{% assign ep = row["es_url"].value | default: "—" %}}
+          <span class="cb-endpoint-text" title="{{{{ ep }}}}">{{{{ ep }}}}</span>
+        </td>
+        <td style="text-align: right;">
+          <span class="cb-indices-badge">{{{{ row["index_count"].value | default: 0 }}}}</span>
+        </td>
+        <td style="text-align: right;" class="cb-time-col">
+          {{{{ row["updated_at"].value | default: "never" | slice: 0, 19 | replace: "T", " " }}}}
+        </td>
+      </tr>
+    {{% endfor %}}
+    {{% endif %}}
+    </tbody>
+  </table>
+  {paged_bottom("cfgreg")}
 </div>
-{paged_bottom("statbrd")}
 """
 
 ALLOC_TABLE_TEMPLATE = f"""\
@@ -2278,159 +2571,34 @@ def build_config() -> dict:
     panels.append(p)
     refs.extend(r)
 
-    config_dsl = """\
-<style>
-  .cb-dsl { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--cc-space-m); font-size: 0.85rem; color: var(--cc-color-text); }
-  .cb-dsl h4 { margin: 0 0 4px 0; font-size: 0.9rem; font-weight: 600; color: var(--cc-color-text); }
-  .cb-dsl p { margin: 0 0 6px 0; font-size: 0.75rem; color: var(--cc-color-text); opacity: 0.72; }
-  .cb-dsl pre {
-    background: var(--cc-color-surface);
-    border: 1px solid var(--cc-color-border);
-    border-radius: var(--cc-radius-s);
-    padding: var(--cc-space-s);
-    margin: 0;
-    font-family: monospace;
-    font-size: 0.74rem;
-    overflow-x: auto;
-    color: var(--cc-color-text);
-  }
-</style>
-<div class="cb-dsl">
-  <div>
-    <h4>1. Fleet Integration Settings</h4>
-    <p>Set Organization ID, Cloud API Key, and Currency Rates in Fleet Settings.</p>
-    <pre># Configured in Kibana Fleet UI:
-Organization ID:  &lt;YOUR_ORG_ID&gt;
-Cloud API Key:    ••••••••••••••••
-Currency Unit:    USD (or EUR, ZAR, etc.)
-Currency Symbol:  $ (or €, R, £, etc.)
-Unit Rate:        1.0</pre>
-  </div>
-  <div>
-    <h4>2. Remote Least-Privilege API Key</h4>
-    <p>Generate on remote project (Dev Tools or API) for index storage metadata monitoring.</p>
-    <pre>POST _security/api_key
-{
-  "name": "chargeback-usage-harvesting",
-  "role_descriptors": {
-    "chargeback_usage": {
-      "cluster": ["monitor"],
-      "indices": [
-        {
-          "names": ["*"],
-          "privileges": ["monitor"]
-        }
-      ]
-    }
-  }
-}</pre>
-  </div>
-  <div>
-    <h4>3. Add Keys to Integration Policy</h4>
-    <p>Add under Remote Project API Keys in Settings (&lt;project_id&gt;:&lt;encoded_key&gt;).</p>
-    <pre># In Integration Settings:
-Remote Project API Keys:
-  - &lt;PROJECT_ID&gt;:&lt;ENCODED_KEY&gt;
-
-Fleet masks and encrypts all keys.
-Zero secrets are stored in indices.</pre>
-  </div>
-</div>
-"""
     p, _ = custom_panel(
-        stable_uuid("cc-config-help"),
-        "Fleet Configuration Guide",
-        config_dsl,
-        None,
+        stable_uuid("cc-config-unified"),
+        "Fleet Configuration, Policy Settings & Serverless Project Registry",
+        CONFIG_UNIFIED_TEMPLATE,
+        f"""FROM {PROJECT_STATUS}
+| STATS
+    project_type = MAX(project_type),
+    optimized_for = MAX(optimized_for),
+    es_url = MAX(es_url),
+    last_status = MAX(last_status),
+    index_count = MAX(index_count),
+    updated_at = MAX(updated_at),
+    conf_chargeable_unit_rate = MAX(conf_chargeable_unit_rate),
+    conf_chargeable_unit_rate_unit = MAX(conf_chargeable_unit_rate_unit),
+    conf_currency_symbol = MAX(conf_currency_symbol)
+  BY project_id, project_name
+| EVAL health = CASE(
+    last_status == "empty_or_unauthorized", "empty_or_unauthorized",
+    updated_at IS NOT NULL AND updated_at > NOW() - 26 hours, "ok",
+    "stale"
+  )
+| SORT updated_at DESC NULLS LAST, project_name ASC
+| LIMIT 200
+| KEEP project_id, project_name, project_type, optimized_for, es_url, last_status, index_count, updated_at, health, conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_currency_symbol""",
         0,
         2,
         48,
-        11,
-    )
-    panels.append(p)
-
-    esql = f"""FROM {BILLING}
-| SORT @timestamp DESC
-| KEEP conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_currency_symbol
-| LIMIT 1"""
-    p, _ = lens_esql(
-        stable_uuid("lens-config-rates"),
-        "Active currency settings from Fleet policy",
-        esql,
-        [
-            col("conf_chargeable_unit_rate", "double", "Unit rate"),
-            col("conf_chargeable_unit_rate_unit", "keyword", "Currency"),
-            col("conf_currency_symbol", "keyword", "Symbol"),
-        ],
-        "lnsDatatable",
-        table_vis(
-            [
-                "conf_chargeable_unit_rate",
-                "conf_chargeable_unit_rate_unit",
-                "conf_currency_symbol",
-            ]
-        ),
-        0,
-        13,
-        20,
-        10,
-        index=BILLING,
-        time_field=None,
-    )
-    panels.append(p)
-
-    esql = f"""FROM {PROJECT_STATUS}
-| STATS `Type` = MAX(project_type), `Optimized for` = MAX(optimized_for), `Elasticsearch endpoint` = MAX(es_url), `Last status` = MAX(last_status), `Discovered indices` = MAX(index_count) BY `Project` = project_name, `Project ID` = project_id
-| SORT `Project` ASC
-| LIMIT 200"""
-    p, _ = lens_esql(
-        stable_uuid("lens-config-projects"),
-        "Discovered Serverless projects registry",
-        esql,
-        [
-            col("Project", "keyword"),
-            col("Project ID", "keyword"),
-            col("Type", "keyword"),
-            col("Optimized for", "keyword"),
-            col("Elasticsearch endpoint", "keyword"),
-            col("Last status", "keyword"),
-            col("Discovered indices", "long"),
-        ],
-        "lnsDatatable",
-        table_vis(
-            [
-                "Project",
-                "Project ID",
-                "Type",
-                "Optimized for",
-                "Elasticsearch endpoint",
-                "Last status",
-                "Discovered indices",
-            ]
-        ),
-        20,
-        13,
-        28,
-        10,
-        index=PROJECT_STATUS,
-        time_field=None,
-    )
-    panels.append(p)
-
-    p, _ = custom_panel(
-        stable_uuid("cc-config-state"),
-        "Project usage harvest status",
-        STATUS_BOARD_TEMPLATE,
-        f"""FROM {PROJECT_STATUS}
-| STATS project_type = MAX(project_type), index_count = MAX(index_count), last_status = MAX(last_status), updated_at = MAX(updated_at) BY project_id, project_name
-| EVAL health = CASE(last_status == "empty_or_unauthorized", "empty_or_unauthorized", updated_at IS NOT NULL AND updated_at > NOW() - 26 hours, "ok", "stale")
-| SORT updated_at DESC NULLS LAST
-| LIMIT 100
-| KEEP project_id, project_name, project_type, index_count, health, updated_at""",
-        0,
-        23,
-        48,
-        14,
+        34,
     )
     panels.append(p)
 
