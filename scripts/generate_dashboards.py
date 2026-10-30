@@ -520,7 +520,7 @@ def paged_bottom(pfx: str) -> str:
 
 BILLING_KPI_TEMPLATE = f"""\
 <style>
-  .cb-kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--cc-space-s, 8px); margin: 0 0 14px 0; padding: 0 0 8px 0; }}
+  .cb-kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: var(--cc-space-s, 8px); margin: 0; padding: 0 0 4px 0; }}
   .cb-kpi {{
     background: var(--cc-color-surface);
     border: 1px solid var(--cc-color-border);
@@ -584,7 +584,7 @@ BILLING_KPI_TEMPLATE = f"""\
 
 USAGE_KPI_TEMPLATE = f"""\
 <style>
-  .cb-kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--cc-space-s, 8px); margin: 0 0 14px 0; padding: 0 0 8px 0; }}
+  .cb-kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--cc-space-s, 8px); margin: 0; padding: 0 0 4px 0; }}
   .cb-kpi {{
     background: var(--cc-color-surface);
     border: 1px solid var(--cc-color-border);
@@ -641,19 +641,33 @@ SANKEY_TEMPLATE = f"""\
 <style>
 {PAGED_BASE_CSS}
 {paged_css("sankey", 6, "grid")}
-  .cb-flow {{ display: flex; flex-direction: column; gap: var(--cc-space-s); }}
+  .cb-flow {{ display: flex; flex-direction: column; gap: 6px; padding: 4px 6px; }}
+  .cb-flow-head {{
+    display: grid;
+    grid-template-columns: minmax(80px, 0.95fr) minmax(85px, 1fr) minmax(85px, 1fr) 1.5fr minmax(85px, 115px);
+    gap: 6px;
+    font-size: 0.76rem; font-weight: 600; opacity: 0.75;
+    text-transform: uppercase; letter-spacing: 0.03em;
+    padding-bottom: 4px; border-bottom: 1px solid var(--cc-color-border);
+    color: var(--cc-color-text);
+  }}
+  .cb-flow-head .num {{ text-align: right; }}
   .cb-row {{
     display: grid;
-    grid-template-columns: minmax(75px, 0.9fr) minmax(85px, 1fr) minmax(85px, 1fr) 1.5fr minmax(85px, 115px);
+    grid-template-columns: minmax(80px, 0.95fr) minmax(85px, 1fr) minmax(85px, 1fr) 1.5fr minmax(85px, 115px);
     gap: 6px;
     align-items: center;
+    padding: 2px 0;
   }}
-  .cb-stage {{ font-size: 0.84rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--cc-color-text); }}
+  .cb-stage {{ font-size: 0.84rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--cc-color-text); display: flex; align-items: center; gap: 5px; }}
+  .cb-cat-dot {{ width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; display: inline-block; }}
+  .cb-share-wrap {{ display: flex; align-items: center; gap: 6px; }}
   .cb-bar-track {{
-    height: 14px; background: var(--cc-color-border);
-    border-radius: var(--cc-radius-s); overflow: hidden;
+    flex: 1; height: 12px; background: var(--cc-color-border);
+    border-radius: var(--cc-radius-s, 4px); overflow: hidden;
   }}
   .cb-bar {{ height: 100%; background: var(--cc-vis-0); min-width: 2px; }}
+  .cb-share-pct {{ width: 40px; text-align: right; font-variant-numeric: tabular-nums; font-size: 0.76rem; opacity: 0.78; color: var(--cc-color-text); flex-shrink: 0; }}
   .cb-cost {{ text-align: right; font-variant-numeric: tabular-nums; font-size: 0.84rem; white-space: nowrap; color: var(--cc-color-text); }}
   .cb-sym {{ font-weight: 500; opacity: 0.85; margin-right: 2px; }}
 </style>
@@ -661,26 +675,51 @@ SANKEY_TEMPLATE = f"""\
 {{% assign sym = rows[0]["currency_symbol"].value | default: "$" %}}
 {{% assign max_cost = rows[0]["cost"].value | default: 1.0 %}}
 {{% if max_cost <= 0 %}}{{% assign max_cost = 1.0 %}}{{% endif %}}
+{{% assign tot_cost = 0.0 %}}
+{{% for r in rows %}}
+  {{% assign rc = r["cost"].value | default: 0.0 %}}
+  {{% assign tot_cost = tot_cost | plus: rc %}}
+{{% endfor %}}
+{{% assign denom_tot = tot_cost %}}
+{{% if denom_tot <= 0 %}}{{% assign denom_tot = 1.0 %}}{{% endif %}}
 {paged_top("sankey", 10, 6)}
+<div class="cb-flow">
+  <div class="cb-flow-head">
+    <div>Category</div>
+    <div>Cost Type</div>
+    <div>Project Type</div>
+    <div>Share</div>
+    <div class="num">Cost ({{{{ unit }}}})</div>
+  </div>
 {{% if _total_items == 0 %}}
   <div class="cb-empty">No billing spend flows recorded in the selected time range.</div>
 {{% else %}}
-<div class="cb-flow">
 {{% for row in rows %}}
   {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
   {{% assign cost = row["cost"].value | default: 0.0 %}}
   {{% assign bar_pct = cost | times: 100.0 | divided_by: max_cost | round: 1 %}}
+  {{% assign share_pct = cost | times: 100.0 | divided_by: denom_tot | round: 1 %}}
+  {{% assign cat = row["category"].value | default: "other" %}}
+  {{% if cat == "data_tier" %}}{{% assign bar_color = "var(--cc-vis-0)" %}}
+  {{% elsif cat == "platform" %}}{{% assign bar_color = "var(--cc-vis-1)" %}}
+  {{% elsif cat == "transfer" %}}{{% assign bar_color = "var(--cc-vis-2)" %}}
+  {{% elsif cat == "snapshot" %}}{{% assign bar_color = "var(--cc-vis-3)" %}}
+  {{% elsif cat == "support" %}}{{% assign bar_color = "var(--cc-vis-4)" %}}
+  {{% else %}}{{% assign bar_color = "var(--cc-vis-5)" %}}{{% endif %}}
 {liquid_money_block("cost", "fmt_cost", with_decimals=True)}
   <div class="cb-row cb-pg-row-sankey cb-pg-sankey-{{{{ _row_pg }}}}">
-    <div class="cb-stage"><strong>{{{{ row["category"].value }}}}</strong></div>
-    <div class="cb-stage">→ {{{{ row["cost_type"].value }}}}</div>
-    <div class="cb-stage">→ {{{{ row["project_type"].value }}}}</div>
-    <div class="cb-bar-track"><div class="cb-bar" style="width: {{{{ bar_pct }}}}%;"></div></div>
+    <div class="cb-stage" title="{{{{ cat }}}}"><span class="cb-cat-dot" style="background: {{{{ bar_color }}}};"></span><strong>{{{{ cat }}}}</strong></div>
+    <div class="cb-stage" title="{{{{ row[\"cost_type\"].value }}}}">→ {{{{ row["cost_type"].value }}}}</div>
+    <div class="cb-stage" title="{{{{ row[\"project_type\"].value }}}}">→ {{{{ row["project_type"].value }}}}</div>
+    <div class="cb-share-wrap">
+      <div class="cb-bar-track"><div class="cb-bar" style="width: {{{{ bar_pct }}}}%; background: {{{{ bar_color }}}};"></div></div>
+      <span class="cb-share-pct">{{{{ share_pct }}}}%</span>
+    </div>
     <div class="cb-cost"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_cost }}}}</span></div>
   </div>
 {{% endfor %}}
-</div>
 {{% endif %}}
+</div>
 {paged_bottom("sankey")}
 """
 
@@ -689,10 +728,10 @@ AI_KPIS_TEMPLATE = f"""\
 <style>
   .cb-kpis {{
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
     gap: var(--cc-space-s, 8px);
-    margin: 0 0 14px 0;
-    padding: 0 0 8px 0;
+    margin: 0;
+    padding: 0 0 4px 0;
   }}
   .cb-kpi {{
     background: var(--cc-color-surface);
@@ -743,10 +782,15 @@ AI_KPIS_TEMPLATE = f"""\
     background: color-mix(in srgb, var(--cc-color-primary) 15%, transparent);
     color: var(--cc-color-primary);
   }}
+  .cb-ai-pill-shared {{
+    background: color-mix(in srgb, var(--cc-color-warning, #f59f00) 18%, transparent);
+    color: var(--cc-color-warning, #f59f00);
+  }}
 </style>
 {{% assign unit = rows[0]["unit"].value | default: "USD" %}}
 {{% assign sym = rows[0]["currency_symbol"].value | default: "$" %}}
 {{% assign ai_spend = rows[0]["ai_spend"].value | default: 0.0 %}}
+{{% assign ded_spend = rows[0]["dedicated_ai_spend"].value | default: 0.0 %}}
 {{% assign inf_count = rows[0]["total_inferences"].value | default: 0 %}}
 {{% assign avg_latency = rows[0]["avg_latency_ms"].value | default: 0.0 | round: 1 %}}
 {{% assign cost_per_k = rows[0]["cost_per_1k"].value | default: 0.0 %}}
@@ -757,9 +801,15 @@ AI_KPIS_TEMPLATE = f"""\
 
 <div class="cb-kpis">
   <div class="cb-kpi">
-    <div class="cb-kpi-label">Total AI &amp; ML Spend ({{{{ unit }}}})</div>
-    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_ai_spend }}}}</span></div>
-    <div class="cb-kpi-sub"><span class="cb-ai-pill">ml-vcu + inference</span> · query pool fallback</div>
+    {{% if ded_spend <= 0.0 and ai_spend > 0.0 %}}
+      <div class="cb-kpi-label">AI &amp; ML Pool (Shared Search, {{{{ unit }}}})</div>
+      <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_ai_spend }}}}</span></div>
+      <div class="cb-kpi-sub"><span class="cb-ai-pill cb-ai-pill-shared">search-vcu fallback</span> · shared with Search pool</div>
+    {{% else %}}
+      <div class="cb-kpi-label">Total AI &amp; ML Spend ({{{{ unit }}}})</div>
+      <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_ai_spend }}}}</span></div>
+      <div class="cb-kpi-sub"><span class="cb-ai-pill">ml-vcu + inference</span> · dedicated AI SKUs</div>
+    {{% endif %}}
   </div>
   <div class="cb-kpi">
     <div class="cb-kpi-label">Inference Volume</div>
@@ -793,7 +843,7 @@ AI_MODELS_TEMPLATE = f"""\
   }}
   .cb-model-head {{
     display: grid;
-    grid-template-columns: minmax(160px, 1.2fr) minmax(180px, 2fr) minmax(120px, 1.5fr) 100px 140px;
+    grid-template-columns: minmax(160px, 1.2fr) minmax(180px, 2fr) minmax(140px, 1.6fr) 100px 140px;
     gap: var(--cc-space-s, 8px);
     font-size: 0.76rem;
     font-weight: 600;
@@ -807,7 +857,7 @@ AI_MODELS_TEMPLATE = f"""\
   .cb-model-head .num {{ text-align: right; }}
   .cb-model-row {{
     display: grid;
-    grid-template-columns: minmax(160px, 1.2fr) minmax(180px, 2fr) minmax(120px, 1.5fr) 100px 140px;
+    grid-template-columns: minmax(160px, 1.2fr) minmax(180px, 2fr) minmax(140px, 1.6fr) 100px 140px;
     gap: var(--cc-space-s, 8px);
     align-items: center;
     font-size: 0.85rem;
@@ -839,7 +889,13 @@ AI_MODELS_TEMPLATE = f"""\
     letter-spacing: 0.02em;
     white-space: nowrap;
   }}
+  .cb-share-cell {{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }}
   .cb-track {{
+    flex: 1;
     height: 12px;
     background: var(--cc-color-border);
     border-radius: 6px;
@@ -850,6 +906,14 @@ AI_MODELS_TEMPLATE = f"""\
     background: var(--cc-vis-0);
     border-radius: 6px;
     min-width: 2px;
+  }}
+  .cb-share-pct {{
+    width: 42px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.76rem;
+    opacity: 0.78;
+    flex-shrink: 0;
   }}
   .cb-num {{
     text-align: right;
@@ -885,12 +949,15 @@ AI_MODELS_TEMPLATE = f"""\
   {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
   {{% assign c_time = r["total_compute"].value | default: 0 %}}
   {{% assign calls = r["total_inf"].value | default: 0 %}}
-  {{% if max_time > 1 %}}
+  {{% if max_time > 1 and tot_compute > 0 %}}
     {{% assign bar_w = c_time | times: 100.0 | divided_by: max_time | round: 1 %}}
+    {{% assign share_pct = c_time | times: 100.0 | divided_by: tot_compute | round: 1 %}}
   {{% elsif tot_inferences > 0 %}}
     {{% assign bar_w = calls | times: 100.0 | divided_by: tot_inferences | round: 1 %}}
+    {{% assign share_pct = calls | times: 100.0 | divided_by: tot_inferences | round: 1 %}}
   {{% else %}}
     {{% assign bar_w = 0.0 %}}
+    {{% assign share_pct = 0.0 %}}
   {{% endif %}}
   {{% assign cost = r["attributed_cost"].value | default: 0.0 %}}
   {{% if cost <= 0.0 %}}
@@ -909,10 +976,11 @@ AI_MODELS_TEMPLATE = f"""\
       <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--cc-vis-0);"></span>
       {{{{ r["model_id"].value }}}}
     </div>
-    <div>
+    <div class="cb-share-cell">
       <div class="cb-track">
         <div class="cb-fill" style="width: {{{{ bar_w }}}}%;"></div>
       </div>
+      <span class="cb-share-pct">{{{{ share_pct }}}}%</span>
     </div>
     <div class="cb-num">{{{{ fmt_calls }}}}</div>
     <div class="cb-num" style="font-weight: 600;"><span style="font-size:0.8rem; opacity:0.8;">{{{{ sym }}}}</span> {{{{ fmt_cost }}}}</div>
@@ -1349,10 +1417,22 @@ def make_daily_cost_template(group_field: str, header_label: str = "Project", is
 
 DAILY_PROJECT_COST_TEMPLATE = make_daily_cost_template("project", "Project", is_category=False)
 DAILY_CATEGORY_COST_TEMPLATE = make_daily_cost_template("category", "Cost category", is_category=True)
+DAILY_DRIVER_COST_TEMPLATE = make_daily_cost_template("driver", "Workload driver", is_category=False)
 
 
 def make_bar_template(label_key: str, label_header: str) -> str:
     pfx = f"bar_{label_key}"
+    if label_key == "category":
+        bar_color_logic = """\
+  {% assign _lbl = row["category"].value | default: "other" %}
+  {% if _lbl == "data_tier" %}{% assign _bcol = "var(--cc-vis-0)" %}
+  {% elsif _lbl == "platform" %}{% assign _bcol = "var(--cc-vis-1)" %}
+  {% elsif _lbl == "transfer" %}{% assign _bcol = "var(--cc-vis-2)" %}
+  {% elsif _lbl == "snapshot" %}{% assign _bcol = "var(--cc-vis-3)" %}
+  {% elsif _lbl == "support" %}{% assign _bcol = "var(--cc-vis-4)" %}
+  {% else %}{% assign _bcol = "var(--cc-vis-5)" %}{% endif %}"""
+    else:
+        bar_color_logic = '  {% assign _bcol = "var(--cc-vis-0)" %}'
     return f"""\
 <style>
 {PAGED_BASE_CSS}
@@ -1376,11 +1456,13 @@ def make_bar_template(label_key: str, label_header: str) -> str:
     color: var(--cc-color-text);
   }}
   .cb-bar-label {{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; color: var(--cc-color-text); }}
+  .cb-share-wrap {{ display: flex; align-items: center; gap: 6px; }}
   .cb-bar-track {{
-    height: 12px; background: var(--cc-color-border);
+    flex: 1; height: 12px; background: var(--cc-color-border);
     border-radius: var(--cc-radius-s, 4px); overflow: hidden;
   }}
   .cb-bar-fill {{ height: 100%; background: var(--cc-vis-0); min-width: 2px; }}
+  .cb-share-pct {{ width: 42px; text-align: right; font-variant-numeric: tabular-nums; font-size: 0.76rem; opacity: 0.78; color: var(--cc-color-text); flex-shrink: 0; }}
   .cb-bar-val {{ text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--cc-color-text); }}
   .cb-sym {{ font-weight: 500; opacity: 0.85; margin-right: 2px; }}
 </style>
@@ -1388,6 +1470,13 @@ def make_bar_template(label_key: str, label_header: str) -> str:
 {{% assign sym = rows[0]["currency_symbol"].value | default: "$" %}}
 {{% assign max_cost = rows[0]["cost"].value | default: 1.0 %}}
 {{% if max_cost <= 0 %}}{{% assign max_cost = 1.0 %}}{{% endif %}}
+{{% assign tot_cost = 0.0 %}}
+{{% for r in rows %}}
+  {{% assign rc = r["cost"].value | default: 0.0 %}}
+  {{% assign tot_cost = tot_cost | plus: rc %}}
+{{% endfor %}}
+{{% assign denom_tot = tot_cost %}}
+{{% if denom_tot <= 0 %}}{{% assign denom_tot = 1.0 %}}{{% endif %}}
 {paged_top(pfx, 10, 8)}
 <div class="cb-bars">
   <div class="cb-bar-head">
@@ -1402,10 +1491,15 @@ def make_bar_template(label_key: str, label_header: str) -> str:
   {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
   {{% assign cost = row["cost"].value | default: 0.0 %}}
   {{% assign bar_pct = cost | times: 100.0 | divided_by: max_cost | round: 1 %}}
+  {{% assign share_pct = cost | times: 100.0 | divided_by: denom_tot | round: 1 %}}
+{bar_color_logic}
 {liquid_money_block("cost", "fmt_cost", with_decimals=True)}
   <div class="cb-bar-row cb-pg-row-{pfx} cb-pg-{pfx}-{{{{ _row_pg }}}}">
     <div class="cb-bar-label" title="{{{{ row["{label_key}"].value }}}}">{{{{ row["{label_key}"].value }}}}</div>
-    <div class="cb-bar-track"><div class="cb-bar-fill" style="width: {{{{ bar_pct }}}}%;"></div></div>
+    <div class="cb-share-wrap">
+      <div class="cb-bar-track"><div class="cb-bar-fill" style="width: {{{{ bar_pct }}}}%; background: {{{{ _bcol }}}};"></div></div>
+      <span class="cb-share-pct">{{{{ share_pct }}}}%</span>
+    </div>
     <div class="cb-bar-val"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_cost }}}}</span></div>
   </div>
 {{% endfor %}}
@@ -1570,6 +1664,55 @@ DATASTREAM_COST_TABLE_TEMPLATE = f"""\
 {paged_bottom("dscost")}
 """
 
+
+DATASTREAM_METRICS_TABLE_TEMPLATE = f"""\
+<style>
+{PAGED_BASE_CSS}
+{paged_css("dsmet", 25, "table-row")}
+  table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; color: var(--cc-color-text); }}
+  table.cb-t th {{
+    position: sticky; top: 0; background: var(--cc-color-surface); z-index: 1;
+    text-align: left; padding: 6px 8px; border-bottom: 2px solid var(--cc-color-border);
+    font-weight: 600; opacity: 0.75; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em;
+    color: var(--cc-color-text);
+  }}
+  table.cb-t td {{ padding: 6px 8px; border-bottom: 1px solid var(--cc-color-border); color: var(--cc-color-text); }}
+  table.cb-t th.num, table.cb-t td.num {{ text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }}
+</style>
+{paged_top("dsmet", 10, 25)}
+<table class="cb-t">
+  <thead>
+    <tr><th>Project</th><th>Project Type</th><th>Type</th><th>Namespace</th><th>Data Stream</th><th class="num">Indexing Time (ms)</th><th class="num">Search Query Time (ms)</th><th class="num">Avg Dataset Size (MB)</th></tr>
+  </thead>
+  <tbody>
+  {{% if _total_items == 0 %}}
+    <tr><td colspan="8" class="cb-empty">No harvested data stream usage metrics in the selected time range.</td></tr>
+  {{% else %}}
+  {{% for row in rows %}}
+    {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
+    {{% assign idx_ms = row["indexing_ms"].value | default: 0 %}}
+    {{% assign qry_ms = row["query_ms"].value | default: 0 %}}
+    {{% assign sz_mb = row["size_mb"].value | default: 0.0 %}}
+{liquid_money_block("idx_ms", "fmt_idx_ms", with_decimals=False)}
+{liquid_money_block("qry_ms", "fmt_qry_ms", with_decimals=False)}
+{liquid_money_block("sz_mb", "fmt_sz_mb", with_decimals=True)}
+    <tr class="cb-pg-row-dsmet cb-pg-dsmet-{{{{ _row_pg }}}}">
+      <td><strong>{{{{ row["project"].value }}}}</strong></td>
+      <td>{{{{ row["project_type"].value }}}}</td>
+      <td>{{{{ row["ds_type"].value }}}}</td>
+      <td>{{{{ row["ds_namespace"].value }}}}</td>
+      <td><code>{{{{ row["datastream"].value }}}}</code></td>
+      <td class="num">{{{{ fmt_idx_ms }}}}</td>
+      <td class="num">{{{{ fmt_qry_ms }}}}</td>
+      <td class="num">{{{{ fmt_sz_mb }}}}</td>
+    </tr>
+  {{% endfor %}}
+  {{% endif %}}
+  </tbody>
+</table>
+{paged_bottom("dsmet")}
+"""
+
 CONFIG_UNIFIED_TEMPLATE = f"""\
 <style>
 {PAGED_BASE_CSS}
@@ -1639,6 +1782,7 @@ CONFIG_UNIFIED_TEMPLATE = f"""\
     padding: 8px 10px; margin: 0; font-family: monospace; font-size: 0.71rem; line-height: 1.35;
     overflow-x: auto; color: var(--cc-color-text); flex: 1 1 auto;
   }}
+  .cb-cfg-code-select {{ user-select: all; cursor: pointer; }}
   .cb-cfg-card-foot {{ font-size: 0.71rem; opacity: 0.72; display: flex; align-items: center; gap: 4px; }}
 
   /* Registry Table */
@@ -1777,7 +1921,7 @@ CONFIG_UNIFIED_TEMPLATE = f"""\
       <div class="cb-cfg-kpi-val">
         <span>{{{{ _active_sym }}}}</span> {{{{ _active_unit }}}}
       </div>
-      <div class="cb-cfg-kpi-sub">1 ECU = {{{{ _active_sym }}}} {{{{ _active_rate }}}} (Fleet Policy)</div>
+      <div class="cb-cfg-kpi-sub">{{% if _total_projects > 0 %}}1 ECU = {{{{ _active_sym }}}} {{{{ _active_rate }}}} (Fleet Policy){{% else %}}Default shown (awaiting first poll){{% endif %}}</div>
     </div>
     <div class="cb-cfg-kpi">
       <div class="cb-cfg-kpi-label">Latest Harvest Poll</div>
@@ -1805,9 +1949,9 @@ CONFIG_UNIFIED_TEMPLATE = f"""\
       <pre class="cb-cfg-code"># Configured in Kibana Fleet UI:
 Organization ID:  &lt;YOUR_ORG_ID&gt;
 Cloud API Key:    ••••••••••••••••
-Currency Unit:    USD (or EUR, ZAR, etc.)
-Currency Symbol:  $ (or €, R, £, etc.)
-Unit Rate:        1.0</pre>
+Currency Unit:    {{{{ _active_unit }}}} (e.g. USD, EUR, ZAR)
+Currency Symbol:  {{{{ _active_sym }}}} (e.g. $, €, R, £)
+Unit Rate:        {{{{ _active_rate }}}}</pre>
       <div class="cb-cfg-card-foot">
         <span>Active Policy:</span> <strong>{{{{ _active_unit }}}} ({{{{ _active_sym }}}} {{{{ _active_rate }}}})</strong>
       </div>
@@ -1820,7 +1964,7 @@ Unit Rate:        1.0</pre>
         <span class="cb-cfg-card-title">Remote Least-Privilege API Key</span>
       </div>
       <p class="cb-cfg-card-desc">Generate on remote project (Dev Tools or API) for index storage metadata monitoring.</p>
-      <pre class="cb-cfg-code">POST _security/api_key
+      <pre class="cb-cfg-code cb-cfg-code-select" title="Click to select full Dev Tools snippet">POST _security/api_key
 {{
   "name": "chargeback-usage-harvesting",
   "role_descriptors": {{
@@ -1836,7 +1980,7 @@ Unit Rate:        1.0</pre>
   }}
 }}</pre>
       <div class="cb-cfg-card-foot">
-        <span>🛡️ Read-only cluster &amp; index monitor (zero document access)</span>
+        <span>🛡️ Read-only cluster &amp; index monitor (click snippet to select)</span>
       </div>
     </div>
 
@@ -1943,16 +2087,25 @@ ALLOC_TABLE_TEMPLATE = f"""\
   table.cb-t td {{ padding: 6px 8px; border-bottom: 1px solid var(--cc-color-border); color: var(--cc-color-text); }}
   table.cb-t th.num, table.cb-t td.num {{ text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }}
   .cb-sym {{ font-weight: 500; opacity: 0.85; margin-right: 2px; }}
+  .cb-share-wrap {{ display: flex; align-items: center; gap: 6px; }}
   .cb-bar-track {{
-    height: 10px; background: var(--cc-color-border);
-    border-radius: var(--cc-radius-s); overflow: hidden; min-width: 80px;
+    flex: 1; height: 10px; background: var(--cc-color-border);
+    border-radius: var(--cc-radius-s); overflow: hidden; min-width: 60px;
   }}
   .cb-bar {{ height: 100%; background: var(--cc-vis-0); min-width: 2px; }}
+  .cb-share-pct {{ width: 42px; text-align: right; font-variant-numeric: tabular-nums; font-size: 0.76rem; opacity: 0.78; color: var(--cc-color-text); flex-shrink: 0; }}
 </style>
 {{% assign unit = rows[0]["unit"].value | default: "USD" %}}
 {{% assign sym = rows[0]["currency_symbol"].value | default: "$" %}}
 {{% assign max_cost = rows[0]["cost"].value | default: 1.0 %}}
 {{% if max_cost <= 0 %}}{{% assign max_cost = 1.0 %}}{{% endif %}}
+{{% assign tot_cost = 0.0 %}}
+{{% for r in rows %}}
+  {{% assign rc = r["cost"].value | default: 0.0 %}}
+  {{% assign tot_cost = tot_cost | plus: rc %}}
+{{% endfor %}}
+{{% assign denom_tot = tot_cost %}}
+{{% if denom_tot <= 0 %}}{{% assign denom_tot = 1.0 %}}{{% endif %}}
 {paged_top("alloc", 10, 10)}
 <table class="cb-t">
   <thead>
@@ -1966,13 +2119,19 @@ ALLOC_TABLE_TEMPLATE = f"""\
     {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
     {{% assign cost = row["cost"].value | default: 0.0 %}}
     {{% assign bar_pct = cost | times: 100.0 | divided_by: max_cost | round: 1 %}}
+    {{% assign share_pct = cost | times: 100.0 | divided_by: denom_tot | round: 1 %}}
 {liquid_money_block("cost", "fmt_cost", with_decimals=True)}
     <tr class="cb-pg-row-alloc cb-pg-alloc-{{{{ _row_pg }}}}">
       <td><strong>{{{{ row["project"].value }}}}</strong></td>
       <td>{{{{ row["project_type_label"].value }}}}</td>
       <td>{{{{ row["cost_type_label"].value }}}}</td>
       <td>{{{{ row["scope"].value }}}}</td>
-      <td><div class="cb-bar-track"><div class="cb-bar" style="width: {{{{ bar_pct }}}}%;"></div></div></td>
+      <td>
+        <div class="cb-share-wrap">
+          <div class="cb-bar-track"><div class="cb-bar" style="width: {{{{ bar_pct }}}}%;"></div></div>
+          <span class="cb-share-pct">{{{{ share_pct }}}}%</span>
+        </div>
+      </td>
       <td class="num"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_cost }}}}</span></td>
     </tr>
   {{% endfor %}}
@@ -2051,6 +2210,7 @@ def dashboard_doc(
     with_controls: bool = False,
     controls_mode: str = "billing",
     sections: list | None = None,
+    hide_panel_titles: bool = False,
 ) -> dict:
     attrs: dict = {
         "description": description,
@@ -2058,7 +2218,7 @@ def dashboard_doc(
             "searchSourceJSON": {"filter": [], "query": {"language": "kuery", "query": ""}}
         },
         "optionsJSON": {
-            "hidePanelTitles": False,
+            "hidePanelTitles": hide_panel_titles,
             "syncColors": False,
             "syncCursor": True,
             "syncTooltips": False,
@@ -2335,16 +2495,19 @@ def build_usage() -> dict:
 
     p, _ = custom_panel(
         stable_uuid("cc-usage-driver"),
-        "Allocatable cost by workload driver",
-        make_bar_template("driver", "Workload driver"),
+        "Daily allocatable cost by workload driver",
+        DAILY_DRIVER_COST_TEMPLATE,
         f"""{COST_PRELUDE}
 {TIME_FILTER_ESQL}
 | WHERE COALESCE(is_allocatable, false) == true AND allocation_driver != "none"
 | EVAL driver = CASE(cost_type_label IN ("ingest-vcu", "ingest"), "Indexing (ingest-vcu + ingest)", cost_type_label IN ("search-vcu", "search"), "Search & Query (search-vcu)", cost_type_label == "retained", "Storage (retained)", cost_type_label)
-| STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY driver
-| SORT cost DESC
-| LIMIT 25
-| KEEP driver, cost, currency_symbol, unit""",
+| STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY b = DATE_TRUNC(1 day, @timestamp), driver
+| EVAL day = TO_STRING(b)
+| INLINE STATS day_cost = SUM(cost) BY day
+| INLINE STATS drv_total = SUM(cost) BY driver
+| SORT day ASC, drv_total DESC, driver ASC
+| LIMIT 5000
+| KEEP day, driver, cost, day_cost, currency_symbol, unit""",
         0,
         6,
         24,
@@ -2467,43 +2630,21 @@ def build_usage() -> dict:
     panels.append(p)
 
     esql = f"""FROM {USAGE}
-| EVAL `Project` = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "unknown"), `Project type` = COALESCE(project_type, "unknown"), `Data stream type` = COALESCE(ds_type, "other"), `Namespace` = COALESCE(ds_namespace, "other")
-| STATS `Indexing time (ms)` = SUM(datastream_sum_indexing_time), `Search query time (ms)` = SUM(datastream_sum_query_time), `Avg dataset size (MB)` = ROUND(AVG(TO_DOUBLE(datastream_sum_data_set_store_size)) / 1048576.0, 2) BY `Project`, `Project type`, `Data stream type`, `Namespace`, datastream
-| RENAME datastream AS `Data stream`
-| SORT `Indexing time (ms)` DESC
-| LIMIT 200"""
-    p, _ = lens_esql(
+{TIME_FILTER_ESQL}
+| EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "unknown"), project_type = COALESCE(project_type, "unknown"), ds_type = COALESCE(ds_type, "other"), ds_namespace = COALESCE(ds_namespace, "other")
+| STATS indexing_ms = SUM(datastream_sum_indexing_time), query_ms = SUM(datastream_sum_query_time), size_mb = ROUND(AVG(TO_DOUBLE(datastream_sum_data_set_store_size)) / 1048576.0, 2) BY project, project_type, ds_type, ds_namespace, datastream
+| SORT indexing_ms DESC
+| LIMIT 200
+| KEEP project, project_type, ds_type, ds_namespace, datastream, indexing_ms, query_ms, size_mb"""
+    p, _ = custom_panel(
         stable_uuid("lens-usage-datastream-metrics"),
         "Data stream harvested usage metrics (_cat/indices)",
+        DATASTREAM_METRICS_TABLE_TEMPLATE,
         esql,
-        [
-            col("Project", "keyword"),
-            col("Project type", "keyword"),
-            col("Data stream type", "keyword"),
-            col("Namespace", "keyword"),
-            col("Data stream", "keyword"),
-            col("Indexing time (ms)", "long"),
-            col("Search query time (ms)", "long"),
-            col("Avg dataset size (MB)", "double"),
-        ],
-        "lnsDatatable",
-        table_vis(
-            [
-                "Project",
-                "Project type",
-                "Data stream type",
-                "Namespace",
-                "Data stream",
-                "Indexing time (ms)",
-                "Search query time (ms)",
-                "Avg dataset size (MB)",
-            ]
-        ),
         0,
         28,
         48,
         14,
-        index=USAGE,
         section_id=sec_datastream_id,
     )
     panels.append(p)
@@ -2514,11 +2655,12 @@ def build_usage() -> dict:
 | LOOKUP JOIN {REALIZED_POOL} ON composite_key
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
 {CURRENCY_RESOLVE_ESQL}
+| EVAL ded_cost = COALESCE(ai_ecu, 0.0) * rate
 | EVAL ai_pool_cost = CASE(COALESCE(ai_ecu, 0.0) > 0.0, ai_ecu, COALESCE(query_ecu, 0.0)) * rate
-| STATS proj_spend = MAX(ai_pool_cost), proj_inf = SUM(inference_count), proj_latency = AVG(average_inference_time_ms), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY composite_key
-| STATS ai_spend = SUM(proj_spend), total_inferences = SUM(proj_inf), avg_latency_ms = ROUND(AVG(proj_latency), 1), currency_symbol = MAX(currency_symbol), unit = MAX(unit)
+| STATS proj_spend = MAX(ai_pool_cost), proj_ded = MAX(ded_cost), proj_inf = SUM(inference_count), proj_latency = AVG(average_inference_time_ms), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY composite_key
+| STATS ai_spend = SUM(proj_spend), dedicated_ai_spend = SUM(proj_ded), total_inferences = SUM(proj_inf), avg_latency_ms = ROUND(AVG(proj_latency), 1), currency_symbol = MAX(currency_symbol), unit = MAX(unit)
 | EVAL cost_per_1k = CASE(total_inferences > 0, ai_spend * 1000.0 / total_inferences, 0.0)
-| KEEP unit, currency_symbol, ai_spend, total_inferences, avg_latency_ms, cost_per_1k"""
+| KEEP unit, currency_symbol, ai_spend, dedicated_ai_spend, total_inferences, avg_latency_ms, cost_per_1k"""
 
     p, _ = custom_panel(
         stable_uuid("cc-usage-ai-kpi"),
@@ -2623,6 +2765,7 @@ def build_config() -> dict:
         panels,
         refs,
         with_controls=False,
+        hide_panel_titles=True,
     )
 
 
