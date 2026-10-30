@@ -232,7 +232,8 @@ def main():
                 inst_type = inst.get("type", "elasticsearch")
 
                 proj = project_map.get(inst_id, {})
-                pname = proj.get("name", inst_name) or inst_name or inst_id
+                proj_name = proj.get("name")
+                pname = proj_name if (proj_name and proj_name != inst_id) else (inst_name or proj_name or inst_id)
                 ptype = proj.get("project_type", inst_type) or inst_type
 
                 line_items = inst.get("product_line_items", [])
@@ -253,8 +254,12 @@ def main():
                         "project_id": inst_id,
                         "project_name": pname,
                         "project_type": ptype,
+                        "deployment_id": inst_id,
+                        "deployment_name": pname,
+                        "deployment_type": ptype,
                         "sku": sku,
                         "total_ecu": total_ecu,
+                        "total_chargeable_units": total_ecu,
                         "quantity_value": qty_val,
                         "cost_type": cost_type,
                         "cost_category": cost_cat,
@@ -452,6 +457,7 @@ def main():
                     "project_id": pid,
                     "project_name": pname,
                     "project_type": ptype,
+                    "cluster_name": pid,
                     "datastream": ds_name,
                     "ds_type": v["ds_type"],
                     "ds_namespace": v["ds_namespace"],

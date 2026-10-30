@@ -80,10 +80,9 @@ CURRENCY_RESOLVE_ESQL = """\
 # Shared ES|QL time filter: respects Kibana dashboard time picker (?_tstart / ?_tend).
 TIME_FILTER_ESQL = "| WHERE @timestamp >= ?_tstart AND @timestamp <= ?_tend"
 
-# Shared ES|QL prelude: currency rate and symbol from policy config stamped on events,
+# Shared ES|QL prelude body: currency rate and symbol from policy config stamped on events,
 # resolving missing/ID project_name via LOOKUP JOIN against serverless_project_status_lookup.
-COST_PRELUDE = f"""FROM {BILLING}
-| EVAL ts = @timestamp
+COST_PRELUDE_BODY = f"""| EVAL ts = @timestamp
 | RENAME project_id AS _b_pid, project_name AS _b_pname, project_type AS _b_ptype, conf_chargeable_unit_rate AS _b_rate, conf_chargeable_unit_rate_unit AS _b_unit, conf_currency_symbol AS _b_sym
 | LOOKUP JOIN {PROJECT_STATUS} ON composite_key
 | EVAL @timestamp = ts
@@ -99,6 +98,46 @@ COST_PRELUDE = f"""FROM {BILLING}
 | EVAL category_label = COALESCE(cost_category, "other")
 | EVAL cost_type_label = COALESCE(cost_type, "other")
 | WHERE ts IS NOT NULL"""
+
+COST_PRELUDE = f"""FROM {BILLING}
+{TIME_FILTER_ESQL}
+{COST_PRELUDE_BODY}"""
+
+COST_PRELUDE_NO_TIME = f"""FROM {BILLING}
+{COST_PRELUDE_BODY}"""
+
+# Shared ES|QL join body for USAGE (serverless_datastream_contribution_lookup):
+# Preserves @timestamp, avoids all column collisions across chained LOOKUP JOINs,
+# and resolves human-readable project_name and currency settings.
+USAGE_JOIN_BODY = f"""| EVAL ts = @timestamp
+| RENAME project_id AS _u_pid, project_name AS _u_pname, project_type AS _u_ptype, conf_chargeable_unit_rate AS _u_rate, conf_chargeable_unit_rate_unit AS _u_unit, conf_currency_symbol AS _u_sym
+| LOOKUP JOIN {PROJECT_STATUS} ON composite_key
+| RENAME project_id AS _ps_pid, project_name AS _ps_pname, project_type AS _ps_ptype, conf_chargeable_unit_rate AS _ps_rate, conf_chargeable_unit_rate_unit AS _ps_unit, conf_currency_symbol AS _ps_sym
+| LOOKUP JOIN {REALIZED_POOL} ON composite_key
+| RENAME project_id AS _rp_pid
+| LOOKUP JOIN {PROJECT_CONTRIB} ON composite_key
+| EVAL @timestamp = ts
+| EVAL project_id = COALESCE(_u_pid, _ps_pid, _rp_pid, project_id)
+| EVAL project_name = CASE(_u_pname IS NOT NULL AND _u_pname != "" AND _u_pname != project_id, _u_pname, _ps_pname IS NOT NULL AND _ps_pname != "" AND _ps_pname != project_id, _ps_pname, _u_pname IS NOT NULL AND _u_pname != "", _u_pname, _ps_pname IS NOT NULL AND _ps_pname != "", _ps_pname, project_id)
+| EVAL project_type = CASE(_u_ptype IS NOT NULL AND _u_ptype != "" AND _u_ptype != "unknown", _u_ptype, _ps_ptype IS NOT NULL AND _ps_ptype != "", _ps_ptype, "unknown")
+| EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "unknown")
+| EVAL conf_chargeable_unit_rate = COALESCE(conf_chargeable_unit_rate, _ps_rate, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _ps_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _ps_sym, _u_sym, "$")
+| EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
+{CURRENCY_RESOLVE_ESQL}"""
+
+# Shared ES|QL join body for AI_USAGE (serverless_ai_model_contribution_lookup):
+AI_JOIN_BODY = f"""| EVAL ts = @timestamp
+| RENAME project_id AS _u_pid, project_name AS _u_pname, project_type AS _u_ptype, conf_chargeable_unit_rate AS _u_rate, conf_chargeable_unit_rate_unit AS _u_unit, conf_currency_symbol AS _u_sym
+| LOOKUP JOIN {PROJECT_STATUS} ON composite_key
+| RENAME project_id AS _ps_pid, project_name AS _ps_pname, project_type AS _ps_ptype, conf_chargeable_unit_rate AS _ps_rate, conf_chargeable_unit_rate_unit AS _ps_unit, conf_currency_symbol AS _ps_sym
+| LOOKUP JOIN {REALIZED_POOL} ON composite_key
+| EVAL @timestamp = ts
+| EVAL project_id = COALESCE(_u_pid, _ps_pid, project_id)
+| EVAL project_name = CASE(_u_pname IS NOT NULL AND _u_pname != "" AND _u_pname != project_id, _u_pname, _ps_pname IS NOT NULL AND _ps_pname != "" AND _ps_pname != project_id, _ps_pname, _u_pname IS NOT NULL AND _u_pname != "", _u_pname, _ps_pname IS NOT NULL AND _ps_pname != "", _ps_pname, project_id)
+| EVAL project_type = CASE(_u_ptype IS NOT NULL AND _u_ptype != "" AND _u_ptype != "unknown", _u_ptype, _ps_ptype IS NOT NULL AND _ps_ptype != "", _ps_ptype, "unknown")
+| EVAL conf_chargeable_unit_rate = COALESCE(conf_chargeable_unit_rate, _ps_rate, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _ps_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _ps_sym, _u_sym, "$")
+| EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
+{CURRENCY_RESOLVE_ESQL}"""
 
 
 def stable_uuid(name: str) -> str:
@@ -1857,6 +1896,34 @@ DATASTREAM_COST_TABLE_TEMPLATE = f"""\
 <style>
 {PAGED_BASE_CSS}
 {paged_css("dscost", 25, "table-row")}
+  .cb-flt-bar-dscost {{ display: flex; align-items: center; gap: 5px; padding: 2px 2px 6px 2px; font-size: 0.75rem; color: var(--cc-color-text); flex-shrink: 0; flex-wrap: wrap; }}
+  .cb-flt-lbl {{ opacity: 0.72; font-weight: 600; font-size: 0.73rem; text-transform: uppercase; letter-spacing: 0.03em; margin-right: 2px; }}
+  #dscost_flt_all:checked ~ .cb-flt-bar-dscost .cb-flt-btn-dscost-all {{ background: var(--cc-color-primary); color: #ffffff !important; border-color: var(--cc-color-primary); font-weight: 700; }}
+  #dscost_flt_logs:checked ~ .cb-flt-bar-dscost .cb-flt-btn-dscost-logs,
+  #dscost_flt_metrics:checked ~ .cb-flt-bar-dscost .cb-flt-btn-dscost-metrics,
+  #dscost_flt_traces:checked ~ .cb-flt-bar-dscost .cb-flt-btn-dscost-traces,
+  #dscost_flt_synthetics:checked ~ .cb-flt-bar-dscost .cb-flt-btn-dscost-synthetics,
+  #dscost_flt_other:checked ~ .cb-flt-bar-dscost .cb-flt-btn-dscost-other {{ background: var(--cc-color-primary); color: #ffffff !important; border-color: var(--cc-color-primary); font-weight: 700; }}
+  #dscost_flt_logs:checked ~ .cb-content-wrap-dscost,
+  #dscost_flt_metrics:checked ~ .cb-content-wrap-dscost,
+  #dscost_flt_traces:checked ~ .cb-content-wrap-dscost,
+  #dscost_flt_synthetics:checked ~ .cb-content-wrap-dscost,
+  #dscost_flt_other:checked ~ .cb-content-wrap-dscost {{ overflow-y: auto !important; }}
+  #dscost_flt_logs:checked ~ .cb-content-wrap-dscost .cb-pg-row-dscost,
+  #dscost_flt_metrics:checked ~ .cb-content-wrap-dscost .cb-pg-row-dscost,
+  #dscost_flt_traces:checked ~ .cb-content-wrap-dscost .cb-pg-row-dscost,
+  #dscost_flt_synthetics:checked ~ .cb-content-wrap-dscost .cb-pg-row-dscost,
+  #dscost_flt_other:checked ~ .cb-content-wrap-dscost .cb-pg-row-dscost {{ display: none !important; }}
+  #dscost_flt_logs:checked ~ .cb-content-wrap-dscost .cb-pg-row-dscost.cb-dst-logs,
+  #dscost_flt_metrics:checked ~ .cb-content-wrap-dscost .cb-pg-row-dscost.cb-dst-metrics,
+  #dscost_flt_traces:checked ~ .cb-content-wrap-dscost .cb-pg-row-dscost.cb-dst-traces,
+  #dscost_flt_synthetics:checked ~ .cb-content-wrap-dscost .cb-pg-row-dscost.cb-dst-synthetics,
+  #dscost_flt_other:checked ~ .cb-content-wrap-dscost .cb-pg-row-dscost.cb-dst-other {{ display: table-row !important; }}
+  #dscost_flt_logs:checked ~ .cb-pg-bar-dscost,
+  #dscost_flt_metrics:checked ~ .cb-pg-bar-dscost,
+  #dscost_flt_traces:checked ~ .cb-pg-bar-dscost,
+  #dscost_flt_synthetics:checked ~ .cb-pg-bar-dscost,
+  #dscost_flt_other:checked ~ .cb-pg-bar-dscost {{ display: none !important; }}
   table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; color: var(--cc-color-text); }}
   table.cb-t th {{
     position: sticky; top: 0; background: var(--cc-color-surface); z-index: 1;
@@ -1870,7 +1937,30 @@ DATASTREAM_COST_TABLE_TEMPLATE = f"""\
 </style>
 {{% assign unit = rows[0]["unit"].value | default: "USD" %}}
 {{% assign sym = rows[0]["currency_symbol"].value | default: "$" %}}
-{paged_top("dscost", 10, 25)}
+{{% assign _total_items = rows.size | default: 0 | round %}}
+{{% assign _total_pages = _total_items | minus: 1 | divided_by: 10 | floor | plus: 1 %}}
+{{% if _total_pages < 1 %}}{{% assign _total_pages = 1 %}}{{% endif %}}
+{{% if _total_pages > 25 %}}{{% assign _total_pages = 25 %}}{{% endif %}}
+<div class="cb-paged-wrap cb-paged-wrap-dscost">
+  <input type="radio" name="dscost_flt" id="dscost_flt_all" class="cb-pg-radio-dscost" checked>
+  <input type="radio" name="dscost_flt" id="dscost_flt_logs" class="cb-pg-radio-dscost">
+  <input type="radio" name="dscost_flt" id="dscost_flt_metrics" class="cb-pg-radio-dscost">
+  <input type="radio" name="dscost_flt" id="dscost_flt_traces" class="cb-pg-radio-dscost">
+  <input type="radio" name="dscost_flt" id="dscost_flt_synthetics" class="cb-pg-radio-dscost">
+  <input type="radio" name="dscost_flt" id="dscost_flt_other" class="cb-pg-radio-dscost">
+{{% for _p_i in (1.._total_pages) %}}
+  <input type="radio" name="dscost_pg" id="dscost_pg_{{{{ _p_i }}}}" class="cb-pg-radio-dscost" {{% if _p_i == 1 %}}checked{{% endif %}}>
+{{% endfor %}}
+<div class="cb-flt-bar cb-flt-bar-dscost">
+  <span class="cb-flt-lbl">Type:</span>
+  <label for="dscost_flt_all" class="cb-pg-btn cb-flt-btn-dscost-all">All ({{{{ _total_items }}}})</label>
+  <label for="dscost_flt_logs" class="cb-pg-btn cb-flt-btn-dscost-logs">logs</label>
+  <label for="dscost_flt_metrics" class="cb-pg-btn cb-flt-btn-dscost-metrics">metrics</label>
+  <label for="dscost_flt_traces" class="cb-pg-btn cb-flt-btn-dscost-traces">traces</label>
+  <label for="dscost_flt_synthetics" class="cb-pg-btn cb-flt-btn-dscost-synthetics">synthetics</label>
+  <label for="dscost_flt_other" class="cb-pg-btn cb-flt-btn-dscost-other">other</label>
+</div>
+<div class="cb-content-wrap cb-content-wrap-dscost">
 <table class="cb-t">
   <thead>
     <tr><th>Project</th><th>Project Type</th><th>Type</th><th>Namespace</th><th>Data Stream</th><th class="num">Indexing ({{{{ sym }}}})</th><th class="num">Search ({{{{ sym }}}})</th><th class="num">Storage ({{{{ sym }}}})</th><th class="num">Attributed Cost ({{{{ unit }}}})</th></tr>
@@ -1881,6 +1971,8 @@ DATASTREAM_COST_TABLE_TEMPLATE = f"""\
   {{% else %}}
   {{% for row in rows %}}
     {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
+    {{% assign _dst = row["ds_type"].value | default: "other" | downcase %}}
+    {{% if _dst != "logs" and _dst != "metrics" and _dst != "traces" and _dst != "synthetics" %}}{{% assign _dst = "other" %}}{{% endif %}}
     {{% assign idx = row["indexing_cost"].value | default: 0.0 %}}
     {{% assign qry = row["query_cost"].value | default: 0.0 %}}
     {{% assign stg = row["storage_cost"].value | default: 0.0 %}}
@@ -1889,7 +1981,7 @@ DATASTREAM_COST_TABLE_TEMPLATE = f"""\
 {liquid_money_block("qry", "fmt_qry", with_decimals=True)}
 {liquid_money_block("stg", "fmt_stg", with_decimals=True)}
 {liquid_money_block("total", "fmt_total", with_decimals=True)}
-    <tr class="cb-pg-row-dscost cb-pg-dscost-{{{{ _row_pg }}}}">
+    <tr class="cb-pg-row-dscost cb-pg-dscost-{{{{ _row_pg }}}} cb-dst-{{{{ _dst }}}}">
       <td><strong>{{{{ row["project"].value }}}}</strong></td>
       <td>{{{{ row["project_type"].value }}}}</td>
       <td>{{{{ row["ds_type"].value }}}}</td>
@@ -1912,6 +2004,34 @@ DATASTREAM_METRICS_TABLE_TEMPLATE = f"""\
 <style>
 {PAGED_BASE_CSS}
 {paged_css("dsmet", 25, "table-row")}
+  .cb-flt-bar-dsmet {{ display: flex; align-items: center; gap: 5px; padding: 2px 2px 6px 2px; font-size: 0.75rem; color: var(--cc-color-text); flex-shrink: 0; flex-wrap: wrap; }}
+  .cb-flt-lbl {{ opacity: 0.72; font-weight: 600; font-size: 0.73rem; text-transform: uppercase; letter-spacing: 0.03em; margin-right: 2px; }}
+  #dsmet_flt_all:checked ~ .cb-flt-bar-dsmet .cb-flt-btn-dsmet-all {{ background: var(--cc-color-primary); color: #ffffff !important; border-color: var(--cc-color-primary); font-weight: 700; }}
+  #dsmet_flt_logs:checked ~ .cb-flt-bar-dsmet .cb-flt-btn-dsmet-logs,
+  #dsmet_flt_metrics:checked ~ .cb-flt-bar-dsmet .cb-flt-btn-dsmet-metrics,
+  #dsmet_flt_traces:checked ~ .cb-flt-bar-dsmet .cb-flt-btn-dsmet-traces,
+  #dsmet_flt_synthetics:checked ~ .cb-flt-bar-dsmet .cb-flt-btn-dsmet-synthetics,
+  #dsmet_flt_other:checked ~ .cb-flt-bar-dsmet .cb-flt-btn-dsmet-other {{ background: var(--cc-color-primary); color: #ffffff !important; border-color: var(--cc-color-primary); font-weight: 700; }}
+  #dsmet_flt_logs:checked ~ .cb-content-wrap-dsmet,
+  #dsmet_flt_metrics:checked ~ .cb-content-wrap-dsmet,
+  #dsmet_flt_traces:checked ~ .cb-content-wrap-dsmet,
+  #dsmet_flt_synthetics:checked ~ .cb-content-wrap-dsmet,
+  #dsmet_flt_other:checked ~ .cb-content-wrap-dsmet {{ overflow-y: auto !important; }}
+  #dsmet_flt_logs:checked ~ .cb-content-wrap-dsmet .cb-pg-row-dsmet,
+  #dsmet_flt_metrics:checked ~ .cb-content-wrap-dsmet .cb-pg-row-dsmet,
+  #dsmet_flt_traces:checked ~ .cb-content-wrap-dsmet .cb-pg-row-dsmet,
+  #dsmet_flt_synthetics:checked ~ .cb-content-wrap-dsmet .cb-pg-row-dsmet,
+  #dsmet_flt_other:checked ~ .cb-content-wrap-dsmet .cb-pg-row-dsmet {{ display: none !important; }}
+  #dsmet_flt_logs:checked ~ .cb-content-wrap-dsmet .cb-pg-row-dsmet.cb-dst-logs,
+  #dsmet_flt_metrics:checked ~ .cb-content-wrap-dsmet .cb-pg-row-dsmet.cb-dst-metrics,
+  #dsmet_flt_traces:checked ~ .cb-content-wrap-dsmet .cb-pg-row-dsmet.cb-dst-traces,
+  #dsmet_flt_synthetics:checked ~ .cb-content-wrap-dsmet .cb-pg-row-dsmet.cb-dst-synthetics,
+  #dsmet_flt_other:checked ~ .cb-content-wrap-dsmet .cb-pg-row-dsmet.cb-dst-other {{ display: table-row !important; }}
+  #dsmet_flt_logs:checked ~ .cb-pg-bar-dsmet,
+  #dsmet_flt_metrics:checked ~ .cb-pg-bar-dsmet,
+  #dsmet_flt_traces:checked ~ .cb-pg-bar-dsmet,
+  #dsmet_flt_synthetics:checked ~ .cb-pg-bar-dsmet,
+  #dsmet_flt_other:checked ~ .cb-pg-bar-dsmet {{ display: none !important; }}
   table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; color: var(--cc-color-text); }}
   table.cb-t th {{
     position: sticky; top: 0; background: var(--cc-color-surface); z-index: 1;
@@ -1922,7 +2042,30 @@ DATASTREAM_METRICS_TABLE_TEMPLATE = f"""\
   table.cb-t td {{ padding: 6px 8px; border-bottom: 1px solid var(--cc-color-border); color: var(--cc-color-text); }}
   table.cb-t th.num, table.cb-t td.num {{ text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }}
 </style>
-{paged_top("dsmet", 10, 25)}
+{{% assign _total_items = rows.size | default: 0 | round %}}
+{{% assign _total_pages = _total_items | minus: 1 | divided_by: 10 | floor | plus: 1 %}}
+{{% if _total_pages < 1 %}}{{% assign _total_pages = 1 %}}{{% endif %}}
+{{% if _total_pages > 25 %}}{{% assign _total_pages = 25 %}}{{% endif %}}
+<div class="cb-paged-wrap cb-paged-wrap-dsmet">
+  <input type="radio" name="dsmet_flt" id="dsmet_flt_all" class="cb-pg-radio-dsmet" checked>
+  <input type="radio" name="dsmet_flt" id="dsmet_flt_logs" class="cb-pg-radio-dsmet">
+  <input type="radio" name="dsmet_flt" id="dsmet_flt_metrics" class="cb-pg-radio-dsmet">
+  <input type="radio" name="dsmet_flt" id="dsmet_flt_traces" class="cb-pg-radio-dsmet">
+  <input type="radio" name="dsmet_flt" id="dsmet_flt_synthetics" class="cb-pg-radio-dsmet">
+  <input type="radio" name="dsmet_flt" id="dsmet_flt_other" class="cb-pg-radio-dsmet">
+{{% for _p_i in (1.._total_pages) %}}
+  <input type="radio" name="dsmet_pg" id="dsmet_pg_{{{{ _p_i }}}}" class="cb-pg-radio-dsmet" {{% if _p_i == 1 %}}checked{{% endif %}}>
+{{% endfor %}}
+<div class="cb-flt-bar cb-flt-bar-dsmet">
+  <span class="cb-flt-lbl">Type:</span>
+  <label for="dsmet_flt_all" class="cb-pg-btn cb-flt-btn-dsmet-all">All ({{{{ _total_items }}}})</label>
+  <label for="dsmet_flt_logs" class="cb-pg-btn cb-flt-btn-dsmet-logs">logs</label>
+  <label for="dsmet_flt_metrics" class="cb-pg-btn cb-flt-btn-dsmet-metrics">metrics</label>
+  <label for="dsmet_flt_traces" class="cb-pg-btn cb-flt-btn-dsmet-traces">traces</label>
+  <label for="dsmet_flt_synthetics" class="cb-pg-btn cb-flt-btn-dsmet-synthetics">synthetics</label>
+  <label for="dsmet_flt_other" class="cb-pg-btn cb-flt-btn-dsmet-other">other</label>
+</div>
+<div class="cb-content-wrap cb-content-wrap-dsmet">
 <table class="cb-t">
   <thead>
     <tr><th>Project</th><th>Project Type</th><th>Type</th><th>Namespace</th><th>Data Stream</th><th class="num">Indexing Time (ms)</th><th class="num">Search Query Time (ms)</th><th class="num">Avg Dataset Size (MB)</th></tr>
@@ -1933,13 +2076,15 @@ DATASTREAM_METRICS_TABLE_TEMPLATE = f"""\
   {{% else %}}
   {{% for row in rows %}}
     {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
+    {{% assign _dst = row["ds_type"].value | default: "other" | downcase %}}
+    {{% if _dst != "logs" and _dst != "metrics" and _dst != "traces" and _dst != "synthetics" %}}{{% assign _dst = "other" %}}{{% endif %}}
     {{% assign idx_ms = row["indexing_ms"].value | default: 0 %}}
     {{% assign qry_ms = row["query_ms"].value | default: 0 %}}
     {{% assign sz_mb = row["size_mb"].value | default: 0.0 %}}
 {liquid_money_block("idx_ms", "fmt_idx_ms", with_decimals=False)}
 {liquid_money_block("qry_ms", "fmt_qry_ms", with_decimals=False)}
 {liquid_money_block("sz_mb", "fmt_sz_mb", with_decimals=True)}
-    <tr class="cb-pg-row-dsmet cb-pg-dsmet-{{{{ _row_pg }}}}">
+    <tr class="cb-pg-row-dsmet cb-pg-dsmet-{{{{ _row_pg }}}} cb-dst-{{{{ _dst }}}}">
       <td><strong>{{{{ row["project"].value }}}}</strong></td>
       <td>{{{{ row["project_type"].value }}}}</td>
       <td>{{{{ row["ds_type"].value }}}}</td>
@@ -2525,7 +2670,6 @@ def build_billing() -> dict:
         "Billing Summary",
         BILLING_KPI_TEMPLATE,
         f"""{COST_PRELUDE}
-{TIME_FILTER_ESQL}
 | EVAL alloc_cost = CASE(COALESCE(is_allocatable, false) == true AND allocation_driver != "none", cost, 0.0)
 | EVAL unalloc_cost = CASE(COALESCE(is_allocatable, false) == false OR allocation_driver == "none", cost, 0.0)
 | EVAL day = DATE_TRUNC(1 day, ts)
@@ -2542,7 +2686,6 @@ def build_billing() -> dict:
         "Daily cost by project",
         DAILY_PROJECT_COST_TEMPLATE,
         f"""{COST_PRELUDE}
-{TIME_FILTER_ESQL}
 | STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY b = DATE_TRUNC(1 day, @timestamp), project
 | EVAL day = TO_STRING(b)
 | INLINE STATS day_cost = SUM(cost) BY day
@@ -2562,7 +2705,6 @@ def build_billing() -> dict:
         "Daily cost by cost category",
         DAILY_CATEGORY_COST_TEMPLATE,
         f"""{COST_PRELUDE}
-{TIME_FILTER_ESQL}
 | STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY b = DATE_TRUNC(1 day, @timestamp), category_label
 | RENAME category_label AS category
 | EVAL day = TO_STRING(b)
@@ -2583,7 +2725,6 @@ def build_billing() -> dict:
         "Cost by project",
         make_bar_template("project", "Project"),
         f"""{COST_PRELUDE}
-{TIME_FILTER_ESQL}
 | STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project
 | SORT cost DESC
 | LIMIT 25
@@ -2600,7 +2741,6 @@ def build_billing() -> dict:
         "Cost by cost category",
         make_bar_template("category", "Cost category"),
         f"""{COST_PRELUDE}
-{TIME_FILTER_ESQL}
 | STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY category_label
 | RENAME category_label AS category
 | SORT cost DESC
@@ -2618,7 +2758,6 @@ def build_billing() -> dict:
         "Spend flow (Cost category → Cost type → Project type)",
         SANKEY_TEMPLATE,
         f"""{COST_PRELUDE}
-{TIME_FILTER_ESQL}
 | STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY category_label, cost_type_label, project_type_label
 | SORT cost DESC
 | LIMIT 25
@@ -2636,7 +2775,6 @@ def build_billing() -> dict:
         "Unallocatable & pass-through charges",
         UNALLOC_TABLE_TEMPLATE,
         f"""{COST_PRELUDE}
-{TIME_FILTER_ESQL}
 | WHERE COALESCE(is_allocatable, false) == false OR allocation_driver == "none"
 | STATS cost = SUM(cost), ecu = SUM(units), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY category_label, cost_type_label, sku, project
 | RENAME category_label AS category, cost_type_label AS cost_type
@@ -2655,7 +2793,6 @@ def build_billing() -> dict:
         "Invoice reconciliation detail",
         INVOICE_TABLE_TEMPLATE,
         f"""{COST_PRELUDE}
-{TIME_FILTER_ESQL}
 | STATS qty = SUM(COALESCE(quantity_value, 0.0)), ecu = SUM(units), cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project, project_type_label, category_label, cost_type_label, sku, allocation_driver
 | RENAME project_type_label AS project_type, category_label AS category, cost_type_label AS cost_type, allocation_driver AS driver
 | SORT cost DESC
@@ -2713,7 +2850,6 @@ def build_usage() -> dict:
         "Workload Pool Summary",
         USAGE_KPI_TEMPLATE,
         f"""{COST_PRELUDE}
-{TIME_FILTER_ESQL}
 | WHERE COALESCE(is_allocatable, false) == true AND allocation_driver != "none"
 | EVAL idx_c = CASE(cost_type_label IN ("ingest-vcu", "ingest"), cost, 0.0)
 | EVAL qry_c = CASE(cost_type_label IN ("search-vcu", "search"), cost, 0.0)
@@ -2732,7 +2868,6 @@ def build_usage() -> dict:
         "Daily allocatable cost by workload driver",
         DAILY_DRIVER_COST_TEMPLATE,
         f"""{COST_PRELUDE}
-{TIME_FILTER_ESQL}
 | WHERE COALESCE(is_allocatable, false) == true AND allocation_driver != "none"
 | EVAL driver = CASE(cost_type_label IN ("ingest-vcu", "ingest"), "Indexing (ingest-vcu + ingest)", cost_type_label IN ("search-vcu", "search"), "Search & Query (search-vcu)", cost_type_label == "retained", "Storage (retained)", cost_type_label)
 | STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY b = DATE_TRUNC(1 day, @timestamp), driver
@@ -2755,7 +2890,6 @@ def build_usage() -> dict:
         "Cost allocation by project",
         ALLOC_TABLE_TEMPLATE,
         f"""{COST_PRELUDE}
-{TIME_FILTER_ESQL}
 | WHERE COALESCE(is_allocatable, false) == true AND allocation_driver != "none"
 | STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project, project_type_label, cost_type_label, allocation_driver
 | SORT cost DESC
@@ -2776,12 +2910,7 @@ def build_usage() -> dict:
         make_bar_template("namespace", "Namespace"),
         f"""FROM {USAGE}
 {TIME_FILTER_ESQL}
-| RENAME conf_chargeable_unit_rate AS _u_rate, conf_chargeable_unit_rate_unit AS _u_unit, conf_currency_symbol AS _u_sym
-| LOOKUP JOIN {REALIZED_POOL} ON composite_key
-| LOOKUP JOIN {PROJECT_CONTRIB} ON composite_key
-| EVAL conf_chargeable_unit_rate = COALESCE(conf_chargeable_unit_rate, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _u_sym, "$")
-| EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
-{CURRENCY_RESOLVE_ESQL}
+{USAGE_JOIN_BODY}
 | EVAL idx_share = CASE(deployment_sum_indexing_time > 0, TO_DOUBLE(datastream_sum_indexing_time) / TO_DOUBLE(deployment_sum_indexing_time), 0.0)
 | EVAL qry_share = CASE(deployment_sum_query_time > 0, TO_DOUBLE(datastream_sum_query_time) / TO_DOUBLE(deployment_sum_query_time), 0.0)
 | EVAL stg_share = CASE(deployment_sum_data_set_store_size > 0, TO_DOUBLE(datastream_sum_data_set_store_size) / TO_DOUBLE(deployment_sum_data_set_store_size), 0.0)
@@ -2808,12 +2937,7 @@ def build_usage() -> dict:
         make_bar_template("ds_type", "Data stream type"),
         f"""FROM {USAGE}
 {TIME_FILTER_ESQL}
-| RENAME conf_chargeable_unit_rate AS _u_rate, conf_chargeable_unit_rate_unit AS _u_unit, conf_currency_symbol AS _u_sym
-| LOOKUP JOIN {REALIZED_POOL} ON composite_key
-| LOOKUP JOIN {PROJECT_CONTRIB} ON composite_key
-| EVAL conf_chargeable_unit_rate = COALESCE(conf_chargeable_unit_rate, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _u_sym, "$")
-| EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
-{CURRENCY_RESOLVE_ESQL}
+{USAGE_JOIN_BODY}
 | EVAL idx_share = CASE(deployment_sum_indexing_time > 0, TO_DOUBLE(datastream_sum_indexing_time) / TO_DOUBLE(deployment_sum_indexing_time), 0.0)
 | EVAL qry_share = CASE(deployment_sum_query_time > 0, TO_DOUBLE(datastream_sum_query_time) / TO_DOUBLE(deployment_sum_query_time), 0.0)
 | EVAL stg_share = CASE(deployment_sum_data_set_store_size > 0, TO_DOUBLE(datastream_sum_data_set_store_size) / TO_DOUBLE(deployment_sum_data_set_store_size), 0.0)
@@ -2841,20 +2965,7 @@ def build_usage() -> dict:
         DATASTREAM_COST_TABLE_TEMPLATE,
         f"""FROM {USAGE}
 {TIME_FILTER_ESQL}
-| EVAL ts = @timestamp
-| RENAME project_id AS _u_pid, project_name AS _u_pname, project_type AS _u_ptype, conf_chargeable_unit_rate AS _u_rate, conf_chargeable_unit_rate_unit AS _u_unit, conf_currency_symbol AS _u_sym
-| LOOKUP JOIN {PROJECT_STATUS} ON composite_key
-| EVAL _ps_rate = conf_chargeable_unit_rate, _ps_unit = conf_chargeable_unit_rate_unit, _ps_sym = conf_currency_symbol
-| LOOKUP JOIN {REALIZED_POOL} ON composite_key
-| LOOKUP JOIN {PROJECT_CONTRIB} ON composite_key
-| EVAL @timestamp = ts
-| EVAL project_id = COALESCE(_u_pid, project_id)
-| EVAL project_name = CASE(_u_pname IS NOT NULL AND _u_pname != "" AND _u_pname != project_id, _u_pname, project_name IS NOT NULL AND project_name != "" AND project_name != project_id, project_name, _u_pname IS NOT NULL AND _u_pname != "", _u_pname, project_name IS NOT NULL AND project_name != "", project_name, project_id)
-| EVAL project_type = CASE(_u_ptype IS NOT NULL AND _u_ptype != "" AND _u_ptype != "unknown", _u_ptype, project_type IS NOT NULL AND project_type != "", project_type, "unknown")
-| EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "unknown")
-| EVAL conf_chargeable_unit_rate = COALESCE(conf_chargeable_unit_rate, _ps_rate, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _ps_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _ps_sym, _u_sym, "$")
-| EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
-{CURRENCY_RESOLVE_ESQL}
+{USAGE_JOIN_BODY}
 | EVAL idx_share = CASE(deployment_sum_indexing_time > 0, TO_DOUBLE(datastream_sum_indexing_time) / TO_DOUBLE(deployment_sum_indexing_time), 0.0)
 | EVAL qry_share = CASE(deployment_sum_query_time > 0, TO_DOUBLE(datastream_sum_query_time) / TO_DOUBLE(deployment_sum_query_time), 0.0)
 | EVAL stg_share = CASE(deployment_sum_data_set_store_size > 0, TO_DOUBLE(datastream_sum_data_set_store_size) / TO_DOUBLE(deployment_sum_data_set_store_size), 0.0)
@@ -2923,17 +3034,13 @@ def build_ai() -> dict:
 
     ai_kpi_esql = f"""FROM {AI_USAGE}
 {TIME_FILTER_ESQL}
-| RENAME conf_chargeable_unit_rate AS _u_rate, conf_chargeable_unit_rate_unit AS _u_unit, conf_currency_symbol AS _u_sym
-| LOOKUP JOIN {REALIZED_POOL} ON composite_key
-| EVAL conf_chargeable_unit_rate = COALESCE(conf_chargeable_unit_rate, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _u_sym, "$")
-| EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
-{CURRENCY_RESOLVE_ESQL}
+{AI_JOIN_BODY}
 | EVAL ded_cost = COALESCE(ai_ecu, 0.0) * rate
 | EVAL ai_pool_cost = CASE(COALESCE(ai_ecu, 0.0) > 0.0, ai_ecu, COALESCE(query_ecu, 0.0)) * rate
 | INLINE STATS total_models = COUNT_DISTINCT(model_id)
 | STATS proj_spend = MAX(ai_pool_cost), proj_ded = MAX(ded_cost), proj_inf = SUM(inference_count), proj_latency = AVG(average_inference_time_ms), model_count = MAX(total_models), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY composite_key
 | STATS ai_spend = SUM(proj_spend), dedicated_ai_spend = SUM(proj_ded), total_inferences = SUM(proj_inf), model_count = MAX(model_count), avg_latency_ms = ROUND(AVG(proj_latency), 1), currency_symbol = MAX(currency_symbol), unit = MAX(unit)
-| EVAL cost_per_1k = CASE(total_inferences > 0, ai_spend * 1000.0 / total_inferences, 0.0)
+| EVAL cost_per_1k = CASE(total_inferences > 0, ai_spend * 1000.0 / TO_DOUBLE(total_inferences), 0.0)
 | KEEP unit, currency_symbol, ai_spend, dedicated_ai_spend, total_inferences, model_count, avg_latency_ms, cost_per_1k"""
 
     p, _ = custom_panel(
@@ -2950,13 +3057,7 @@ def build_ai() -> dict:
 
     ai_daily_model_esql = f"""FROM {AI_USAGE}
 {TIME_FILTER_ESQL}
-| EVAL ts = @timestamp
-| RENAME conf_chargeable_unit_rate AS _u_rate, conf_chargeable_unit_rate_unit AS _u_unit, conf_currency_symbol AS _u_sym
-| LOOKUP JOIN {REALIZED_POOL} ON composite_key
-| EVAL @timestamp = ts
-| EVAL conf_chargeable_unit_rate = COALESCE(conf_chargeable_unit_rate, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _u_sym, "$")
-| EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
-{CURRENCY_RESOLVE_ESQL}
+{AI_JOIN_BODY}
 | EVAL compute_time = COALESCE(total_inference_time_ms, 0)
 | EVAL model_weight = CASE(compute_time > 0, TO_DOUBLE(compute_time), TO_DOUBLE(inference_count))
 | EVAL ai_pool_cost = CASE(COALESCE(ai_ecu, 0.0) > 0.0, ai_ecu, COALESCE(query_ecu, 0.0)) * rate
@@ -2984,18 +3085,7 @@ def build_ai() -> dict:
 
     ai_by_proj_esql = f"""FROM {AI_USAGE}
 {TIME_FILTER_ESQL}
-| EVAL ts = @timestamp
-| RENAME project_id AS _u_pid, project_name AS _u_pname, project_type AS _u_ptype, conf_chargeable_unit_rate AS _u_rate, conf_chargeable_unit_rate_unit AS _u_unit, conf_currency_symbol AS _u_sym
-| LOOKUP JOIN {PROJECT_STATUS} ON composite_key
-| EVAL _ps_rate = conf_chargeable_unit_rate, _ps_unit = conf_chargeable_unit_rate_unit, _ps_sym = conf_currency_symbol
-| LOOKUP JOIN {REALIZED_POOL} ON composite_key
-| EVAL @timestamp = ts
-| EVAL project_id = COALESCE(_u_pid, project_id)
-| EVAL project_name = CASE(_u_pname IS NOT NULL AND _u_pname != "" AND _u_pname != project_id, _u_pname, project_name IS NOT NULL AND project_name != "" AND project_name != project_id, project_name, _u_pname IS NOT NULL AND _u_pname != "", _u_pname, project_name IS NOT NULL AND project_name != "", project_name, project_id)
-| EVAL project_type = CASE(_u_ptype IS NOT NULL AND _u_ptype != "" AND _u_ptype != "unknown", _u_ptype, project_type IS NOT NULL AND project_type != "", project_type, "unknown")
-| EVAL conf_chargeable_unit_rate = COALESCE(conf_chargeable_unit_rate, _ps_rate, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _ps_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _ps_sym, _u_sym, "$")
-| EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
-{CURRENCY_RESOLVE_ESQL}
+{AI_JOIN_BODY}
 | EVAL compute_time = COALESCE(total_inference_time_ms, 0)
 | EVAL model_weight = CASE(compute_time > 0, TO_DOUBLE(compute_time), TO_DOUBLE(inference_count))
 | EVAL ai_pool_cost = CASE(COALESCE(ai_ecu, 0.0) > 0.0, ai_ecu, COALESCE(query_ecu, 0.0)) * rate
@@ -3021,18 +3111,7 @@ def build_ai() -> dict:
 
     ai_models_esql = f"""FROM {AI_USAGE}
 {TIME_FILTER_ESQL}
-| EVAL ts = @timestamp
-| RENAME project_id AS _u_pid, project_name AS _u_pname, project_type AS _u_ptype, conf_chargeable_unit_rate AS _u_rate, conf_chargeable_unit_rate_unit AS _u_unit, conf_currency_symbol AS _u_sym
-| LOOKUP JOIN {PROJECT_STATUS} ON composite_key
-| EVAL _ps_rate = conf_chargeable_unit_rate, _ps_unit = conf_chargeable_unit_rate_unit, _ps_sym = conf_currency_symbol
-| LOOKUP JOIN {REALIZED_POOL} ON composite_key
-| EVAL @timestamp = ts
-| EVAL project_id = COALESCE(_u_pid, project_id)
-| EVAL project_name = CASE(_u_pname IS NOT NULL AND _u_pname != "" AND _u_pname != project_id, _u_pname, project_name IS NOT NULL AND project_name != "" AND project_name != project_id, project_name, _u_pname IS NOT NULL AND _u_pname != "", _u_pname, project_name IS NOT NULL AND project_name != "", project_name, project_id)
-| EVAL project_type = CASE(_u_ptype IS NOT NULL AND _u_ptype != "" AND _u_ptype != "unknown", _u_ptype, project_type IS NOT NULL AND project_type != "", project_type, "unknown")
-| EVAL conf_chargeable_unit_rate = COALESCE(conf_chargeable_unit_rate, _ps_rate, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _ps_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _ps_sym, _u_sym, "$")
-| EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
-{CURRENCY_RESOLVE_ESQL}
+{AI_JOIN_BODY}
 | EVAL compute_time = COALESCE(total_inference_time_ms, 0)
 | EVAL model_weight = CASE(compute_time > 0, TO_DOUBLE(compute_time), TO_DOUBLE(inference_count))
 | EVAL ai_pool_cost = CASE(COALESCE(ai_ecu, 0.0) > 0.0, ai_ecu, COALESCE(query_ecu, 0.0)) * rate
@@ -3061,7 +3140,6 @@ def build_ai() -> dict:
         "Dedicated AI, Inference & Agent Builder Billing Line Items",
         AI_BILLING_TABLE_TEMPLATE,
         f"""{COST_PRELUDE}
-{TIME_FILTER_ESQL}
 | WHERE cost_type_label IN ("ml-vcu", "inference", "agent-builder") OR sku LIKE "*ml*" OR sku LIKE "*inference*" OR sku LIKE "*llm*" OR sku LIKE "*agent-builder*"
 | STATS qty = SUM(COALESCE(quantity_value, 0.0)), ecu = SUM(units), cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project, project_type_label, cost_type_label, sku
 | RENAME project_type_label AS project_type, cost_type_label AS cost_type
@@ -3099,14 +3177,13 @@ def build_synthetics() -> dict:
         "Synthetics Billing Summary",
         SYNTHETICS_KPI_TEMPLATE,
         f"""{COST_PRELUDE}
-{TIME_FILTER_ESQL}
 | EVAL is_synth = (cost_type_label == "synthetics" OR sku LIKE "*synthetics*")
 | EVAL synth_cost = CASE(is_synth, cost, 0.0)
 | EVAL synth_ecu = CASE(is_synth, units, 0.0)
 | EVAL synth_qty = CASE(is_synth, COALESCE(quantity_value, 0.0), 0.0)
 | EVAL synth_proj = CASE(is_synth AND cost > 0, project_id, null)
 | STATS synthetics_spend = SUM(synth_cost), total_org_spend = SUM(cost), synthetics_ecu = SUM(synth_ecu), synthetics_runs = SUM(synth_qty), project_count = COUNT_DISTINCT(synth_proj), currency_symbol = MAX(currency_symbol), unit = MAX(unit)
-| EVAL cost_per_1k = CASE(synthetics_runs > 0, synthetics_spend * 1000.0 / synthetics_runs, 0.0)
+| EVAL cost_per_1k = CASE(synthetics_runs > 0, synthetics_spend * 1000.0 / TO_DOUBLE(synthetics_runs), 0.0)
 | KEEP unit, currency_symbol, synthetics_spend, total_org_spend, synthetics_ecu, synthetics_runs, project_count, cost_per_1k""",
         0,
         2,
@@ -3121,12 +3198,7 @@ def build_synthetics() -> dict:
         SYNTHETICS_DS_KPI_TEMPLATE,
         f"""FROM {USAGE}
 {TIME_FILTER_ESQL}
-| RENAME conf_chargeable_unit_rate AS _u_rate, conf_chargeable_unit_rate_unit AS _u_unit, conf_currency_symbol AS _u_sym
-| LOOKUP JOIN {REALIZED_POOL} ON composite_key
-| LOOKUP JOIN {PROJECT_CONTRIB} ON composite_key
-| EVAL conf_chargeable_unit_rate = COALESCE(conf_chargeable_unit_rate, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _u_sym, "$")
-| EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
-{CURRENCY_RESOLVE_ESQL}
+{USAGE_JOIN_BODY}
 | EVAL is_synth_ds = (ds_type == "synthetics" OR datastream LIKE "*synthetics*")
 | EVAL idx_share = CASE(is_synth_ds AND deployment_sum_indexing_time > 0, TO_DOUBLE(datastream_sum_indexing_time) / TO_DOUBLE(deployment_sum_indexing_time), 0.0)
 | EVAL qry_share = CASE(is_synth_ds AND deployment_sum_query_time > 0, TO_DOUBLE(datastream_sum_query_time) / TO_DOUBLE(deployment_sum_query_time), 0.0)
@@ -3150,7 +3222,6 @@ def build_synthetics() -> dict:
         "Daily synthetics SKU cost by project",
         DAILY_PROJECT_COST_TEMPLATE,
         f"""{COST_PRELUDE}
-{TIME_FILTER_ESQL}
 | WHERE cost_type_label == "synthetics" OR sku LIKE "*synthetics*"
 | STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY b = DATE_TRUNC(1 day, @timestamp), project
 | EVAL day = TO_STRING(b)
@@ -3171,7 +3242,6 @@ def build_synthetics() -> dict:
         "Synthetics SKU cost by project",
         make_bar_template("project", "Project"),
         f"""{COST_PRELUDE}
-{TIME_FILTER_ESQL}
 | WHERE cost_type_label == "synthetics" OR sku LIKE "*synthetics*"
 | STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project
 | SORT cost DESC
@@ -3191,12 +3261,7 @@ def build_synthetics() -> dict:
         f"""FROM {USAGE}
 {TIME_FILTER_ESQL}
 | WHERE ds_type == "synthetics" OR datastream LIKE "*synthetics*"
-| RENAME conf_chargeable_unit_rate AS _u_rate, conf_chargeable_unit_rate_unit AS _u_unit, conf_currency_symbol AS _u_sym
-| LOOKUP JOIN {REALIZED_POOL} ON composite_key
-| LOOKUP JOIN {PROJECT_CONTRIB} ON composite_key
-| EVAL conf_chargeable_unit_rate = COALESCE(conf_chargeable_unit_rate, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _u_sym, "$")
-| EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
-{CURRENCY_RESOLVE_ESQL}
+{USAGE_JOIN_BODY}
 | EVAL idx_share = CASE(deployment_sum_indexing_time > 0, TO_DOUBLE(datastream_sum_indexing_time) / TO_DOUBLE(deployment_sum_indexing_time), 0.0)
 | EVAL qry_share = CASE(deployment_sum_query_time > 0, TO_DOUBLE(datastream_sum_query_time) / TO_DOUBLE(deployment_sum_query_time), 0.0)
 | EVAL stg_share = CASE(deployment_sum_data_set_store_size > 0, TO_DOUBLE(datastream_sum_data_set_store_size) / TO_DOUBLE(deployment_sum_data_set_store_size), 0.0)
@@ -3221,7 +3286,6 @@ def build_synthetics() -> dict:
         "Synthetics billing line items (SKUs)",
         SYNTHETICS_SKU_TABLE_TEMPLATE,
         f"""{COST_PRELUDE}
-{TIME_FILTER_ESQL}
 | WHERE cost_type_label == "synthetics" OR sku LIKE "*synthetics*"
 | STATS qty = SUM(COALESCE(quantity_value, 0.0)), ecu = SUM(units), cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project, project_type_label, sku
 | RENAME project_type_label AS project_type
@@ -3242,20 +3306,7 @@ def build_synthetics() -> dict:
         f"""FROM {USAGE}
 {TIME_FILTER_ESQL}
 | WHERE ds_type == "synthetics" OR datastream LIKE "*synthetics*"
-| EVAL ts = @timestamp
-| RENAME project_id AS _u_pid, project_name AS _u_pname, project_type AS _u_ptype, conf_chargeable_unit_rate AS _u_rate, conf_chargeable_unit_rate_unit AS _u_unit, conf_currency_symbol AS _u_sym
-| LOOKUP JOIN {PROJECT_STATUS} ON composite_key
-| EVAL _ps_rate = conf_chargeable_unit_rate, _ps_unit = conf_chargeable_unit_rate_unit, _ps_sym = conf_currency_symbol
-| LOOKUP JOIN {REALIZED_POOL} ON composite_key
-| LOOKUP JOIN {PROJECT_CONTRIB} ON composite_key
-| EVAL @timestamp = ts
-| EVAL project_id = COALESCE(_u_pid, project_id)
-| EVAL project_name = CASE(_u_pname IS NOT NULL AND _u_pname != "" AND _u_pname != project_id, _u_pname, project_name IS NOT NULL AND project_name != "" AND project_name != project_id, project_name, _u_pname IS NOT NULL AND _u_pname != "", _u_pname, project_name IS NOT NULL AND project_name != "", project_name, project_id)
-| EVAL project_type = CASE(_u_ptype IS NOT NULL AND _u_ptype != "" AND _u_ptype != "unknown", _u_ptype, project_type IS NOT NULL AND project_type != "", project_type, "unknown")
-| EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "unknown")
-| EVAL conf_chargeable_unit_rate = COALESCE(conf_chargeable_unit_rate, _ps_rate, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _ps_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _ps_sym, _u_sym, "$")
-| EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
-{CURRENCY_RESOLVE_ESQL}
+{USAGE_JOIN_BODY}
 | EVAL idx_share = CASE(deployment_sum_indexing_time > 0, TO_DOUBLE(datastream_sum_indexing_time) / TO_DOUBLE(deployment_sum_indexing_time), 0.0)
 | EVAL qry_share = CASE(deployment_sum_query_time > 0, TO_DOUBLE(datastream_sum_query_time) / TO_DOUBLE(deployment_sum_query_time), 0.0)
 | EVAL stg_share = CASE(deployment_sum_data_set_store_size > 0, TO_DOUBLE(datastream_sum_data_set_store_size) / TO_DOUBLE(deployment_sum_data_set_store_size), 0.0)
@@ -3367,7 +3418,7 @@ def build_alerts() -> list[dict]:
         alert_template(
             ALERT_UNALLOCATED,
             "[Chargeback Serverless] Unallocated cost present",
-            f"""{COST_PRELUDE}
+            f"""{COST_PRELUDE_NO_TIME}
 | WHERE (COALESCE(is_allocatable, false) == false OR allocation_driver == "none") AND cost > 0
 | STATS unallocated = ROUND(SUM(cost), 2), sym = COALESCE(MAX(currency_symbol), "$"), unit = COALESCE(MAX(unit), "USD"), rows = COUNT(*)
 | WHERE unallocated > 0
@@ -3426,12 +3477,16 @@ def build_index_pattern() -> dict:
         f("project_id", "string", "keyword"),
         f("project_name", "string", "keyword"),
         f("project_type", "string", "keyword"),
+        f("deployment_id", "string", "keyword"),
+        f("deployment_name", "string", "keyword"),
+        f("deployment_type", "string", "keyword"),
         f("cost_category", "string", "keyword"),
         f("cost_type", "string", "keyword"),
         f("allocation_driver", "string", "keyword"),
         f("is_allocatable", "boolean", "boolean"),
         f("quantity_value", "number", "double"),
         f("total_ecu", "number", "double"),
+        f("total_chargeable_units", "number", "double"),
         f("conf_chargeable_unit_rate", "number", "double"),
         f("conf_chargeable_unit_rate_unit", "string", "keyword"),
         f("conf_currency_symbol", "string", "keyword"),

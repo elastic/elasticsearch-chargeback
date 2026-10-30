@@ -354,16 +354,34 @@ if [[ "$SKIP_BUILD" -eq 0 ]]; then
   fi
 
   echo ""
-  echo ">>> Step 2: Syncing Kibana assets to integrations package..."
+  echo ">>> Step 2: Importing dashboards to Kibana and exporting via elastic-package..."
   cp -r "$ASSETS_DIR/kibana/"* "$PACKAGE_DIR/kibana/"
 
-  echo ""
-  echo ">>> Step 3: Building package with elastic-package ($VERSION)..."
   if command -v elastic-package >/dev/null 2>&1; then
     EP_CMD="elastic-package"
   else
     EP_CMD="go run github.com/elastic/elastic-package"
   fi
+
+  if [[ -f "/tmp/cbs_dashboards.ndjson" ]]; then
+    kbn_curl -o /tmp/cbs-pre-export-import.json -w '%{http_code}' \
+      -X POST "${KIBANA_URL%/}/api/saved_objects/_import?overwrite=true" \
+      -H "Authorization: ApiKey ${KIBANA_API_KEY}" \
+      -H "kbn-xsrf: true" \
+      -F file=@/tmp/cbs_dashboards.ndjson >/dev/null 2>&1 || true
+
+    ELASTIC_PACKAGE_ELASTICSEARCH_HOST="$ES_URL" \
+    ELASTIC_PACKAGE_KIBANA_HOST="$KIBANA_URL" \
+    ELASTIC_PACKAGE_ELASTICSEARCH_API_KEY="$KIBANA_API_KEY" \
+    $EP_CMD export dashboards \
+      -C "$PACKAGE_DIR" \
+      -d "chargeback_serverless-b6cecac0-ebe7-43de-bfc6-1ff287ad860a,chargeback_serverless-21588d0e-fb6a-4f76-ad2f-cd7b3d7a3d7c,chargeback_serverless-5fb3f4c6-5591-5c5c-9625-1d829944c5b2,chargeback_serverless-c188156b-9f97-5e72-975f-022f3c862a1d,chargeback_serverless-7ec9743a-ccfa-43d2-8311-2f25893dadae"
+    cp -r "$PACKAGE_DIR/kibana/"* "$ASSETS_DIR/kibana/"
+    echo "  ✓ Exported dashboards via elastic-package and synced to $ASSETS_DIR/kibana/"
+  fi
+
+  echo ""
+  echo ">>> Step 3: Building package with elastic-package ($VERSION)..."
 
   (cd "$PACKAGE_DIR" && $EP_CMD build --skip-validation)
 
