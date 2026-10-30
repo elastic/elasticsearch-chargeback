@@ -318,6 +318,8 @@ run_verification() {
   echo ">>> Kibana Dashboards:"
   echo "  • Billing Overview:  ${KIBANA_URL%/}/app/dashboards#/view/chargeback_serverless-b6cecac0-ebe7-43de-bfc6-1ff287ad860a"
   echo "  • Usage Allocation:  ${KIBANA_URL%/}/app/dashboards#/view/chargeback_serverless-21588d0e-fb6a-4f76-ad2f-cd7b3d7a3d7c"
+  echo "  • AI & ML FinOps:    ${KIBANA_URL%/}/app/dashboards#/view/chargeback_serverless-5fb3f4c6-5591-5c5c-9625-1d829944c5b2"
+  echo "  • Synthetics:        ${KIBANA_URL%/}/app/dashboards#/view/chargeback_serverless-c188156b-9f97-5e72-975f-022f3c862a1d"
   echo "  • Configuration:     ${KIBANA_URL%/}/app/dashboards#/view/chargeback_serverless-7ec9743a-ccfa-43d2-8311-2f25893dadae"
   echo ""
 }

@@ -161,6 +161,30 @@
                             "type": "dashboardLink"
                         },
                         {
+                            "destinationRefName": "link_8f2cea9b-993a-553c-9d4b-1b8604fcbb82_dashboard",
+                            "id": "8f2cea9b-993a-553c-9d4b-1b8604fcbb82",
+                            "label": "[Chargeback Serverless] AI & Machine Learning",
+                            "options": {
+                                "openInNewTab": false,
+                                "useCurrentDateRange": true,
+                                "useCurrentFilters": false
+                            },
+                            "order": 2,
+                            "type": "dashboardLink"
+                        },
+                        {
+                            "destinationRefName": "link_d28219a3-a54a-583b-a934-ad5388d95558_dashboard",
+                            "id": "d28219a3-a54a-583b-a934-ad5388d95558",
+                            "label": "[Chargeback Serverless] Synthetics",
+                            "options": {
+                                "openInNewTab": false,
+                                "useCurrentDateRange": true,
+                                "useCurrentFilters": false
+                            },
+                            "order": 3,
+                            "type": "dashboardLink"
+                        },
+                        {
                             "destinationRefName": "link_ea0631ec-57f0-5f33-86ae-c7976940aec0_dashboard",
                             "id": "ea0631ec-57f0-5f33-86ae-c7976940aec0",
                             "label": "[Chargeback Serverless] Configuration",
@@ -169,7 +193,7 @@
                                 "useCurrentDateRange": true,
                                 "useCurrentFilters": false
                             },
-                            "order": 2,
+                            "order": 4,
                             "type": "dashboardLink"
                         }
                     ]
@@ -346,6 +370,16 @@
         {
             "id": "chargeback_serverless-21588d0e-fb6a-4f76-ad2f-cd7b3d7a3d7c",
             "name": "aa8d2aba-7e7d-51d8-afe3-5bb5df4fe62d:link_c77753ea-7531-51fb-bd2b-981d92dfa401_dashboard",
+            "type": "dashboard"
+        },
+        {
+            "id": "chargeback_serverless-5fb3f4c6-5591-5c5c-9625-1d829944c5b2",
+            "name": "aa8d2aba-7e7d-51d8-afe3-5bb5df4fe62d:link_8f2cea9b-993a-553c-9d4b-1b8604fcbb82_dashboard",
+            "type": "dashboard"
+        },
+        {
+            "id": "chargeback_serverless-c188156b-9f97-5e72-975f-022f3c862a1d",
+            "name": "aa8d2aba-7e7d-51d8-afe3-5bb5df4fe62d:link_d28219a3-a54a-583b-a934-ad5388d95558_dashboard",
             "type": "dashboard"
         },
         {

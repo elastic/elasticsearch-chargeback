@@ -9,10 +9,12 @@
 | Dashboard | ID | Purpose |
 | --- | --- | --- |
 | **[Chargeback Serverless] Billing Components Overview** | `chargeback_serverless-b6cecac0-ebe7-43de-bfc6-1ff287ad860a` | Organization spend KPIs, daily stacked cost by project and cost category (with embedded header legends), spend flow (`cost_category → cost_type → project_type`), unallocatable & pass-through charges, and invoice reconciliation detail |
-| **[Chargeback Serverless] Usage & Cost Allocation** | `chargeback_serverless-21588d0e-fb6a-4f76-ad2f-cd7b3d7a3d7c` | Collapsible sections for (1) Workload drivers & project allocation, (2) Data stream cost attribution & usage (`ds_namespace`, `ds_type`, data stream tables), and (3) AI & Machine Learning FinOps |
+| **[Chargeback Serverless] Usage & Cost Allocation** | `chargeback_serverless-21588d0e-fb6a-4f76-ad2f-cd7b3d7a3d7c` | Collapsible sections for (1) Workload drivers & project allocation and (2) Data stream cost attribution & usage (`ds_namespace`, `ds_type`, data stream tables) |
+| **[Chargeback Serverless] AI & Machine Learning** | `chargeback_serverless-5fb3f4c6-5591-5c5c-9625-1d829944c5b2` | AI & ML FinOps KPIs (AI pool spend, inference volume, active models, avg latency, unit cost per 1k inferences), daily attributed AI cost by model, attributed AI cost by project, AI model compute & spend breakdown, and dedicated AI/Inference/Agent Builder billing line items |
+| **[Chargeback Serverless] Synthetics** | `chargeback_serverless-c188156b-9f97-5e72-975f-022f3c862a1d` | Synthetics FinOps KPIs (direct Synthetics SKU spend, billed check quantity, ECU, unit cost per 1k checks), Synthetics data stream attribution KPIs (`synthetics-*` indexing, search, storage), daily Synthetics SKU cost by project, Synthetics data stream cost by namespace, SKU line items, and Synthetics data stream attribution table |
 | **[Chargeback Serverless] Configuration** | `chargeback_serverless-7ec9743a-ccfa-43d2-8311-2f25893dadae` | Unified Fleet Configuration, Policy Settings & Serverless Project Registry panel (status banner, 5 KPIs, 3-step setup guide, and paginated project harvest registry) |
 
-All three dashboards share a horizontal `links` navigation bar (`useCurrentDateRange: true`, `useCurrentFilters: false`) and default to `now-30d` to `now`.
+All five dashboards share a horizontal `links` navigation bar (`useCurrentDateRange: true`, `useCurrentFilters: false`) and default to `now-30d` to `now`.
 
 ## Lookup Indices & Data Sources
 

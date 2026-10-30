@@ -24,10 +24,14 @@ KIBANA = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else DEFAULT_KIBANA
 
 DASH_BILLING = "chargeback_serverless-b6cecac0-ebe7-43de-bfc6-1ff287ad860a"
 DASH_USAGE = "chargeback_serverless-21588d0e-fb6a-4f76-ad2f-cd7b3d7a3d7c"
+DASH_AI = "chargeback_serverless-5fb3f4c6-5591-5c5c-9625-1d829944c5b2"
+DASH_SYNTHETICS = "chargeback_serverless-c188156b-9f97-5e72-975f-022f3c862a1d"
 DASH_CONFIG = "chargeback_serverless-7ec9743a-ccfa-43d2-8311-2f25893dadae"
 
 TITLE_BILLING = "[Chargeback Serverless] Billing Components Overview"
 TITLE_USAGE = "[Chargeback Serverless] Usage & Cost Allocation"
+TITLE_AI = "[Chargeback Serverless] AI & Machine Learning"
+TITLE_SYNTHETICS = "[Chargeback Serverless] Synthetics"
 TITLE_CONFIG = "[Chargeback Serverless] Configuration"
 
 BILLING = "serverless_billing_cost_lookup"
@@ -98,11 +102,13 @@ def adhoc_id(title: str) -> str:
 
 
 def links_panel(panel_id: str, current: str) -> tuple[dict, list]:
-    """Navigation links bar: all three links use dashboardLink with dashboard references."""
+    """Navigation links bar: all five links use dashboardLink with dashboard references."""
     nav = [
-        (DASH_BILLING, "[Chargeback Serverless] Billing Components Overview"),
-        (DASH_USAGE, "[Chargeback Serverless] Usage & Cost Allocation"),
-        (DASH_CONFIG, "[Chargeback Serverless] Configuration"),
+        (DASH_BILLING, TITLE_BILLING),
+        (DASH_USAGE, TITLE_USAGE),
+        (DASH_AI, TITLE_AI),
+        (DASH_SYNTHETICS, TITLE_SYNTHETICS),
+        (DASH_CONFIG, TITLE_CONFIG),
     ]
     links = []
     refs = []
@@ -792,6 +798,7 @@ AI_KPIS_TEMPLATE = f"""\
 {{% assign ai_spend = rows[0]["ai_spend"].value | default: 0.0 %}}
 {{% assign ded_spend = rows[0]["dedicated_ai_spend"].value | default: 0.0 %}}
 {{% assign inf_count = rows[0]["total_inferences"].value | default: 0 %}}
+{{% assign model_count = rows[0]["model_count"].value | default: 0 %}}
 {{% assign avg_latency = rows[0]["avg_latency_ms"].value | default: 0.0 | round: 1 %}}
 {{% assign cost_per_k = rows[0]["cost_per_1k"].value | default: 0.0 %}}
 
@@ -815,6 +822,11 @@ AI_KPIS_TEMPLATE = f"""\
     <div class="cb-kpi-label">Inference Volume</div>
     <div class="cb-kpi-value">{{{{ fmt_inf_count }}}}</div>
     <div class="cb-kpi-sub">Total model inference calls</div>
+  </div>
+  <div class="cb-kpi">
+    <div class="cb-kpi-label">Active AI Models</div>
+    <div class="cb-kpi-value">{{{{ model_count }}}}</div>
+    <div class="cb-kpi-sub">Trained models in window</div>
   </div>
   <div class="cb-kpi">
     <div class="cb-kpi-label">Avg Model Latency</div>
@@ -843,7 +855,7 @@ AI_MODELS_TEMPLATE = f"""\
   }}
   .cb-model-head {{
     display: grid;
-    grid-template-columns: minmax(160px, 1.2fr) minmax(180px, 2fr) minmax(140px, 1.6fr) 100px 140px;
+    grid-template-columns: minmax(140px, 1.1fr) minmax(170px, 1.8fr) minmax(110px, 1.1fr) minmax(140px, 1.5fr) 100px 95px 135px;
     gap: var(--cc-space-s, 8px);
     font-size: 0.76rem;
     font-weight: 600;
@@ -857,7 +869,7 @@ AI_MODELS_TEMPLATE = f"""\
   .cb-model-head .num {{ text-align: right; }}
   .cb-model-row {{
     display: grid;
-    grid-template-columns: minmax(160px, 1.2fr) minmax(180px, 2fr) minmax(140px, 1.6fr) 100px 140px;
+    grid-template-columns: minmax(140px, 1.1fr) minmax(170px, 1.8fr) minmax(110px, 1.1fr) minmax(140px, 1.5fr) 100px 95px 135px;
     gap: var(--cc-space-s, 8px);
     align-items: center;
     font-size: 0.85rem;
@@ -874,6 +886,12 @@ AI_MODELS_TEMPLATE = f"""\
     display: flex;
     align-items: center;
     gap: 6px;
+  }}
+  .cb-model-proj {{
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 0.85;
   }}
   .cb-model-tag {{
     display: inline-block;
@@ -938,8 +956,10 @@ AI_MODELS_TEMPLATE = f"""\
   <div class="cb-model-head">
     <div>Task Type</div>
     <div>Model Name</div>
+    <div>Project</div>
     <div>Compute Allocation Share</div>
     <div class="num">Inferences</div>
+    <div class="num">Avg Latency</div>
     <div class="num">Attributed Cost ({{{{ unit }}}})</div>
   </div>
 {{% if _total_items == 0 %}}
@@ -949,6 +969,7 @@ AI_MODELS_TEMPLATE = f"""\
   {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
   {{% assign c_time = r["total_compute"].value | default: 0 %}}
   {{% assign calls = r["total_inf"].value | default: 0 %}}
+  {{% assign lat_ms = r["avg_latency"].value | default: 0.0 | round: 1 %}}
   {{% if max_time > 1 and tot_compute > 0 %}}
     {{% assign bar_w = c_time | times: 100.0 | divided_by: max_time | round: 1 %}}
     {{% assign share_pct = c_time | times: 100.0 | divided_by: tot_compute | round: 1 %}}
@@ -976,6 +997,7 @@ AI_MODELS_TEMPLATE = f"""\
       <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--cc-vis-0);"></span>
       {{{{ r["model_id"].value }}}}
     </div>
+    <div class="cb-model-proj" title="{{{{ r[\"project\"].value }}}}">{{{{ r["project"].value | default: "—" }}}}</div>
     <div class="cb-share-cell">
       <div class="cb-track">
         <div class="cb-fill" style="width: {{{{ bar_w }}}}%;"></div>
@@ -983,12 +1005,123 @@ AI_MODELS_TEMPLATE = f"""\
       <span class="cb-share-pct">{{{{ share_pct }}}}%</span>
     </div>
     <div class="cb-num">{{{{ fmt_calls }}}}</div>
+    <div class="cb-num">{{{{ lat_ms }}}} ms</div>
     <div class="cb-num" style="font-weight: 600;"><span style="font-size:0.8rem; opacity:0.8;">{{{{ sym }}}}</span> {{{{ fmt_cost }}}}</div>
   </div>
 {{% endfor %}}
 {{% endif %}}
 </div>
 {paged_bottom("aimod")}
+"""
+
+
+SYNTHETICS_KPI_TEMPLATE = f"""\
+<style>
+  .cb-kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--cc-space-s, 8px); margin: 0; padding: 0 0 4px 0; }}
+  .cb-kpi {{
+    background: var(--cc-color-surface);
+    border: 1px solid var(--cc-color-border);
+    border-radius: var(--cc-radius);
+    padding: 10px 14px 12px 14px;
+  }}
+  .cb-kpi-label {{ color: var(--cc-color-text); opacity: 0.72; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; line-height: 1.1; }}
+  .cb-kpi-value {{ color: var(--cc-color-text); font-size: 1.45rem; font-weight: 600; margin-top: 4px; line-height: 1.1; font-variant-numeric: tabular-nums; display: flex; align-items: baseline; }}
+  .cb-sym {{ font-size: 1.05rem; opacity: 0.85; margin-right: 4px; font-weight: 500; }}
+  .cb-kpi-sub {{ color: var(--cc-color-text); font-size: 0.75rem; opacity: 0.68; margin-top: 4px; line-height: 1.1; }}
+</style>
+{{% assign r = rows[0] %}}
+{{% assign synth_spend = r["synthetics_spend"].value | default: 0.0 %}}
+{{% assign org_spend = r["total_org_spend"].value | default: 0.0 %}}
+{{% assign synth_ecu = r["synthetics_ecu"].value | default: 0.0 %}}
+{{% assign synth_runs = r["synthetics_runs"].value | default: 0.0 %}}
+{{% assign proj_cnt = r["project_count"].value | default: 0 %}}
+{{% assign cost_per_k = r["cost_per_1k"].value | default: 0.0 %}}
+{{% assign unit = r["unit"].value | default: "USD" %}}
+{{% assign sym = r["currency_symbol"].value | default: "$" %}}
+{{% assign denom = org_spend %}}
+{{% if denom <= 0 %}}{{% assign denom = 1.0 %}}{{% endif %}}
+{{% assign synth_pct = synth_spend | times: 100.0 | divided_by: denom | round: 1 %}}
+{liquid_money_block("synth_spend", "fmt_synth_spend", with_decimals=True)}
+{liquid_money_block("synth_ecu", "fmt_synth_ecu", with_decimals=True)}
+{liquid_money_block("synth_runs", "fmt_synth_runs", with_decimals=False)}
+{liquid_money_block("cost_per_k", "fmt_cost_per_k", with_decimals=True)}
+<div class="cb-kpis">
+  <div class="cb-kpi">
+    <div class="cb-kpi-label">Direct Synthetics Spend ({{{{ unit }}}})</div>
+    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_synth_spend }}}}</span></div>
+    <div class="cb-kpi-sub">{{{{ synth_pct }}}}% of org spend · synthetics SKUs</div>
+  </div>
+  <div class="cb-kpi">
+    <div class="cb-kpi-label">Billed Check Quantity</div>
+    <div class="cb-kpi-value">{{{{ fmt_synth_runs }}}}</div>
+    <div class="cb-kpi-sub">Total synthetic test runs / units</div>
+  </div>
+  <div class="cb-kpi">
+    <div class="cb-kpi-label">Synthetics Units (ECU)</div>
+    <div class="cb-kpi-value">{{{{ fmt_synth_ecu }}}}</div>
+    <div class="cb-kpi-sub">Total billed synthetics ECU</div>
+  </div>
+  <div class="cb-kpi">
+    <div class="cb-kpi-label">Unit Cost (1k Checks)</div>
+    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_cost_per_k }}}}</span></div>
+    <div class="cb-kpi-sub">Effective check unit economics</div>
+  </div>
+  <div class="cb-kpi">
+    <div class="cb-kpi-label">Billed Synthetics Projects</div>
+    <div class="cb-kpi-value">{{{{ proj_cnt }}}}</div>
+    <div class="cb-kpi-sub">Projects with synthetics SKU spend</div>
+  </div>
+</div>
+"""
+
+
+SYNTHETICS_DS_KPI_TEMPLATE = f"""\
+<style>
+  .cb-kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--cc-space-s, 8px); margin: 0; padding: 0 0 4px 0; }}
+  .cb-kpi {{
+    background: var(--cc-color-surface);
+    border: 1px solid var(--cc-color-border);
+    border-radius: var(--cc-radius);
+    padding: 10px 14px 12px 14px;
+  }}
+  .cb-kpi-label {{ color: var(--cc-color-text); opacity: 0.72; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; line-height: 1.1; }}
+  .cb-kpi-value {{ color: var(--cc-color-text); font-size: 1.45rem; font-weight: 600; margin-top: 4px; line-height: 1.1; font-variant-numeric: tabular-nums; display: flex; align-items: baseline; }}
+  .cb-sym {{ font-size: 1.05rem; opacity: 0.85; margin-right: 4px; font-weight: 500; }}
+  .cb-kpi-sub {{ color: var(--cc-color-text); font-size: 0.75rem; opacity: 0.68; margin-top: 4px; line-height: 1.1; }}
+</style>
+{{% assign r = rows[0] %}}
+{{% assign ds_spend = r["ds_spend"].value | default: 0.0 %}}
+{{% assign idx_s = r["indexing_spend"].value | default: 0.0 %}}
+{{% assign qry_s = r["query_spend"].value | default: 0.0 %}}
+{{% assign stg_s = r["storage_spend"].value | default: 0.0 %}}
+{{% assign ds_cnt = r["ds_count"].value | default: 0 %}}
+{{% assign unit = r["unit"].value | default: "USD" %}}
+{{% assign sym = r["currency_symbol"].value | default: "$" %}}
+{liquid_money_block("ds_spend", "fmt_ds_spend", with_decimals=True)}
+{liquid_money_block("idx_s", "fmt_idx_s", with_decimals=True)}
+{liquid_money_block("stg_s", "fmt_stg_s", with_decimals=True)}
+<div class="cb-kpis">
+  <div class="cb-kpi">
+    <div class="cb-kpi-label">Attributed Data-Tier Spend ({{{{ unit }}}})</div>
+    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_ds_spend }}}}</span></div>
+    <div class="cb-kpi-sub">Ingest + Search + Storage for synthetics-*</div>
+  </div>
+  <div class="cb-kpi">
+    <div class="cb-kpi-label">Synthetics Indexing Spend ({{{{ unit }}}})</div>
+    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_idx_s }}}}</span></div>
+    <div class="cb-kpi-sub">Attributed ingest-vcu + ingest</div>
+  </div>
+  <div class="cb-kpi">
+    <div class="cb-kpi-label">Synthetics Storage Spend ({{{{ unit }}}})</div>
+    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_stg_s }}}}</span></div>
+    <div class="cb-kpi-sub">Attributed retained storage</div>
+  </div>
+  <div class="cb-kpi">
+    <div class="cb-kpi-label">Synthetics Data Streams</div>
+    <div class="cb-kpi-value">{{{{ ds_cnt }}}}</div>
+    <div class="cb-kpi-sub">Monitored synthetics-* streams</div>
+  </div>
+</div>
 """
 
 
@@ -1418,6 +1551,108 @@ def make_daily_cost_template(group_field: str, header_label: str = "Project", is
 DAILY_PROJECT_COST_TEMPLATE = make_daily_cost_template("project", "Project", is_category=False)
 DAILY_CATEGORY_COST_TEMPLATE = make_daily_cost_template("category", "Cost category", is_category=True)
 DAILY_DRIVER_COST_TEMPLATE = make_daily_cost_template("driver", "Workload driver", is_category=False)
+DAILY_MODEL_COST_TEMPLATE = make_daily_cost_template("model_id", "Model", is_category=False)
+
+
+AI_BILLING_TABLE_TEMPLATE = f"""\
+<style>
+{PAGED_BASE_CSS}
+{paged_css("aibill", 10, "table-row")}
+  table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; color: var(--cc-color-text); }}
+  table.cb-t th {{
+    position: sticky; top: 0; background: var(--cc-color-surface); z-index: 1;
+    text-align: left; padding: 6px 8px; border-bottom: 2px solid var(--cc-color-border);
+    font-weight: 600; opacity: 0.75; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em;
+    color: var(--cc-color-text);
+  }}
+  table.cb-t td {{ padding: 6px 8px; border-bottom: 1px solid var(--cc-color-border); color: var(--cc-color-text); }}
+  table.cb-t th.num, table.cb-t td.num {{ text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }}
+  .cb-sym {{ font-weight: 500; opacity: 0.85; margin-right: 2px; }}
+</style>
+{{% assign unit = rows[0]["unit"].value | default: "USD" %}}
+{{% assign sym = rows[0]["currency_symbol"].value | default: "$" %}}
+{paged_top("aibill", 10, 10)}
+<table class="cb-t">
+  <thead>
+    <tr><th>Project</th><th>Project Type</th><th>Cost Type</th><th>SKU</th><th class="num">Quantity</th><th class="num">Units (ECU)</th><th class="num">Cost ({{{{ unit }}}})</th></tr>
+  </thead>
+  <tbody>
+  {{% if _total_items == 0 %}}
+    <tr><td colspan="7" class="cb-empty">No dedicated AI, ML VCU, Inference, or Agent Builder SKU line items in the selected time range.</td></tr>
+  {{% else %}}
+  {{% for row in rows %}}
+    {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
+    {{% assign cost = row["cost"].value | default: 0.0 %}}
+    {{% assign ecu = row["ecu"].value | default: 0.0 %}}
+    {{% assign qty = row["qty"].value | default: 0.0 %}}
+{liquid_money_block("cost", "fmt_cost", with_decimals=True)}
+{liquid_money_block("ecu", "fmt_ecu", with_decimals=True)}
+{liquid_money_block("qty", "fmt_qty", with_decimals=True)}
+    <tr class="cb-pg-row-aibill cb-pg-aibill-{{{{ _row_pg }}}}">
+      <td><strong>{{{{ row["project"].value }}}}</strong></td>
+      <td>{{{{ row["project_type"].value }}}}</td>
+      <td>{{{{ row["cost_type"].value }}}}</td>
+      <td><code>{{{{ row["sku"].value }}}}</code></td>
+      <td class="num">{{{{ fmt_qty }}}}</td>
+      <td class="num">{{{{ fmt_ecu }}}}</td>
+      <td class="num"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_cost }}}}</span></td>
+    </tr>
+  {{% endfor %}}
+  {{% endif %}}
+  </tbody>
+</table>
+{paged_bottom("aibill")}
+"""
+
+
+SYNTHETICS_SKU_TABLE_TEMPLATE = f"""\
+<style>
+{PAGED_BASE_CSS}
+{paged_css("synbill", 10, "table-row")}
+  table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; color: var(--cc-color-text); }}
+  table.cb-t th {{
+    position: sticky; top: 0; background: var(--cc-color-surface); z-index: 1;
+    text-align: left; padding: 6px 8px; border-bottom: 2px solid var(--cc-color-border);
+    font-weight: 600; opacity: 0.75; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em;
+    color: var(--cc-color-text);
+  }}
+  table.cb-t td {{ padding: 6px 8px; border-bottom: 1px solid var(--cc-color-border); color: var(--cc-color-text); }}
+  table.cb-t th.num, table.cb-t td.num {{ text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }}
+  .cb-sym {{ font-weight: 500; opacity: 0.85; margin-right: 2px; }}
+</style>
+{{% assign unit = rows[0]["unit"].value | default: "USD" %}}
+{{% assign sym = rows[0]["currency_symbol"].value | default: "$" %}}
+{paged_top("synbill", 10, 10)}
+<table class="cb-t">
+  <thead>
+    <tr><th>Project</th><th>Project Type</th><th>SKU</th><th class="num">Check Quantity</th><th class="num">Units (ECU)</th><th class="num">Cost ({{{{ unit }}}})</th></tr>
+  </thead>
+  <tbody>
+  {{% if _total_items == 0 %}}
+    <tr><td colspan="6" class="cb-empty">No direct Synthetics billing SKUs recorded in the selected time range.</td></tr>
+  {{% else %}}
+  {{% for row in rows %}}
+    {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
+    {{% assign cost = row["cost"].value | default: 0.0 %}}
+    {{% assign ecu = row["ecu"].value | default: 0.0 %}}
+    {{% assign qty = row["qty"].value | default: 0.0 %}}
+{liquid_money_block("cost", "fmt_cost", with_decimals=True)}
+{liquid_money_block("ecu", "fmt_ecu", with_decimals=True)}
+{liquid_money_block("qty", "fmt_qty", with_decimals=True)}
+    <tr class="cb-pg-row-synbill cb-pg-synbill-{{{{ _row_pg }}}}">
+      <td><strong>{{{{ row["project"].value }}}}</strong></td>
+      <td>{{{{ row["project_type"].value }}}}</td>
+      <td><code>{{{{ row["sku"].value }}}}</code></td>
+      <td class="num">{{{{ fmt_qty }}}}</td>
+      <td class="num">{{{{ fmt_ecu }}}}</td>
+      <td class="num"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_cost }}}}</span></td>
+    </tr>
+  {{% endfor %}}
+  {{% endif %}}
+  </tbody>
+</table>
+{paged_bottom("synbill")}
+"""
 
 
 def make_bar_template(label_key: str, label_header: str) -> str:
@@ -2445,7 +2680,6 @@ def build_usage() -> dict:
 
     sec_workload_id = stable_uuid("sec-usage-workload")
     sec_datastream_id = stable_uuid("sec-usage-datastream")
-    sec_ai_id = stable_uuid("sec-usage-ai")
 
     sections = [
         {
@@ -2463,14 +2697,6 @@ def build_usage() -> dict:
                 "y": 3,
             },
             "title": "Data stream cost attribution & usage",
-        },
-        {
-            "collapsed": False,
-            "gridData": {
-                "i": sec_ai_id,
-                "y": 4,
-            },
-            "title": "AI & Machine Learning FinOps",
         },
     ]
 
@@ -2542,9 +2768,10 @@ def build_usage() -> dict:
         make_bar_template("namespace", "Namespace"),
         f"""FROM {USAGE}
 {TIME_FILTER_ESQL}
-| DROP conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_currency_symbol
+| RENAME conf_chargeable_unit_rate AS _u_rate, conf_chargeable_unit_rate_unit AS _u_unit, conf_currency_symbol AS _u_sym
 | LOOKUP JOIN {REALIZED_POOL} ON composite_key
 | LOOKUP JOIN {PROJECT_CONTRIB} ON composite_key
+| EVAL conf_chargeable_unit_rate = COALESCE(conf_chargeable_unit_rate, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _u_sym, "$")
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
 {CURRENCY_RESOLVE_ESQL}
 | EVAL idx_share = CASE(deployment_sum_indexing_time > 0, TO_DOUBLE(datastream_sum_indexing_time) / TO_DOUBLE(deployment_sum_indexing_time), 0.0)
@@ -2573,9 +2800,10 @@ def build_usage() -> dict:
         make_bar_template("ds_type", "Data stream type"),
         f"""FROM {USAGE}
 {TIME_FILTER_ESQL}
-| DROP conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_currency_symbol
+| RENAME conf_chargeable_unit_rate AS _u_rate, conf_chargeable_unit_rate_unit AS _u_unit, conf_currency_symbol AS _u_sym
 | LOOKUP JOIN {REALIZED_POOL} ON composite_key
 | LOOKUP JOIN {PROJECT_CONTRIB} ON composite_key
+| EVAL conf_chargeable_unit_rate = COALESCE(conf_chargeable_unit_rate, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _u_sym, "$")
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
 {CURRENCY_RESOLVE_ESQL}
 | EVAL idx_share = CASE(deployment_sum_indexing_time > 0, TO_DOUBLE(datastream_sum_indexing_time) / TO_DOUBLE(deployment_sum_indexing_time), 0.0)
@@ -2605,9 +2833,10 @@ def build_usage() -> dict:
         DATASTREAM_COST_TABLE_TEMPLATE,
         f"""FROM {USAGE}
 {TIME_FILTER_ESQL}
-| DROP conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_currency_symbol
+| RENAME conf_chargeable_unit_rate AS _u_rate, conf_chargeable_unit_rate_unit AS _u_unit, conf_currency_symbol AS _u_sym
 | LOOKUP JOIN {REALIZED_POOL} ON composite_key
 | LOOKUP JOIN {PROJECT_CONTRIB} ON composite_key
+| EVAL conf_chargeable_unit_rate = COALESCE(conf_chargeable_unit_rate, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _u_sym, "$")
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
 {CURRENCY_RESOLVE_ESQL}
 | EVAL idx_share = CASE(deployment_sum_indexing_time > 0, TO_DOUBLE(datastream_sum_indexing_time) / TO_DOUBLE(deployment_sum_indexing_time), 0.0)
@@ -2649,61 +2878,6 @@ def build_usage() -> dict:
     )
     panels.append(p)
 
-    ai_kpi_esql = f"""FROM {AI_USAGE}
-{TIME_FILTER_ESQL}
-| DROP conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_currency_symbol
-| LOOKUP JOIN {REALIZED_POOL} ON composite_key
-| EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
-{CURRENCY_RESOLVE_ESQL}
-| EVAL ded_cost = COALESCE(ai_ecu, 0.0) * rate
-| EVAL ai_pool_cost = CASE(COALESCE(ai_ecu, 0.0) > 0.0, ai_ecu, COALESCE(query_ecu, 0.0)) * rate
-| STATS proj_spend = MAX(ai_pool_cost), proj_ded = MAX(ded_cost), proj_inf = SUM(inference_count), proj_latency = AVG(average_inference_time_ms), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY composite_key
-| STATS ai_spend = SUM(proj_spend), dedicated_ai_spend = SUM(proj_ded), total_inferences = SUM(proj_inf), avg_latency_ms = ROUND(AVG(proj_latency), 1), currency_symbol = MAX(currency_symbol), unit = MAX(unit)
-| EVAL cost_per_1k = CASE(total_inferences > 0, ai_spend * 1000.0 / total_inferences, 0.0)
-| KEEP unit, currency_symbol, ai_spend, dedicated_ai_spend, total_inferences, avg_latency_ms, cost_per_1k"""
-
-    p, _ = custom_panel(
-        stable_uuid("cc-usage-ai-kpi"),
-        "AI & Machine Learning FinOps Overview",
-        AI_KPIS_TEMPLATE,
-        ai_kpi_esql,
-        0,
-        0,
-        48,
-        6,
-        section_id=sec_ai_id,
-    )
-    panels.append(p)
-
-    ai_models_esql = f"""FROM {AI_USAGE}
-{TIME_FILTER_ESQL}
-| DROP conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_currency_symbol
-| LOOKUP JOIN {REALIZED_POOL} ON composite_key
-| EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
-{CURRENCY_RESOLVE_ESQL}
-| EVAL compute_time = COALESCE(total_inference_time_ms, 0)
-| EVAL model_weight = CASE(compute_time > 0, TO_DOUBLE(compute_time), TO_DOUBLE(inference_count))
-| EVAL ai_pool_cost = CASE(COALESCE(ai_ecu, 0.0) > 0.0, ai_ecu, COALESCE(query_ecu, 0.0)) * rate
-| INLINE STATS day_proj_weight = SUM(model_weight) BY composite_key
-| EVAL day_model_cost = CASE(day_proj_weight > 0, (model_weight / day_proj_weight) * ai_pool_cost, 0.0)
-| STATS total_compute = SUM(compute_time), total_inf = SUM(inference_count), attributed_cost = SUM(day_model_cost), ai_pool = SUM(ai_pool_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY task_type, model_id
-| SORT total_compute DESC, total_inf DESC, model_id ASC
-| LIMIT 25
-| KEEP task_type, model_id, total_compute, total_inf, attributed_cost, ai_pool, currency_symbol, unit"""
-
-    p, _ = custom_panel(
-        stable_uuid("cc-usage-ai-models"),
-        "AI Model Compute & Spend Breakdown",
-        AI_MODELS_TEMPLATE,
-        ai_models_esql,
-        0,
-        6,
-        48,
-        14,
-        section_id=sec_ai_id,
-    )
-    panels.append(p)
-
     return dashboard_doc(
         DASH_USAGE,
         TITLE_USAGE,
@@ -2713,6 +2887,354 @@ def build_usage() -> dict:
         with_controls=True,
         controls_mode="usage",
         sections=sections,
+    )
+
+
+def build_ai() -> dict:
+    panels: list = []
+    refs: list = []
+    panel_id = stable_uuid("links-ai")
+    p, r = links_panel(panel_id, DASH_AI)
+    panels.append(p)
+    refs.extend(r)
+
+    ai_kpi_esql = f"""FROM {AI_USAGE}
+{TIME_FILTER_ESQL}
+| RENAME conf_chargeable_unit_rate AS _u_rate, conf_chargeable_unit_rate_unit AS _u_unit, conf_currency_symbol AS _u_sym
+| LOOKUP JOIN {REALIZED_POOL} ON composite_key
+| EVAL conf_chargeable_unit_rate = COALESCE(conf_chargeable_unit_rate, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _u_sym, "$")
+| EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
+{CURRENCY_RESOLVE_ESQL}
+| EVAL ded_cost = COALESCE(ai_ecu, 0.0) * rate
+| EVAL ai_pool_cost = CASE(COALESCE(ai_ecu, 0.0) > 0.0, ai_ecu, COALESCE(query_ecu, 0.0)) * rate
+| INLINE STATS total_models = COUNT_DISTINCT(model_id)
+| STATS proj_spend = MAX(ai_pool_cost), proj_ded = MAX(ded_cost), proj_inf = SUM(inference_count), proj_latency = AVG(average_inference_time_ms), model_count = MAX(total_models), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY composite_key
+| STATS ai_spend = SUM(proj_spend), dedicated_ai_spend = SUM(proj_ded), total_inferences = SUM(proj_inf), model_count = MAX(model_count), avg_latency_ms = ROUND(AVG(proj_latency), 1), currency_symbol = MAX(currency_symbol), unit = MAX(unit)
+| EVAL cost_per_1k = CASE(total_inferences > 0, ai_spend * 1000.0 / total_inferences, 0.0)
+| KEEP unit, currency_symbol, ai_spend, dedicated_ai_spend, total_inferences, model_count, avg_latency_ms, cost_per_1k"""
+
+    p, _ = custom_panel(
+        stable_uuid("cc-ai-kpi"),
+        "AI & Machine Learning FinOps Overview",
+        AI_KPIS_TEMPLATE,
+        ai_kpi_esql,
+        0,
+        2,
+        48,
+        6,
+    )
+    panels.append(p)
+
+    ai_daily_model_esql = f"""FROM {AI_USAGE}
+{TIME_FILTER_ESQL}
+| RENAME conf_chargeable_unit_rate AS _u_rate, conf_chargeable_unit_rate_unit AS _u_unit, conf_currency_symbol AS _u_sym
+| LOOKUP JOIN {REALIZED_POOL} ON composite_key
+| EVAL conf_chargeable_unit_rate = COALESCE(conf_chargeable_unit_rate, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _u_sym, "$")
+| EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
+{CURRENCY_RESOLVE_ESQL}
+| EVAL compute_time = COALESCE(total_inference_time_ms, 0)
+| EVAL model_weight = CASE(compute_time > 0, TO_DOUBLE(compute_time), TO_DOUBLE(inference_count))
+| EVAL ai_pool_cost = CASE(COALESCE(ai_ecu, 0.0) > 0.0, ai_ecu, COALESCE(query_ecu, 0.0)) * rate
+| INLINE STATS day_proj_weight = SUM(model_weight) BY composite_key
+| EVAL day_model_cost = CASE(day_proj_weight > 0, (model_weight / day_proj_weight) * ai_pool_cost, 0.0)
+| STATS cost = SUM(day_model_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY b = DATE_TRUNC(1 day, @timestamp), model_id
+| EVAL day = TO_STRING(b)
+| INLINE STATS day_cost = SUM(cost) BY day
+| INLINE STATS mod_total = SUM(cost) BY model_id
+| SORT day ASC, mod_total DESC, model_id ASC
+| LIMIT 5000
+| KEEP day, model_id, cost, day_cost, currency_symbol, unit"""
+
+    p, _ = custom_panel(
+        stable_uuid("cc-ai-daily-model"),
+        "Daily attributed AI cost by model",
+        DAILY_MODEL_COST_TEMPLATE,
+        ai_daily_model_esql,
+        0,
+        8,
+        24,
+        12,
+    )
+    panels.append(p)
+
+    ai_by_proj_esql = f"""FROM {AI_USAGE}
+{TIME_FILTER_ESQL}
+| RENAME conf_chargeable_unit_rate AS _u_rate, conf_chargeable_unit_rate_unit AS _u_unit, conf_currency_symbol AS _u_sym
+| LOOKUP JOIN {REALIZED_POOL} ON composite_key
+| EVAL conf_chargeable_unit_rate = COALESCE(conf_chargeable_unit_rate, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _u_sym, "$")
+| EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
+{CURRENCY_RESOLVE_ESQL}
+| EVAL compute_time = COALESCE(total_inference_time_ms, 0)
+| EVAL model_weight = CASE(compute_time > 0, TO_DOUBLE(compute_time), TO_DOUBLE(inference_count))
+| EVAL ai_pool_cost = CASE(COALESCE(ai_ecu, 0.0) > 0.0, ai_ecu, COALESCE(query_ecu, 0.0)) * rate
+| INLINE STATS day_proj_weight = SUM(model_weight) BY composite_key
+| EVAL day_model_cost = CASE(day_proj_weight > 0, (model_weight / day_proj_weight) * ai_pool_cost, 0.0)
+| EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "unknown")
+| STATS cost = SUM(day_model_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project
+| SORT cost DESC
+| LIMIT 25
+| KEEP project, cost, currency_symbol, unit"""
+
+    p, _ = custom_panel(
+        stable_uuid("cc-ai-by-project"),
+        "Attributed AI & ML cost by project",
+        make_bar_template("project", "Project"),
+        ai_by_proj_esql,
+        24,
+        8,
+        24,
+        12,
+    )
+    panels.append(p)
+
+    ai_models_esql = f"""FROM {AI_USAGE}
+{TIME_FILTER_ESQL}
+| RENAME conf_chargeable_unit_rate AS _u_rate, conf_chargeable_unit_rate_unit AS _u_unit, conf_currency_symbol AS _u_sym
+| LOOKUP JOIN {REALIZED_POOL} ON composite_key
+| EVAL conf_chargeable_unit_rate = COALESCE(conf_chargeable_unit_rate, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _u_sym, "$")
+| EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
+{CURRENCY_RESOLVE_ESQL}
+| EVAL compute_time = COALESCE(total_inference_time_ms, 0)
+| EVAL model_weight = CASE(compute_time > 0, TO_DOUBLE(compute_time), TO_DOUBLE(inference_count))
+| EVAL ai_pool_cost = CASE(COALESCE(ai_ecu, 0.0) > 0.0, ai_ecu, COALESCE(query_ecu, 0.0)) * rate
+| INLINE STATS day_proj_weight = SUM(model_weight) BY composite_key
+| EVAL day_model_cost = CASE(day_proj_weight > 0, (model_weight / day_proj_weight) * ai_pool_cost, 0.0)
+| EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "unknown")
+| STATS total_compute = SUM(compute_time), total_inf = SUM(inference_count), avg_latency = ROUND(AVG(average_inference_time_ms), 1), attributed_cost = SUM(day_model_cost), ai_pool = SUM(ai_pool_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY task_type, model_id, project
+| SORT total_compute DESC, total_inf DESC, model_id ASC
+| LIMIT 50
+| KEEP task_type, model_id, project, total_compute, total_inf, avg_latency, attributed_cost, ai_pool, currency_symbol, unit"""
+
+    p, _ = custom_panel(
+        stable_uuid("cc-ai-models"),
+        "AI Model Compute & Spend Breakdown",
+        AI_MODELS_TEMPLATE,
+        ai_models_esql,
+        0,
+        20,
+        48,
+        14,
+    )
+    panels.append(p)
+
+    p, _ = custom_panel(
+        stable_uuid("cc-ai-billing-table"),
+        "Dedicated AI, Inference & Agent Builder Billing Line Items",
+        AI_BILLING_TABLE_TEMPLATE,
+        f"""{COST_PRELUDE}
+{TIME_FILTER_ESQL}
+| WHERE cost_type_label IN ("ml-vcu", "inference", "agent-builder") OR sku LIKE "*ml*" OR sku LIKE "*inference*" OR sku LIKE "*llm*" OR sku LIKE "*agent-builder*"
+| STATS qty = SUM(COALESCE(quantity_value, 0.0)), ecu = SUM(units), cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project, project_type_label, cost_type_label, sku
+| RENAME project_type_label AS project_type, cost_type_label AS cost_type
+| SORT cost DESC
+| LIMIT 100
+| KEEP project, project_type, cost_type, sku, qty, ecu, cost, currency_symbol, unit""",
+        0,
+        34,
+        48,
+        14,
+    )
+    panels.append(p)
+
+    return dashboard_doc(
+        DASH_AI,
+        TITLE_AI,
+        "AI and Machine Learning FinOps: model inference volume, compute latency, attributed AI pool spend, and dedicated ML/Inference/Agent Builder billing line items.",
+        panels,
+        refs,
+        with_controls=True,
+        controls_mode="usage",
+    )
+
+
+def build_synthetics() -> dict:
+    panels: list = []
+    refs: list = []
+    panel_id = stable_uuid("links-synthetics")
+    p, r = links_panel(panel_id, DASH_SYNTHETICS)
+    panels.append(p)
+    refs.extend(r)
+
+    p, _ = custom_panel(
+        stable_uuid("cc-synthetics-kpi"),
+        "Synthetics Billing Summary",
+        SYNTHETICS_KPI_TEMPLATE,
+        f"""{COST_PRELUDE}
+{TIME_FILTER_ESQL}
+| EVAL is_synth = (cost_type_label == "synthetics" OR sku LIKE "*synthetics*")
+| EVAL synth_cost = CASE(is_synth, cost, 0.0)
+| EVAL synth_ecu = CASE(is_synth, units, 0.0)
+| EVAL synth_qty = CASE(is_synth, COALESCE(quantity_value, 0.0), 0.0)
+| EVAL synth_proj = CASE(is_synth AND cost > 0, project_id, null)
+| STATS synthetics_spend = SUM(synth_cost), total_org_spend = SUM(cost), synthetics_ecu = SUM(synth_ecu), synthetics_runs = SUM(synth_qty), project_count = COUNT_DISTINCT(synth_proj), currency_symbol = MAX(currency_symbol), unit = MAX(unit)
+| EVAL cost_per_1k = CASE(synthetics_runs > 0, synthetics_spend * 1000.0 / synthetics_runs, 0.0)
+| KEEP unit, currency_symbol, synthetics_spend, total_org_spend, synthetics_ecu, synthetics_runs, project_count, cost_per_1k""",
+        0,
+        2,
+        48,
+        6,
+    )
+    panels.append(p)
+
+    p, _ = custom_panel(
+        stable_uuid("cc-synthetics-ds-kpi"),
+        "Synthetics Data Stream Attribution Summary",
+        SYNTHETICS_DS_KPI_TEMPLATE,
+        f"""FROM {USAGE}
+{TIME_FILTER_ESQL}
+| RENAME conf_chargeable_unit_rate AS _u_rate, conf_chargeable_unit_rate_unit AS _u_unit, conf_currency_symbol AS _u_sym
+| LOOKUP JOIN {REALIZED_POOL} ON composite_key
+| LOOKUP JOIN {PROJECT_CONTRIB} ON composite_key
+| EVAL conf_chargeable_unit_rate = COALESCE(conf_chargeable_unit_rate, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _u_sym, "$")
+| EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
+{CURRENCY_RESOLVE_ESQL}
+| EVAL is_synth_ds = (ds_type == "synthetics" OR datastream LIKE "*synthetics*")
+| EVAL idx_share = CASE(is_synth_ds AND deployment_sum_indexing_time > 0, TO_DOUBLE(datastream_sum_indexing_time) / TO_DOUBLE(deployment_sum_indexing_time), 0.0)
+| EVAL qry_share = CASE(is_synth_ds AND deployment_sum_query_time > 0, TO_DOUBLE(datastream_sum_query_time) / TO_DOUBLE(deployment_sum_query_time), 0.0)
+| EVAL stg_share = CASE(is_synth_ds AND deployment_sum_data_set_store_size > 0, TO_DOUBLE(datastream_sum_data_set_store_size) / TO_DOUBLE(deployment_sum_data_set_store_size), 0.0)
+| EVAL idx_cost = COALESCE(indexing_ecu, 0.0) * rate * idx_share
+| EVAL qry_cost = COALESCE(query_ecu, 0.0) * rate * qry_share
+| EVAL stg_cost = COALESCE(storage_ecu, 0.0) * rate * stg_share
+| EVAL ds_cost = idx_cost + qry_cost + stg_cost
+| EVAL synth_ds_name = CASE(is_synth_ds, datastream, null)
+| STATS ds_spend = SUM(ds_cost), indexing_spend = SUM(idx_cost), query_spend = SUM(qry_cost), storage_spend = SUM(stg_cost), ds_count = COUNT_DISTINCT(synth_ds_name), currency_symbol = MAX(currency_symbol), unit = MAX(unit)
+| KEEP unit, currency_symbol, ds_spend, indexing_spend, query_spend, storage_spend, ds_count""",
+        0,
+        8,
+        48,
+        6,
+    )
+    panels.append(p)
+
+    p, _ = custom_panel(
+        stable_uuid("cc-synthetics-daily-project"),
+        "Daily synthetics SKU cost by project",
+        DAILY_PROJECT_COST_TEMPLATE,
+        f"""{COST_PRELUDE}
+{TIME_FILTER_ESQL}
+| WHERE cost_type_label == "synthetics" OR sku LIKE "*synthetics*"
+| STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY b = DATE_TRUNC(1 day, @timestamp), project
+| EVAL day = TO_STRING(b)
+| INLINE STATS day_cost = SUM(cost) BY day
+| INLINE STATS proj_total = SUM(cost) BY project
+| SORT day ASC, proj_total DESC, project ASC
+| LIMIT 5000
+| KEEP day, project, cost, day_cost, currency_symbol, unit""",
+        0,
+        14,
+        24,
+        12,
+    )
+    panels.append(p)
+
+    p, _ = custom_panel(
+        stable_uuid("cc-synthetics-by-project"),
+        "Synthetics SKU cost by project",
+        make_bar_template("project", "Project"),
+        f"""{COST_PRELUDE}
+{TIME_FILTER_ESQL}
+| WHERE cost_type_label == "synthetics" OR sku LIKE "*synthetics*"
+| STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project
+| SORT cost DESC
+| LIMIT 25
+| KEEP project, cost, currency_symbol, unit""",
+        24,
+        14,
+        24,
+        12,
+    )
+    panels.append(p)
+
+    p, _ = custom_panel(
+        stable_uuid("cc-synthetics-ds-namespace"),
+        "Synthetics data stream cost by namespace",
+        make_bar_template("namespace", "Namespace"),
+        f"""FROM {USAGE}
+{TIME_FILTER_ESQL}
+| WHERE ds_type == "synthetics" OR datastream LIKE "*synthetics*"
+| RENAME conf_chargeable_unit_rate AS _u_rate, conf_chargeable_unit_rate_unit AS _u_unit, conf_currency_symbol AS _u_sym
+| LOOKUP JOIN {REALIZED_POOL} ON composite_key
+| LOOKUP JOIN {PROJECT_CONTRIB} ON composite_key
+| EVAL conf_chargeable_unit_rate = COALESCE(conf_chargeable_unit_rate, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _u_sym, "$")
+| EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
+{CURRENCY_RESOLVE_ESQL}
+| EVAL idx_share = CASE(deployment_sum_indexing_time > 0, TO_DOUBLE(datastream_sum_indexing_time) / TO_DOUBLE(deployment_sum_indexing_time), 0.0)
+| EVAL qry_share = CASE(deployment_sum_query_time > 0, TO_DOUBLE(datastream_sum_query_time) / TO_DOUBLE(deployment_sum_query_time), 0.0)
+| EVAL stg_share = CASE(deployment_sum_data_set_store_size > 0, TO_DOUBLE(datastream_sum_data_set_store_size) / TO_DOUBLE(deployment_sum_data_set_store_size), 0.0)
+| EVAL idx_cost = COALESCE(indexing_ecu, 0.0) * rate * idx_share
+| EVAL qry_cost = COALESCE(query_ecu, 0.0) * rate * qry_share
+| EVAL stg_cost = COALESCE(storage_ecu, 0.0) * rate * stg_share
+| EVAL total_ds_cost = idx_cost + qry_cost + stg_cost
+| EVAL namespace = COALESCE(ds_namespace, "other")
+| STATS cost = SUM(total_ds_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY namespace
+| SORT cost DESC
+| LIMIT 25
+| KEEP namespace, cost, currency_symbol, unit""",
+        0,
+        26,
+        24,
+        13,
+    )
+    panels.append(p)
+
+    p, _ = custom_panel(
+        stable_uuid("cc-synthetics-sku-table"),
+        "Synthetics billing line items (SKUs)",
+        SYNTHETICS_SKU_TABLE_TEMPLATE,
+        f"""{COST_PRELUDE}
+{TIME_FILTER_ESQL}
+| WHERE cost_type_label == "synthetics" OR sku LIKE "*synthetics*"
+| STATS qty = SUM(COALESCE(quantity_value, 0.0)), ecu = SUM(units), cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project, project_type_label, sku
+| RENAME project_type_label AS project_type
+| SORT cost DESC
+| LIMIT 100
+| KEEP project, project_type, sku, qty, ecu, cost, currency_symbol, unit""",
+        24,
+        26,
+        24,
+        13,
+    )
+    panels.append(p)
+
+    p, _ = custom_panel(
+        stable_uuid("cc-synthetics-ds-table"),
+        "Synthetics data stream cost attribution & usage",
+        DATASTREAM_COST_TABLE_TEMPLATE,
+        f"""FROM {USAGE}
+{TIME_FILTER_ESQL}
+| WHERE ds_type == "synthetics" OR datastream LIKE "*synthetics*"
+| RENAME conf_chargeable_unit_rate AS _u_rate, conf_chargeable_unit_rate_unit AS _u_unit, conf_currency_symbol AS _u_sym
+| LOOKUP JOIN {REALIZED_POOL} ON composite_key
+| LOOKUP JOIN {PROJECT_CONTRIB} ON composite_key
+| EVAL conf_chargeable_unit_rate = COALESCE(conf_chargeable_unit_rate, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _u_sym, "$")
+| EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
+{CURRENCY_RESOLVE_ESQL}
+| EVAL idx_share = CASE(deployment_sum_indexing_time > 0, TO_DOUBLE(datastream_sum_indexing_time) / TO_DOUBLE(deployment_sum_indexing_time), 0.0)
+| EVAL qry_share = CASE(deployment_sum_query_time > 0, TO_DOUBLE(datastream_sum_query_time) / TO_DOUBLE(deployment_sum_query_time), 0.0)
+| EVAL stg_share = CASE(deployment_sum_data_set_store_size > 0, TO_DOUBLE(datastream_sum_data_set_store_size) / TO_DOUBLE(deployment_sum_data_set_store_size), 0.0)
+| EVAL day_idx_cost = COALESCE(indexing_ecu, 0.0) * rate * idx_share
+| EVAL day_qry_cost = COALESCE(query_ecu, 0.0) * rate * qry_share
+| EVAL day_stg_cost = COALESCE(storage_ecu, 0.0) * rate * stg_share
+| EVAL day_attr_cost = day_idx_cost + day_qry_cost + day_stg_cost
+| STATS indexing_cost = SUM(day_idx_cost), query_cost = SUM(day_qry_cost), storage_cost = SUM(day_stg_cost), attributed_cost = SUM(day_attr_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project = project_name, project_type, ds_type, ds_namespace, datastream
+| SORT attributed_cost DESC
+| LIMIT 200
+| KEEP project, project_type, ds_type, ds_namespace, datastream, indexing_cost, query_cost, storage_cost, attributed_cost, currency_symbol, unit""",
+        0,
+        39,
+        48,
+        14,
+    )
+    panels.append(p)
+
+    return dashboard_doc(
+        DASH_SYNTHETICS,
+        TITLE_SYNTHETICS,
+        "Synthetics FinOps: direct Synthetics SKU billing, test check volume, and attributed data-tier (ingest, search, storage) costs for synthetics-* data streams.",
+        panels,
+        refs,
+        with_controls=True,
+        controls_mode="usage",
     )
 
 
@@ -2894,7 +3416,13 @@ def main() -> None:
         if sub != "tag":
             d.mkdir(parents=True)
 
-    dashboards = (build_billing(), build_usage(), build_config())
+    dashboards = (
+        build_billing(),
+        build_usage(),
+        build_ai(),
+        build_synthetics(),
+        build_config(),
+    )
     for doc in dashboards:
         write_json(KIBANA / "dashboard" / f"{doc['id']}.json", doc)
 

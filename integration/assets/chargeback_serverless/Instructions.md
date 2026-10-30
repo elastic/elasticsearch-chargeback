@@ -110,6 +110,10 @@ Navigate to **Analytics → Dashboards** and search for `Chargeback Serverless`:
   Top-level spend, burn rate, SKU breakdowns, and project cost allocations.
 - **[Chargeback Serverless] Usage & Cost Allocation**:
   Attributed cost partitioned by Namespace (`ds_namespace`) and Data Stream Type (`ds_type`), with data stream tables and ECU pools.
+- **[Chargeback Serverless] AI & Machine Learning**:
+  AI & ML FinOps overview, daily model cost attribution, inference volume, latency, and dedicated AI/Inference/Agent Builder SKU line items.
+- **[Chargeback Serverless] Synthetics**:
+  Direct Synthetics SKU billing, check volume, unit economics, and attributed data-tier costs for `synthetics-*` data streams.
 - **[Chargeback Serverless] Configuration**:
   Fleet Settings reference guide, remote project key generator, and environment status.
 
