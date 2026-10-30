@@ -80,9 +80,17 @@ CURRENCY_RESOLVE_ESQL = """\
 # Shared ES|QL time filter: respects Kibana dashboard time picker (?_tstart / ?_tend).
 TIME_FILTER_ESQL = "| WHERE @timestamp >= ?_tstart AND @timestamp <= ?_tend"
 
-# Shared ES|QL prelude: currency rate and symbol from policy config stamped on events.
+# Shared ES|QL prelude: currency rate and symbol from policy config stamped on events,
+# resolving missing/ID project_name via LOOKUP JOIN against serverless_project_status_lookup.
 COST_PRELUDE = f"""FROM {BILLING}
 | EVAL ts = @timestamp
+| RENAME project_id AS _b_pid, project_name AS _b_pname, project_type AS _b_ptype, conf_chargeable_unit_rate AS _b_rate, conf_chargeable_unit_rate_unit AS _b_unit, conf_currency_symbol AS _b_sym
+| LOOKUP JOIN {PROJECT_STATUS} ON composite_key
+| EVAL @timestamp = ts
+| EVAL project_id = COALESCE(_b_pid, project_id)
+| EVAL project_name = CASE(_b_pname IS NOT NULL AND _b_pname != "" AND _b_pname != project_id, _b_pname, project_name IS NOT NULL AND project_name != "" AND project_name != project_id, project_name, _b_pname IS NOT NULL AND _b_pname != "", _b_pname, project_name IS NOT NULL AND project_name != "", project_name, project_id)
+| EVAL project_type = CASE(_b_ptype IS NOT NULL AND _b_ptype != "" AND _b_ptype != "unknown", _b_ptype, project_type IS NOT NULL AND project_type != "", project_type, _b_ptype)
+| EVAL conf_chargeable_unit_rate = COALESCE(_b_rate, conf_chargeable_unit_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(_b_unit, conf_chargeable_unit_rate_unit, "USD"), conf_currency_symbol = COALESCE(_b_sym, conf_currency_symbol, "$")
 {CURRENCY_RESOLVE_ESQL}
 | EVAL units = COALESCE(total_ecu, 0.0)
 | EVAL cost = units * COALESCE(conf_chargeable_unit_rate, 1.0)
@@ -2833,10 +2841,18 @@ def build_usage() -> dict:
         DATASTREAM_COST_TABLE_TEMPLATE,
         f"""FROM {USAGE}
 {TIME_FILTER_ESQL}
-| RENAME conf_chargeable_unit_rate AS _u_rate, conf_chargeable_unit_rate_unit AS _u_unit, conf_currency_symbol AS _u_sym
+| EVAL ts = @timestamp
+| RENAME project_id AS _u_pid, project_name AS _u_pname, project_type AS _u_ptype, conf_chargeable_unit_rate AS _u_rate, conf_chargeable_unit_rate_unit AS _u_unit, conf_currency_symbol AS _u_sym
+| LOOKUP JOIN {PROJECT_STATUS} ON composite_key
+| EVAL _ps_rate = conf_chargeable_unit_rate, _ps_unit = conf_chargeable_unit_rate_unit, _ps_sym = conf_currency_symbol
 | LOOKUP JOIN {REALIZED_POOL} ON composite_key
 | LOOKUP JOIN {PROJECT_CONTRIB} ON composite_key
-| EVAL conf_chargeable_unit_rate = COALESCE(conf_chargeable_unit_rate, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _u_sym, "$")
+| EVAL @timestamp = ts
+| EVAL project_id = COALESCE(_u_pid, project_id)
+| EVAL project_name = CASE(_u_pname IS NOT NULL AND _u_pname != "" AND _u_pname != project_id, _u_pname, project_name IS NOT NULL AND project_name != "" AND project_name != project_id, project_name, _u_pname IS NOT NULL AND _u_pname != "", _u_pname, project_name IS NOT NULL AND project_name != "", project_name, project_id)
+| EVAL project_type = CASE(_u_ptype IS NOT NULL AND _u_ptype != "" AND _u_ptype != "unknown", _u_ptype, project_type IS NOT NULL AND project_type != "", project_type, "unknown")
+| EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "unknown")
+| EVAL conf_chargeable_unit_rate = COALESCE(conf_chargeable_unit_rate, _ps_rate, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _ps_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _ps_sym, _u_sym, "$")
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
 {CURRENCY_RESOLVE_ESQL}
 | EVAL idx_share = CASE(deployment_sum_indexing_time > 0, TO_DOUBLE(datastream_sum_indexing_time) / TO_DOUBLE(deployment_sum_indexing_time), 0.0)
@@ -2846,7 +2862,7 @@ def build_usage() -> dict:
 | EVAL day_qry_cost = COALESCE(query_ecu, 0.0) * rate * qry_share
 | EVAL day_stg_cost = COALESCE(storage_ecu, 0.0) * rate * stg_share
 | EVAL day_attr_cost = day_idx_cost + day_qry_cost + day_stg_cost
-| STATS indexing_cost = SUM(day_idx_cost), query_cost = SUM(day_qry_cost), storage_cost = SUM(day_stg_cost), attributed_cost = SUM(day_attr_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project = project_name, project_type, ds_type, ds_namespace, datastream
+| STATS indexing_cost = SUM(day_idx_cost), query_cost = SUM(day_qry_cost), storage_cost = SUM(day_stg_cost), attributed_cost = SUM(day_attr_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project, project_type, ds_type, ds_namespace, datastream
 | SORT attributed_cost DESC
 | LIMIT 200
 | KEEP project, project_type, ds_type, ds_namespace, datastream, indexing_cost, query_cost, storage_cost, attributed_cost, currency_symbol, unit""",
@@ -2860,7 +2876,14 @@ def build_usage() -> dict:
 
     esql = f"""FROM {USAGE}
 {TIME_FILTER_ESQL}
-| EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "unknown"), project_type = COALESCE(project_type, "unknown"), ds_type = COALESCE(ds_type, "other"), ds_namespace = COALESCE(ds_namespace, "other")
+| EVAL ts = @timestamp
+| RENAME project_id AS _u_pid, project_name AS _u_pname, project_type AS _u_ptype
+| LOOKUP JOIN {PROJECT_STATUS} ON composite_key
+| EVAL @timestamp = ts
+| EVAL project_id = COALESCE(_u_pid, project_id)
+| EVAL project_name = CASE(_u_pname IS NOT NULL AND _u_pname != "" AND _u_pname != project_id, _u_pname, project_name IS NOT NULL AND project_name != "" AND project_name != project_id, project_name, _u_pname IS NOT NULL AND _u_pname != "", _u_pname, project_name IS NOT NULL AND project_name != "", project_name, project_id)
+| EVAL project_type = CASE(_u_ptype IS NOT NULL AND _u_ptype != "" AND _u_ptype != "unknown", _u_ptype, project_type IS NOT NULL AND project_type != "", project_type, "unknown")
+| EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "unknown"), ds_type = COALESCE(ds_type, "other"), ds_namespace = COALESCE(ds_namespace, "other")
 | STATS indexing_ms = SUM(datastream_sum_indexing_time), query_ms = SUM(datastream_sum_query_time), size_mb = ROUND(AVG(TO_DOUBLE(datastream_sum_data_set_store_size)) / 1048576.0, 2) BY project, project_type, ds_type, ds_namespace, datastream
 | SORT indexing_ms DESC
 | LIMIT 200
@@ -2927,8 +2950,10 @@ def build_ai() -> dict:
 
     ai_daily_model_esql = f"""FROM {AI_USAGE}
 {TIME_FILTER_ESQL}
+| EVAL ts = @timestamp
 | RENAME conf_chargeable_unit_rate AS _u_rate, conf_chargeable_unit_rate_unit AS _u_unit, conf_currency_symbol AS _u_sym
 | LOOKUP JOIN {REALIZED_POOL} ON composite_key
+| EVAL @timestamp = ts
 | EVAL conf_chargeable_unit_rate = COALESCE(conf_chargeable_unit_rate, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _u_sym, "$")
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
 {CURRENCY_RESOLVE_ESQL}
@@ -2959,9 +2984,16 @@ def build_ai() -> dict:
 
     ai_by_proj_esql = f"""FROM {AI_USAGE}
 {TIME_FILTER_ESQL}
-| RENAME conf_chargeable_unit_rate AS _u_rate, conf_chargeable_unit_rate_unit AS _u_unit, conf_currency_symbol AS _u_sym
+| EVAL ts = @timestamp
+| RENAME project_id AS _u_pid, project_name AS _u_pname, project_type AS _u_ptype, conf_chargeable_unit_rate AS _u_rate, conf_chargeable_unit_rate_unit AS _u_unit, conf_currency_symbol AS _u_sym
+| LOOKUP JOIN {PROJECT_STATUS} ON composite_key
+| EVAL _ps_rate = conf_chargeable_unit_rate, _ps_unit = conf_chargeable_unit_rate_unit, _ps_sym = conf_currency_symbol
 | LOOKUP JOIN {REALIZED_POOL} ON composite_key
-| EVAL conf_chargeable_unit_rate = COALESCE(conf_chargeable_unit_rate, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _u_sym, "$")
+| EVAL @timestamp = ts
+| EVAL project_id = COALESCE(_u_pid, project_id)
+| EVAL project_name = CASE(_u_pname IS NOT NULL AND _u_pname != "" AND _u_pname != project_id, _u_pname, project_name IS NOT NULL AND project_name != "" AND project_name != project_id, project_name, _u_pname IS NOT NULL AND _u_pname != "", _u_pname, project_name IS NOT NULL AND project_name != "", project_name, project_id)
+| EVAL project_type = CASE(_u_ptype IS NOT NULL AND _u_ptype != "" AND _u_ptype != "unknown", _u_ptype, project_type IS NOT NULL AND project_type != "", project_type, "unknown")
+| EVAL conf_chargeable_unit_rate = COALESCE(conf_chargeable_unit_rate, _ps_rate, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _ps_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _ps_sym, _u_sym, "$")
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
 {CURRENCY_RESOLVE_ESQL}
 | EVAL compute_time = COALESCE(total_inference_time_ms, 0)
@@ -2989,9 +3021,16 @@ def build_ai() -> dict:
 
     ai_models_esql = f"""FROM {AI_USAGE}
 {TIME_FILTER_ESQL}
-| RENAME conf_chargeable_unit_rate AS _u_rate, conf_chargeable_unit_rate_unit AS _u_unit, conf_currency_symbol AS _u_sym
+| EVAL ts = @timestamp
+| RENAME project_id AS _u_pid, project_name AS _u_pname, project_type AS _u_ptype, conf_chargeable_unit_rate AS _u_rate, conf_chargeable_unit_rate_unit AS _u_unit, conf_currency_symbol AS _u_sym
+| LOOKUP JOIN {PROJECT_STATUS} ON composite_key
+| EVAL _ps_rate = conf_chargeable_unit_rate, _ps_unit = conf_chargeable_unit_rate_unit, _ps_sym = conf_currency_symbol
 | LOOKUP JOIN {REALIZED_POOL} ON composite_key
-| EVAL conf_chargeable_unit_rate = COALESCE(conf_chargeable_unit_rate, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _u_sym, "$")
+| EVAL @timestamp = ts
+| EVAL project_id = COALESCE(_u_pid, project_id)
+| EVAL project_name = CASE(_u_pname IS NOT NULL AND _u_pname != "" AND _u_pname != project_id, _u_pname, project_name IS NOT NULL AND project_name != "" AND project_name != project_id, project_name, _u_pname IS NOT NULL AND _u_pname != "", _u_pname, project_name IS NOT NULL AND project_name != "", project_name, project_id)
+| EVAL project_type = CASE(_u_ptype IS NOT NULL AND _u_ptype != "" AND _u_ptype != "unknown", _u_ptype, project_type IS NOT NULL AND project_type != "", project_type, "unknown")
+| EVAL conf_chargeable_unit_rate = COALESCE(conf_chargeable_unit_rate, _ps_rate, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _ps_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _ps_sym, _u_sym, "$")
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
 {CURRENCY_RESOLVE_ESQL}
 | EVAL compute_time = COALESCE(total_inference_time_ms, 0)
@@ -3203,10 +3242,18 @@ def build_synthetics() -> dict:
         f"""FROM {USAGE}
 {TIME_FILTER_ESQL}
 | WHERE ds_type == "synthetics" OR datastream LIKE "*synthetics*"
-| RENAME conf_chargeable_unit_rate AS _u_rate, conf_chargeable_unit_rate_unit AS _u_unit, conf_currency_symbol AS _u_sym
+| EVAL ts = @timestamp
+| RENAME project_id AS _u_pid, project_name AS _u_pname, project_type AS _u_ptype, conf_chargeable_unit_rate AS _u_rate, conf_chargeable_unit_rate_unit AS _u_unit, conf_currency_symbol AS _u_sym
+| LOOKUP JOIN {PROJECT_STATUS} ON composite_key
+| EVAL _ps_rate = conf_chargeable_unit_rate, _ps_unit = conf_chargeable_unit_rate_unit, _ps_sym = conf_currency_symbol
 | LOOKUP JOIN {REALIZED_POOL} ON composite_key
 | LOOKUP JOIN {PROJECT_CONTRIB} ON composite_key
-| EVAL conf_chargeable_unit_rate = COALESCE(conf_chargeable_unit_rate, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _u_sym, "$")
+| EVAL @timestamp = ts
+| EVAL project_id = COALESCE(_u_pid, project_id)
+| EVAL project_name = CASE(_u_pname IS NOT NULL AND _u_pname != "" AND _u_pname != project_id, _u_pname, project_name IS NOT NULL AND project_name != "" AND project_name != project_id, project_name, _u_pname IS NOT NULL AND _u_pname != "", _u_pname, project_name IS NOT NULL AND project_name != "", project_name, project_id)
+| EVAL project_type = CASE(_u_ptype IS NOT NULL AND _u_ptype != "" AND _u_ptype != "unknown", _u_ptype, project_type IS NOT NULL AND project_type != "", project_type, "unknown")
+| EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "unknown")
+| EVAL conf_chargeable_unit_rate = COALESCE(conf_chargeable_unit_rate, _ps_rate, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _ps_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _ps_sym, _u_sym, "$")
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
 {CURRENCY_RESOLVE_ESQL}
 | EVAL idx_share = CASE(deployment_sum_indexing_time > 0, TO_DOUBLE(datastream_sum_indexing_time) / TO_DOUBLE(deployment_sum_indexing_time), 0.0)
@@ -3216,7 +3263,7 @@ def build_synthetics() -> dict:
 | EVAL day_qry_cost = COALESCE(query_ecu, 0.0) * rate * qry_share
 | EVAL day_stg_cost = COALESCE(storage_ecu, 0.0) * rate * stg_share
 | EVAL day_attr_cost = day_idx_cost + day_qry_cost + day_stg_cost
-| STATS indexing_cost = SUM(day_idx_cost), query_cost = SUM(day_qry_cost), storage_cost = SUM(day_stg_cost), attributed_cost = SUM(day_attr_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project = project_name, project_type, ds_type, ds_namespace, datastream
+| STATS indexing_cost = SUM(day_idx_cost), query_cost = SUM(day_qry_cost), storage_cost = SUM(day_stg_cost), attributed_cost = SUM(day_attr_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project, project_type, ds_type, ds_namespace, datastream
 | SORT attributed_cost DESC
 | LIMIT 200
 | KEEP project, project_type, ds_type, ds_namespace, datastream, indexing_cost, query_cost, storage_cost, attributed_cost, currency_symbol, unit""",
@@ -3344,6 +3391,13 @@ def build_alerts() -> list[dict]:
             ALERT_MISSING_PROJECTS,
             "[Chargeback Serverless] Billed project missing from registry",
             f"""FROM {BILLING}
+| EVAL ts = @timestamp
+| RENAME project_id AS _b_pid, project_name AS _b_pname, project_type AS _b_ptype
+| LOOKUP JOIN {PROJECT_STATUS} ON composite_key
+| EVAL @timestamp = ts
+| EVAL project_id = COALESCE(_b_pid, project_id)
+| EVAL project_name = CASE(_b_pname IS NOT NULL AND _b_pname != "" AND _b_pname != project_id, _b_pname, project_name IS NOT NULL AND project_name != "" AND project_name != project_id, project_name, _b_pname IS NOT NULL AND _b_pname != "", _b_pname, project_name IS NOT NULL AND project_name != "", project_name, project_id)
+| EVAL project_type = CASE(_b_ptype IS NOT NULL AND _b_ptype != "" AND _b_ptype != "unknown", _b_ptype, project_type IS NOT NULL AND project_type != "", project_type, _b_ptype)
 | WHERE project_id IS NOT NULL AND project_id != "" AND (project_name IS NULL OR project_name == "" OR project_name == project_id)
 | STATS ecu = ROUND(SUM(COALESCE(total_ecu, 0.0)), 2) BY project_id, project_type
 | EVAL result = CONCAT("Billed project `", project_id, "` (", COALESCE(project_type, "unknown"), ", ", TO_STRING(ecu), " ECU) has no resolved project_name.")
