@@ -138,9 +138,9 @@ PROJECT_ID="${PROJECT_ID:-${project_id:-}}"
 SL_API_KEY="${SL_API_KEY:-${sl_api_key:-}}"
 LOOKBEHIND="${LOOKBEHIND:-60}"
 
-CONF_RATE="${CONF_RATE:-1.0}"
-CONF_RATE_UNIT="${CONF_RATE_UNIT:-USD}"
-CONF_CURRENCY_SYMBOL="${CONF_CURRENCY_SYMBOL:-$}"
+CONF_RATE="${CONF_RATE:-}"
+CONF_RATE_UNIT="${CONF_RATE_UNIT:-}"
+CONF_CURRENCY_SYMBOL="${CONF_CURRENCY_SYMBOL:-}"
 
 # Helper to prompt for missing variables
 prompt_var() {
@@ -483,9 +483,9 @@ org_id = os.environ.get("ORGANIZATION_ID", "")
 cloud_api_key = os.environ.get("CLOUD_API_KEY", "") or os.environ.get("BILLING_API_KEY", "")
 hub_es_api_key = os.environ.get("HUB_ES_API_KEY", "") or os.environ.get("ES_API_KEY", "")
 lookbehind = int(os.environ.get("LOOKBEHIND", "30") or 30)
-currency_unit = os.environ.get("CONF_RATE_UNIT", "USD") or "USD"
-currency_symbol = os.environ.get("CONF_CURRENCY_SYMBOL", "$") or "$"
-unit_rate = os.environ.get("CONF_RATE", "1.0") or "1.0"
+currency_unit = os.environ.get("CONF_RATE_UNIT", "") or ""
+currency_symbol = os.environ.get("CONF_CURRENCY_SYMBOL", "") or ""
+unit_rate = os.environ.get("CONF_RATE", "") or ""
 billing_api_base = os.environ.get("BILLING_API_BASE", "https://billing.elastic-cloud.com")
 cloud_api_base = os.environ.get("CLOUD_API_BASE", "https://api.elastic-cloud.com")
 
@@ -525,6 +525,21 @@ if existing_pkg_id and os.path.exists(existing_json_file):
                                 unit_rate = str(old_rate)
     except Exception:
         pass
+
+if not currency_unit:
+    currency_unit = "USD"
+if not currency_symbol:
+    currency_symbol = "$"
+if not unit_rate:
+    unit_rate = "1.0"
+
+try:
+    with open("/tmp/cbs_currency.env", "w") as ef:
+        ef.write(f"export CONF_RATE='{unit_rate}'\\n")
+        ef.write(f"export CONF_RATE_UNIT='{currency_unit}'\\n")
+        ef.write(f"export CONF_CURRENCY_SYMBOL='{currency_symbol}'\\n")
+except Exception:
+    pass
 
 payload = {
     "name": "chargeback_serverless",
@@ -609,6 +624,10 @@ fi
 if [[ "$SKIP_COLLECTOR" -eq 0 ]]; then
   echo ""
   echo ">>> Step 6: Running local CEL collection pass for immediate dashboard data..."
+  if [[ -f /tmp/cbs_currency.env ]]; then
+    # shellcheck source=/dev/null
+    source /tmp/cbs_currency.env
+  fi
   python3 "$REPO_ROOT/scripts/run_chargeback_serverless_collector.py" || {
     echo "  ⚠ Local collector pass encountered a warning/error (continuing to verification)."
   }

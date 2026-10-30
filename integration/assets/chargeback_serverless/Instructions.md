@@ -7,7 +7,7 @@ Install on an **Elastic Cloud Serverless hub** (Observability Complete recommend
 ## Prerequisites
 
 - Serverless hub project with Fleet Integrations enabled.
-- Fleet package `chargeback_serverless` **0.3.3+**.
+- Fleet package `chargeback_serverless` **0.3.4+**.
 - Elastic Cloud Organization ID (from Elastic Cloud Console → Organization).
 - Elastic Cloud API key with billing read access and Serverless project read access.
 - See [CONFIG.md](CONFIG.md) for detailed configuration options.
@@ -31,7 +31,7 @@ The deployment script automates package building, dashboard compilation, Fleet p
 ```
 
 The script will:
-1. Rebuild and package `chargeback_serverless-0.3.3.zip` using `elastic-package`.
+1. Rebuild and package `chargeback_serverless-0.3.4.zip` using `elastic-package`.
 2. Upload and activate the package in Kibana Fleet EPM (`/api/fleet/epm/packages`).
 3. Automatically create or update the Fleet package policy with your credentials and settings.
 4. Verify data stream health and print dashboard URLs.
@@ -48,7 +48,7 @@ The script will:
      -H "kbn-xsrf: true" \
      -H "elastic-api-version: 2023-10-31" \
      -H "Content-Type: application/zip" \
-     --data-binary @dist/chargeback_serverless-0.3.3.zip
+     --data-binary @dist/chargeback_serverless-0.3.4.zip
    ```
 
 2. **Add Integration in Fleet:**

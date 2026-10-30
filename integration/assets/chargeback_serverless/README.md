@@ -16,7 +16,7 @@ See [Instructions.md](Instructions.md) and [CONFIG.md](CONFIG.md) for full setup
 
 | Path | Description |
 | --- | --- |
-| `dist/chargeback_serverless-0.3.3.zip` | Built Fleet integration package archive (`0.3.3`) |
+| `dist/chargeback_serverless-0.3.4.zip` | Built Fleet integration package archive (`0.3.4`) |
 | `kibana/` | Generated Kibana dashboards, alerting rule templates, and index pattern |
 | `CONFIG.md` | Fleet policy configuration reference and remote project API key guide |
 | `Instructions.md` | End-to-end installation and verification guide |

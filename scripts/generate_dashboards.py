@@ -177,6 +177,8 @@ def lens_esql(
     h: int,
     index: str = BILLING,
     time_field: str | None = "@timestamp",
+    *,
+    section_id: str | None = None,
 ) -> tuple[dict, list]:
     adhoc = adhoc_id(f"esql|{title}|{index}")
     layer_id = stable_uuid(f"layer:{panel_id}")
@@ -220,6 +222,10 @@ def lens_esql(
     elif visualization_type in ("lnsDatatable", "lnsMetric"):
         visualization["layerId"] = layer_id
 
+    grid: dict = {"x": x, "y": y, "w": w, "h": h, "i": panel_id}
+    if section_id:
+        grid["sectionId"] = section_id
+
     panel = {
         "embeddableConfig": {
             "attributes": {
@@ -239,7 +245,7 @@ def lens_esql(
             "syncTooltips": False,
             "title": title,
         },
-        "gridData": {"x": x, "y": y, "w": w, "h": h, "i": panel_id},
+        "gridData": grid,
         "panelIndex": panel_id,
         "title": title,
         "type": "lens",
@@ -283,13 +289,18 @@ def custom_panel(
     y: int,
     w: int,
     h: int,
+    *,
+    section_id: str | None = None,
 ) -> tuple[dict, list]:
+    grid: dict = {"x": x, "y": y, "w": w, "h": h, "i": panel_id}
+    if section_id:
+        grid["sectionId"] = section_id
     panel = {
         "embeddableConfig": {
             "esql_query": [esql_query] if esql_query else [],
             "template": template,
         },
-        "gridData": {"x": x, "y": y, "w": w, "h": h, "i": panel_id},
+        "gridData": grid,
         "panelIndex": panel_id,
         "title": title,
         "type": "custom_content",
@@ -630,17 +641,17 @@ SANKEY_TEMPLATE = f"""\
   .cb-flow {{ display: flex; flex-direction: column; gap: var(--cc-space-s); }}
   .cb-row {{
     display: grid;
-    grid-template-columns: minmax(90px, 0.9fr) minmax(110px, 1.1fr) minmax(100px, 1fr) 2fr 135px;
-    gap: var(--cc-space-s);
+    grid-template-columns: minmax(75px, 0.9fr) minmax(85px, 1fr) minmax(85px, 1fr) 1.5fr minmax(85px, 115px);
+    gap: 6px;
     align-items: center;
   }}
-  .cb-stage {{ font-size: 0.88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--cc-color-text); }}
+  .cb-stage {{ font-size: 0.84rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--cc-color-text); }}
   .cb-bar-track {{
     height: 14px; background: var(--cc-color-border);
     border-radius: var(--cc-radius-s); overflow: hidden;
   }}
   .cb-bar {{ height: 100%; background: var(--cc-vis-0); min-width: 2px; }}
-  .cb-cost {{ text-align: right; font-variant-numeric: tabular-nums; font-size: 0.88rem; white-space: nowrap; color: var(--cc-color-text); }}
+  .cb-cost {{ text-align: right; font-variant-numeric: tabular-nums; font-size: 0.84rem; white-space: nowrap; color: var(--cc-color-text); }}
   .cb-sym {{ font-weight: 500; opacity: 0.85; margin-right: 2px; }}
 </style>
 {{% assign unit = rows[0]["unit"].value | default: "USD" %}}
@@ -779,7 +790,7 @@ AI_MODELS_TEMPLATE = f"""\
   }}
   .cb-model-head {{
     display: grid;
-    grid-template-columns: minmax(140px, 1.8fr) 110px 2fr 90px 110px;
+    grid-template-columns: minmax(160px, 1.2fr) minmax(180px, 2fr) minmax(120px, 1.5fr) 100px 140px;
     gap: var(--cc-space-s, 8px);
     font-size: 0.76rem;
     font-weight: 600;
@@ -793,7 +804,7 @@ AI_MODELS_TEMPLATE = f"""\
   .cb-model-head .num {{ text-align: right; }}
   .cb-model-row {{
     display: grid;
-    grid-template-columns: minmax(140px, 1.8fr) 110px 2fr 90px 110px;
+    grid-template-columns: minmax(160px, 1.2fr) minmax(180px, 2fr) minmax(120px, 1.5fr) 100px 140px;
     gap: var(--cc-space-s, 8px);
     align-items: center;
     font-size: 0.85rem;
@@ -813,15 +824,17 @@ AI_MODELS_TEMPLATE = f"""\
   }}
   .cb-model-tag {{
     display: inline-block;
-    padding: 1px 6px;
+    padding: 2px 8px;
     border-radius: 4px;
-    font-size: 0.7rem;
-    font-weight: 500;
+    font-size: 0.72rem;
+    font-weight: 600;
     background: var(--cc-color-surface);
     border: 1px solid var(--cc-color-border);
     color: var(--cc-color-text);
     opacity: 0.85;
     text-transform: uppercase;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
   }}
   .cb-track {{
     height: 12px;
@@ -845,16 +858,19 @@ AI_MODELS_TEMPLATE = f"""\
 {{% assign max_time = rows[0]["total_compute"].value | default: 1.0 %}}
 {{% if max_time <= 0 %}}{{% assign max_time = 1.0 %}}{{% endif %}}
 {{% assign tot_compute = 0.0 %}}
+{{% assign tot_inferences = 0 %}}
 {{% for r in rows %}}
   {{% assign tc = r["total_compute"].value | default: 0 %}}
   {{% assign tot_compute = tot_compute | plus: tc %}}
+  {{% assign ti = r["total_inf"].value | default: 0 %}}
+  {{% assign tot_inferences = tot_inferences | plus: ti %}}
 {{% endfor %}}
 
 {paged_top("aimod", 10, 6)}
 <div class="cb-model-list">
   <div class="cb-model-head">
-    <div>Model Name</div>
     <div>Task Type</div>
+    <div>Model Name</div>
     <div>Compute Allocation Share</div>
     <div class="num">Inferences</div>
     <div class="num">Attributed Cost ({{{{ unit }}}})</div>
@@ -865,21 +881,31 @@ AI_MODELS_TEMPLATE = f"""\
 {{% for r in rows %}}
   {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
   {{% assign c_time = r["total_compute"].value | default: 0 %}}
-  {{% assign bar_w = c_time | times: 100.0 | divided_by: max_time | round: 1 %}}
   {{% assign calls = r["total_inf"].value | default: 0 %}}
+  {{% if max_time > 1 %}}
+    {{% assign bar_w = c_time | times: 100.0 | divided_by: max_time | round: 1 %}}
+  {{% elsif tot_inferences > 0 %}}
+    {{% assign bar_w = calls | times: 100.0 | divided_by: tot_inferences | round: 1 %}}
+  {{% else %}}
+    {{% assign bar_w = 0.0 %}}
+  {{% endif %}}
   {{% assign cost = r["attributed_cost"].value | default: 0.0 %}}
-  {{% if cost <= 0.0 and tot_compute > 0 %}}
+  {{% if cost <= 0.0 %}}
     {{% assign p_cost = r["ai_pool"].value | default: 0.0 %}}
-    {{% assign cost = c_time | times: p_cost | divided_by: tot_compute %}}
+    {{% if tot_compute > 0 %}}
+      {{% assign cost = c_time | times: p_cost | divided_by: tot_compute %}}
+    {{% elsif tot_inferences > 0 %}}
+      {{% assign cost = calls | times: p_cost | divided_by: tot_inferences %}}
+    {{% endif %}}
   {{% endif %}}
   {liquid_money_block("calls", "fmt_calls", with_decimals=False)}
   {liquid_money_block("cost", "fmt_cost", with_decimals=True)}
   <div class="cb-model-row cb-pg-row-aimod cb-pg-aimod-{{{{ _row_pg }}}}">
+    <div><span class="cb-model-tag">{{{{ r["task_type"].value | default: "inference" }}}}</span></div>
     <div class="cb-model-name" title="{{{{ r[\"model_id\"].value }}}}">
       <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--cc-vis-0);"></span>
       {{{{ r["model_id"].value }}}}
     </div>
-    <div><span class="cb-model-tag">{{{{ r["task_type"].value | default: "inference" }}}}</span></div>
     <div>
       <div class="cb-track">
         <div class="cb-fill" style="width: {{{{ bar_w }}}}%;"></div>
@@ -948,9 +974,9 @@ def make_daily_cost_template(group_field: str, header_label: str = "Project", is
     display: flex;
     flex-direction: column;
     height: 100%;
-    min-height: 250px;
+    min-height: 180px;
     box-sizing: border-box;
-    padding: 6px 10px 10px 10px;
+    padding: 4px 8px 6px 8px;
   }}
   .cb-daily-head {{
     display: flex;
@@ -958,36 +984,69 @@ def make_daily_cost_template(group_field: str, header_label: str = "Project", is
     align-items: center;
     font-size: 0.78rem;
     font-weight: 600;
-    opacity: 0.75;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
+    opacity: 0.85;
     padding: 0 4px 6px 4px;
     border-bottom: 1px solid var(--cc-color-border);
     margin-bottom: 6px;
+    gap: 12px;
+  }}
+  .cb-daily-title {{
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+    opacity: 0.75;
+    color: var(--cc-color-text);
+    font-size: 0.76rem;
+  }}
+  .cb-daily-legend {{
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px 14px;
+    user-select: none;
+    max-height: 44px;
+    overflow-y: auto;
+  }}
+  .cb-legend-item {{
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.76rem;
+    font-weight: 500;
     color: var(--cc-color-text);
   }}
-  .cb-daily-head .num {{
-    text-align: right;
-    font-variant-numeric: tabular-nums;
+  .cb-legend-box {{
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    flex-shrink: 0;
+    display: inline-block;
+    border: 1px solid var(--cc-color-border);
+  }}
+  .cb-legend-label {{
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
+    max-width: 180px;
   }}
   .cb-daily-wrap {{
     display: flex;
     flex-direction: row;
     align-items: stretch;
     flex: 1;
-    min-height: 200px;
+    min-height: 160px;
     font-family: inherit;
     box-sizing: border-box;
     padding: 0;
-    gap: 16px;
     overflow: hidden;
   }}
   .cb-daily-main {{
     display: flex;
     flex: 1;
     position: relative;
-    min-height: 180px;
+    min-height: 160px;
     gap: 8px;
     min-width: 0;
   }}
@@ -1091,39 +1150,6 @@ def make_daily_cost_template(group_field: str, header_label: str = "Project", is
     left: 50%;
     transform: translateX(-50%);
   }}
-  .cb-daily-legend {{
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 12px;
-    min-width: 110px;
-    max-width: 145px;
-    padding-left: 6px;
-    box-sizing: border-box;
-    user-select: none;
-    overflow-y: auto;
-  }}
-  .cb-legend-item {{
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 0.76rem;
-    font-weight: 500;
-    color: var(--cc-color-text);
-  }}
-  .cb-legend-box {{
-    width: 10px;
-    height: 10px;
-    border-radius: 2px;
-    flex-shrink: 0;
-    display: inline-block;
-    border: 1px solid var(--cc-color-border);
-  }}
-  .cb-legend-label {{
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }}
   .cb-sym {{ font-weight: 500; opacity: 0.85; margin-right: 2px; }}
 </style>
 {{% assign unit = "USD" %}}
@@ -1217,9 +1243,18 @@ def make_daily_cost_template(group_field: str, header_label: str = "Project", is
 
 <div class="cb-daily-container">
   <div class="cb-daily-head">
-    <div>Cost ({{{{ unit }}}})</div>
-    <div></div>
-    <div class="num">{header_label}</div>
+    <div class="cb-daily-title">Cost ({{{{ unit }}}})</div>
+    <div class="cb-daily-legend">
+      {{% for itm in items %}}
+        {{% if itm != "" %}}
+  {legend_color_code}
+          <div class="cb-legend-item">
+            <span class="cb-legend-box" style="background: {{{{ item_color }}}};"></span>
+            <span class="cb-legend-label" title="{{{{ itm }}}}">{{{{ itm }}}}</span>
+          </div>
+        {{% endif %}}
+      {{% endfor %}}
+    </div>
   </div>
   <div class="cb-daily-wrap">
     <div class="cb-daily-main">
@@ -1299,17 +1334,6 @@ def make_daily_cost_template(group_field: str, header_label: str = "Project", is
           {{% endif %}}
         </div>
       </div>
-    </div>
-    <div class="cb-daily-legend">
-      {{% for itm in items %}}
-        {{% if itm != "" %}}
-  {legend_color_code}
-          <div class="cb-legend-item">
-            <span class="cb-legend-box" style="background: {{{{ item_color }}}};"></span>
-            <span class="cb-legend-label" title="{{{{ itm }}}}">{{{{ itm }}}}</span>
-          </div>
-        {{% endif %}}
-      {{% endfor %}}
     </div>
   </div>
 </div>
@@ -1730,6 +1754,7 @@ def dashboard_doc(
     *,
     with_controls: bool = False,
     controls_mode: str = "billing",
+    sections: list | None = None,
 ) -> dict:
     attrs: dict = {
         "description": description,
@@ -1750,6 +1775,8 @@ def dashboard_doc(
         "title": title,
         "version": 1,
     }
+    if sections:
+        attrs["sections"] = sections
     refs = list(references)
     if with_controls:
         cg = control_group(controls_mode)
@@ -1827,7 +1854,7 @@ def build_billing() -> dict:
         0,
         8,
         24,
-        14,
+        11,
     )
     panels.append(p)
 
@@ -1848,7 +1875,7 @@ def build_billing() -> dict:
         24,
         8,
         24,
-        14,
+        11,
     )
     panels.append(p)
 
@@ -1863,7 +1890,7 @@ def build_billing() -> dict:
 | LIMIT 25
 | KEEP project, cost, currency_symbol, unit""",
         0,
-        22,
+        19,
         24,
         14,
     )
@@ -1881,7 +1908,7 @@ def build_billing() -> dict:
 | LIMIT 25
 | KEEP category, cost, currency_symbol, unit""",
         24,
-        22,
+        19,
         24,
         14,
     )
@@ -1899,9 +1926,9 @@ def build_billing() -> dict:
 | RENAME category_label AS category, cost_type_label AS cost_type, project_type_label AS project_type
 | KEEP category, cost_type, project_type, cost, currency_symbol, unit""",
         0,
-        36,
-        28,
-        14,
+        33,
+        24,
+        18,
     )
     panels.append(p)
 
@@ -1917,10 +1944,10 @@ def build_billing() -> dict:
 | SORT cost DESC
 | LIMIT 50
 | KEEP category, cost_type, sku, project, ecu, cost, currency_symbol, unit""",
-        28,
-        36,
-        20,
-        14,
+        24,
+        33,
+        24,
+        18,
     )
     panels.append(p)
 
@@ -1936,7 +1963,7 @@ def build_billing() -> dict:
 | LIMIT 200
 | KEEP project, project_type, category, cost_type, sku, driver, qty, ecu, cost, currency_symbol, unit""",
         0,
-        50,
+        51,
         48,
         14,
     )
@@ -1960,6 +1987,37 @@ def build_usage() -> dict:
     panels.append(p)
     refs.extend(r)
 
+    sec_workload_id = stable_uuid("sec-usage-workload")
+    sec_datastream_id = stable_uuid("sec-usage-datastream")
+    sec_ai_id = stable_uuid("sec-usage-ai")
+
+    sections = [
+        {
+            "collapsed": False,
+            "gridData": {
+                "i": sec_workload_id,
+                "y": 2,
+            },
+            "title": "Workload drivers & project allocation",
+        },
+        {
+            "collapsed": False,
+            "gridData": {
+                "i": sec_datastream_id,
+                "y": 3,
+            },
+            "title": "Data stream cost attribution & usage",
+        },
+        {
+            "collapsed": False,
+            "gridData": {
+                "i": sec_ai_id,
+                "y": 4,
+            },
+            "title": "AI & Machine Learning FinOps",
+        },
+    ]
+
     p, _ = custom_panel(
         stable_uuid("cc-usage-kpi"),
         "Workload Pool Summary",
@@ -1971,9 +2029,10 @@ def build_usage() -> dict:
 | EVAL stg_c = CASE(cost_type_label == "retained", cost, 0.0)
 | STATS pool_spend = SUM(cost), indexing_spend = SUM(idx_c), query_spend = SUM(qry_c), storage_spend = SUM(stg_c), currency_symbol = MAX(currency_symbol), unit = MAX(unit)""",
         0,
-        2,
+        0,
         48,
         6,
+        section_id=sec_workload_id,
     )
     panels.append(p)
 
@@ -1989,9 +2048,10 @@ def build_usage() -> dict:
 | LIMIT 25
 | KEEP driver, cost, currency_symbol, unit""",
         0,
-        8,
+        6,
         24,
         14,
+        section_id=sec_workload_id,
     )
     panels.append(p)
 
@@ -2007,9 +2067,10 @@ def build_usage() -> dict:
 | EVAL scope = allocation_driver
 | KEEP project, project_type_label, cost_type_label, scope, cost, currency_symbol, unit""",
         24,
-        8,
+        6,
         24,
         14,
+        section_id=sec_workload_id,
     )
     panels.append(p)
 
@@ -2018,6 +2079,7 @@ def build_usage() -> dict:
         "Attributed cost by namespace",
         make_bar_template("namespace", "Namespace"),
         f"""FROM {USAGE}
+| DROP conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_currency_symbol
 | LOOKUP JOIN {REALIZED_POOL} ON composite_key
 | LOOKUP JOIN {PROJECT_CONTRIB} ON composite_key
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
@@ -2035,9 +2097,10 @@ def build_usage() -> dict:
 | LIMIT 25
 | KEEP namespace, cost, currency_symbol, unit""",
         0,
-        22,
+        0,
         24,
         14,
+        section_id=sec_datastream_id,
     )
     panels.append(p)
 
@@ -2046,6 +2109,7 @@ def build_usage() -> dict:
         "Attributed cost by data stream type",
         make_bar_template("ds_type", "Data stream type"),
         f"""FROM {USAGE}
+| DROP conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_currency_symbol
 | LOOKUP JOIN {REALIZED_POOL} ON composite_key
 | LOOKUP JOIN {PROJECT_CONTRIB} ON composite_key
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
@@ -2064,9 +2128,10 @@ def build_usage() -> dict:
 | LIMIT 25
 | KEEP ds_type, cost, currency_symbol, unit""",
         24,
-        22,
+        0,
         24,
         14,
+        section_id=sec_datastream_id,
     )
     panels.append(p)
 
@@ -2075,6 +2140,7 @@ def build_usage() -> dict:
         "Data stream cost attribution",
         DATASTREAM_COST_TABLE_TEMPLATE,
         f"""FROM {USAGE}
+| DROP conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_currency_symbol
 | LOOKUP JOIN {REALIZED_POOL} ON composite_key
 | LOOKUP JOIN {PROJECT_CONTRIB} ON composite_key
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
@@ -2091,9 +2157,10 @@ def build_usage() -> dict:
 | LIMIT 200
 | KEEP project, project_type, ds_type, ds_namespace, datastream, indexing_cost, query_cost, storage_cost, attributed_cost, currency_symbol, unit""",
         0,
-        36,
+        14,
         48,
         14,
+        section_id=sec_datastream_id,
     )
     panels.append(p)
 
@@ -2131,14 +2198,16 @@ def build_usage() -> dict:
             ]
         ),
         0,
-        50,
+        28,
         48,
         14,
         index=USAGE,
+        section_id=sec_datastream_id,
     )
     panels.append(p)
 
     ai_kpi_esql = f"""FROM {AI_USAGE}
+| DROP conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_currency_symbol
 | LOOKUP JOIN {REALIZED_POOL} ON composite_key
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
 {CURRENCY_RESOLVE_ESQL}
@@ -2154,24 +2223,27 @@ def build_usage() -> dict:
         AI_KPIS_TEMPLATE,
         ai_kpi_esql,
         0,
-        64,
+        0,
         48,
         6,
+        section_id=sec_ai_id,
     )
     panels.append(p)
 
     ai_models_esql = f"""FROM {AI_USAGE}
+| DROP conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_currency_symbol
 | LOOKUP JOIN {REALIZED_POOL} ON composite_key
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
 {CURRENCY_RESOLVE_ESQL}
 | EVAL compute_time = COALESCE(total_inference_time_ms, 0)
+| EVAL model_weight = CASE(compute_time > 0, TO_DOUBLE(compute_time), TO_DOUBLE(inference_count))
 | EVAL ai_pool_cost = CASE(COALESCE(ai_ecu, 0.0) > 0.0, ai_ecu, COALESCE(query_ecu, 0.0)) * rate
-| INLINE STATS day_proj_compute = SUM(compute_time) BY composite_key
-| EVAL day_model_cost = CASE(day_proj_compute > 0, (TO_DOUBLE(compute_time) / TO_DOUBLE(day_proj_compute)) * ai_pool_cost, 0.0)
-| STATS total_compute = SUM(compute_time), total_inf = SUM(inference_count), attributed_cost = SUM(day_model_cost), ai_pool = SUM(ai_pool_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY model_id, task_type
-| SORT total_compute DESC
+| INLINE STATS day_proj_weight = SUM(model_weight) BY composite_key
+| EVAL day_model_cost = CASE(day_proj_weight > 0, (model_weight / day_proj_weight) * ai_pool_cost, 0.0)
+| STATS total_compute = SUM(compute_time), total_inf = SUM(inference_count), attributed_cost = SUM(day_model_cost), ai_pool = SUM(ai_pool_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY task_type, model_id
+| SORT total_compute DESC, total_inf DESC, model_id ASC
 | LIMIT 25
-| KEEP model_id, task_type, total_compute, total_inf, attributed_cost, ai_pool, currency_symbol, unit"""
+| KEEP task_type, model_id, total_compute, total_inf, attributed_cost, ai_pool, currency_symbol, unit"""
 
     p, _ = custom_panel(
         stable_uuid("cc-usage-ai-models"),
@@ -2179,9 +2251,10 @@ def build_usage() -> dict:
         AI_MODELS_TEMPLATE,
         ai_models_esql,
         0,
-        70,
+        6,
         48,
         14,
+        section_id=sec_ai_id,
     )
     panels.append(p)
 
@@ -2193,6 +2266,7 @@ def build_usage() -> dict:
         refs,
         with_controls=True,
         controls_mode="usage",
+        sections=sections,
     )
 
 
