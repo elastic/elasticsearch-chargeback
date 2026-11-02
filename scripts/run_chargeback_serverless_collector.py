@@ -91,6 +91,11 @@ def classify_sku(sku, kind, item_type):
     if not s:
         return ("other", "other", False, "none")
 
+    if "synthetic" in s:
+        return ("synthetics", "platform", True, "synthetics")
+    if "agent-builder" in s:
+        return ("agent-builder", "platform", True, "ai")
+
     if s.startswith("observability.") or s.startswith("security."):
         if any(x in s for x in ["retained", "storage", "retention"]):
             return ("retained", "data_tier", True, "storage")
@@ -105,7 +110,7 @@ def classify_sku(sku, kind, item_type):
         if s.startswith("elasticsearch.retained_") or "retained_" in s or "storage" in s:
             return ("retained", "data_tier", True, "storage")
         if "-ml-vcu_" in s or "ml-vcu" in s:
-            return ("ml-vcu", "platform", False, "none")
+            return ("ml-vcu", "platform", True, "ai")
 
     if s.startswith("serverless.support-"):
         return ("serverless_premium_support", "support", False, "none")
@@ -114,13 +119,9 @@ def classify_sku(sku, kind, item_type):
     if "snapshot" in s:
         return ("snapshots", "snapshot", False, "none")
     if any(x in s for x in ["inference", "llm"]):
-        return ("inference", "platform", False, "none")
-    if "synthetics" in s:
-        return ("synthetics", "platform", False, "none")
+        return ("inference", "platform", True, "ai")
     if "workflow" in s:
         return ("workflows", "platform", False, "none")
-    if "agent-builder" in s:
-        return ("agent-builder", "platform", False, "none")
     if "cross-project" in s or "cps" in s:
         return ("cross-project-search", "platform", False, "none")
 
@@ -250,6 +251,7 @@ def main():
                     doc = {
                         "@timestamp": day_timestamp,
                         "period_start": day_timestamp,
+                        "event": {"ingested": (now - timedelta(seconds=90)).strftime("%Y-%m-%dT%H:%M:%SZ")},
                         "composite_key": f"{day_str}_{inst_id}",
                         "project_id": inst_id,
                         "project_name": pname,
@@ -295,6 +297,8 @@ def main():
         min_ts = billing_docs[0]["@timestamp"]
         max_ts = billing_docs[-1]["@timestamp"]
         delete_existing_window(ES_URL, ES_API_KEY, "metrics-chargeback_serverless.billing-default", min_ts, max_ts)
+        delete_existing_window(ES_URL, ES_API_KEY, "serverless_billing_cost_lookup", min_ts, max_ts)
+        delete_existing_window(ES_URL, ES_API_KEY, "serverless_billing_realized_pool_lookup", min_ts, max_ts)
         print(f"  • Ingesting {len(billing_docs)} daily billing metric documents into metrics-chargeback_serverless.billing-default...")
         bulk_lines = []
         for d in billing_docs:
@@ -343,7 +347,7 @@ def main():
                 qry_e += ecu
             elif "storage" in sku or "retained" in sku:
                 stg_e += ecu
-            elif "ml" in sku or "inference" in sku:
+            elif "ml" in sku or "inference" in sku or "llm" in sku or "agent-builder" in sku:
                 ai_e += ecu
         pools[pid] = {
             "indexing_ecu": idx_e,
@@ -452,6 +456,7 @@ def main():
                 doc = {
                     "@timestamp": usage_day_ts,
                     "period_start": usage_day_ts,
+                    "event": {"ingested": (now - timedelta(seconds=90)).strftime("%Y-%m-%dT%H:%M:%SZ")},
                     "composite_key": comp_key,
                     "doc_type": "datastream",
                     "project_id": pid,
@@ -482,6 +487,7 @@ def main():
                 doc = {
                     "@timestamp": usage_day_ts,
                     "period_start": usage_day_ts,
+                    "event": {"ingested": (now - timedelta(seconds=90)).strftime("%Y-%m-%dT%H:%M:%SZ")},
                     "composite_key": comp_key,
                     "doc_type": "ai_model",
                     "project_id": pid,
@@ -502,6 +508,7 @@ def main():
             doc = {
                 "@timestamp": usage_day_ts,
                 "period_start": usage_day_ts,
+                "event": {"ingested": (now - timedelta(seconds=90)).strftime("%Y-%m-%dT%H:%M:%SZ")},
                 "composite_key": comp_key,
                 "doc_type": "project_status",
                 "project_id": pid,

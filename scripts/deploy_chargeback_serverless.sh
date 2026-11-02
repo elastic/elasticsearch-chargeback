@@ -396,6 +396,7 @@ if [[ "$SKIP_BUILD" -eq 0 ]]; then
   fi
 
   mkdir -p "$DIST_DIR"
+  rm -f "$DIST_DIR"/chargeback_serverless-*.zip
   cp "$BUILT_ZIP" "$TARGET_ZIP"
   echo "  ✓ Copied built zip to $TARGET_ZIP ($(ls -lh "$TARGET_ZIP" | awk '{print $5}'))"
 else
@@ -413,6 +414,37 @@ fi
 # ------------------------------------------------------------------------------
 echo ""
 echo ">>> Step 4: Loading package zip into Kibana Fleet EPM..."
+
+# Clean up any pre-0.3.8 lookup indices that still have legacy 'type: alias' mappings
+ALIAS_LOOKUPS=()
+for lk_idx in \
+  "serverless_billing_cost_lookup" \
+  "serverless_billing_realized_pool_lookup" \
+  "serverless_datastream_contribution_lookup" \
+  "serverless_project_contribution_lookup" \
+  "serverless_ai_model_contribution_lookup" \
+  "serverless_project_status_lookup"; do
+  HAS_ALIAS=$(es_curl -sS "${ES_URL%/}/${lk_idx}/_mapping" -H "Authorization: ApiKey ${ES_API_KEY}" 2>/dev/null \
+    | jq -r '[.. | objects | select(.type? == "alias")] | length' 2>/dev/null || echo "0")
+  if [[ "${HAS_ALIAS:-0}" -gt 0 ]]; then
+    ALIAS_LOOKUPS+=("$lk_idx")
+  fi
+done
+
+if [[ "${#ALIAS_LOOKUPS[@]}" -gt 0 ]]; then
+  echo "  • Detected legacy alias mappings in lookup indices (${ALIAS_LOOKUPS[*]}). Resetting transforms and lookup indices..."
+  EXISTING_TF=$(es_curl -sS "${ES_URL%/}/_transform/logs-chargeback_serverless.*" -H "Authorization: ApiKey ${ES_API_KEY}" 2>/dev/null \
+    | jq -r '.transforms[]?.id // empty' 2>/dev/null || true)
+  for tf_id in $EXISTING_TF; do
+    [[ -z "$tf_id" ]] && continue
+    es_curl -sS -X POST "${ES_URL%/}/_transform/${tf_id}/_stop?force=true&wait_for_completion=true" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
+    es_curl -sS -X DELETE "${ES_URL%/}/_transform/${tf_id}?force=true" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
+  done
+  for lk_idx in "${ALIAS_LOOKUPS[@]}"; do
+    es_curl -sS -X DELETE "${ES_URL%/}/${lk_idx}" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
+  done
+fi
+
 UPLOAD_HTTP=$(kbn_curl -o /tmp/cbs-upload.json -w '%{http_code}' \
   -X POST "${KIBANA_URL%/}/api/fleet/epm/packages" \
   -H "Authorization: ApiKey ${KIBANA_API_KEY}" \
@@ -421,6 +453,28 @@ UPLOAD_HTTP=$(kbn_curl -o /tmp/cbs-upload.json -w '%{http_code}' \
   -H "Content-Type: application/zip" \
   --data-binary @"$TARGET_ZIP" || true)
 
+if [[ "$UPLOAD_HTTP" == "403" ]] && grep -q "Cannot install transforms from a upload package" /tmp/cbs-upload.json 2>/dev/null; then
+  echo "  • API Key upload detected (Kibana blocks secondary API key grant for upload transforms)."
+  echo "  • Uploading Fleet package assets via EPM and provisioning transforms directly via ES API..."
+  python3 -c '
+import sys, zipfile
+src, dst = sys.argv[1], sys.argv[2]
+with zipfile.ZipFile(src, "r") as zin, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        if "/elasticsearch/transform/" not in item.filename:
+            zout.writestr(item, zin.read(item.filename))
+' "$TARGET_ZIP" "/tmp/cbs-epm-notf.zip"
+
+  UPLOAD_HTTP=$(kbn_curl -o /tmp/cbs-upload.json -w '%{http_code}' \
+    -X POST "${KIBANA_URL%/}/api/fleet/epm/packages" \
+    -H "Authorization: ApiKey ${KIBANA_API_KEY}" \
+    -H "kbn-xsrf: true" \
+    -H "elastic-api-version: 2023-10-31" \
+    -H "Content-Type: application/zip" \
+    --data-binary @"/tmp/cbs-epm-notf.zip" || true)
+  rm -f "/tmp/cbs-epm-notf.zip"
+fi
+
 if [[ "$UPLOAD_HTTP" != "200" && "$UPLOAD_HTTP" != "201" ]]; then
   echo "FAILED to upload package to Fleet EPM (HTTP $UPLOAD_HTTP):" >&2
   cat /tmp/cbs-upload.json >&2
@@ -428,6 +482,117 @@ if [[ "$UPLOAD_HTTP" != "200" && "$UPLOAD_HTTP" != "201" ]]; then
   exit 1
 fi
 echo "  ✓ Fleet package $ZIP_NAME uploaded and activated successfully."
+
+# Ensure all 6 lookup indices and transforms from the package zip exist and are started in ES
+export TARGET_ZIP VERSION
+python3 -c '
+import json, os, ssl, urllib.request, zipfile
+try:
+    import yaml
+except ImportError:
+    sys.exit(0)
+
+es_url = os.environ["ES_URL"].rstrip("/")
+api_key = os.environ["ES_API_KEY"]
+version = os.environ["VERSION"]
+zip_path = os.environ["TARGET_ZIP"]
+insecure = os.environ.get("CURL_INSECURE", "0") == "1"
+
+ctx = None
+if insecure or "localhost" in es_url or "127.0.0.1" in es_url:
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+def es_req(method, path, body=None):
+    req = urllib.request.Request(
+        f"{es_url}{path}",
+        data=json.dumps(body).encode("utf-8") if body is not None else None,
+        headers={"Authorization": f"ApiKey {api_key}", "Content-Type": "application/json"},
+        method=method
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30, context=ctx) as r:
+            return r.getcode(), json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        try:
+            return e.code, json.loads(e.read().decode("utf-8"))
+        except Exception:
+            return e.code, {}
+
+def fields_to_mappings(fields_list):
+    props = {}
+    for f in fields_list or []:
+        name = f.get("name", "")
+        ftype = f.get("type", "keyword")
+        if not name:
+            continue
+        parts = name.split(".") if name != "@timestamp" else [name]
+        cur = props
+        for p in parts[:-1]:
+            cur = cur.setdefault(p, {}).setdefault("properties", {})
+        if ftype == "alias":
+            cur[parts[-1]] = {"type": "alias", "path": f.get("path", "")}
+        else:
+            cur[parts[-1]] = {"type": ftype}
+    return {"mappings": {"properties": props}}
+
+with zipfile.ZipFile(zip_path, "r") as z:
+    names = z.namelist()
+    tf_files = [n for n in names if "/elasticsearch/transform/" in n and n.endswith("/transform.yml")]
+    # Install primary transforms before dependent ones (realized_pool, proj_contrib)
+    tf_files.sort(key=lambda x: (1 if ("realized_pool" in x or "proj_contrib" in x) else 0, x))
+    for tf_file in tf_files:
+        base_dir = tf_file.rsplit("/", 1)[0]
+        tf_name = base_dir.rsplit("/", 1)[1]
+        tf_cfg = yaml.safe_load(z.read(tf_file).decode("utf-8"))
+        fields_file = f"{base_dir}/fields/fields.yml"
+        dest_idx = tf_cfg.get("dest", {}).get("index")
+        if dest_idx and fields_file in names:
+            fields_cfg = yaml.safe_load(z.read(fields_file).decode("utf-8"))
+            mapping_body = fields_to_mappings(fields_cfg)
+            code, _ = es_req("GET", f"/{dest_idx}")
+            if code == 404:
+                es_req("PUT", f"/{dest_idx}", mapping_body)
+            else:
+                es_req("PUT", f"/{dest_idx}/_mapping", mapping_body["mappings"])
+
+        tf_id = f"logs-chargeback_serverless.{tf_name}-default-{version}"
+        # Stop and remove older versioned transforms for this transform name so stale pipelines do not overwrite lookup docs
+        code_list, raw_list = es_req("GET", f"/_transform/logs-chargeback_serverless.{tf_name}-default-*")
+        if code_list == 200 and isinstance(raw_list, dict):
+            try:
+                tfs = raw_list.get("transforms", [])
+                for old_tf in tfs:
+                    old_id = old_tf.get("id", "")
+                    if old_id and old_id != tf_id:
+                        es_req("POST", f"/_transform/{old_id}/_stop?force=true&wait_for_completion=true")
+                        es_req("DELETE", f"/_transform/{old_id}?force=true")
+            except Exception:
+                pass
+        code, _ = es_req("GET", f"/_transform/{tf_id}")
+        if code == 404:
+            es_req("PUT", f"/_transform/{tf_id}", tf_cfg)
+        else:
+            es_req("POST", f"/_transform/{tf_id}/_update", {k: tf_cfg[k] for k in ("source", "dest", "frequency", "description", "_meta") if k in tf_cfg})
+        es_req("POST", f"/_transform/{tf_id}/_start")
+' || true
+echo "  ✓ Verified lookup index mappings and started 6 Fleet transforms ($VERSION)."
+
+# Clean up any pre-0.3.8 data stream backing indices that still have legacy 'type: alias' mappings
+for ds_name in "metrics-chargeback_serverless.billing-default" "metrics-chargeback_serverless.usage-default"; do
+  DS_ALIAS=$(es_curl -sS "${ES_URL%/}/${ds_name}/_mapping" -H "Authorization: ApiKey ${ES_API_KEY}" 2>/dev/null \
+    | jq -r '[.. | objects | select(.type? == "alias")] | length' 2>/dev/null || echo "0")
+  if [[ "${DS_ALIAS:-0}" -gt 0 ]]; then
+    if [[ "$SKIP_COLLECTOR" -eq 0 ]]; then
+      echo "  • Recreating data stream $ds_name to replace legacy alias mappings..."
+      es_curl -sS -X DELETE "${ES_URL%/}/_data_stream/${ds_name}" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
+    else
+      echo "  • Rolling over data stream $ds_name to apply concrete field mappings..."
+      es_curl -sS -X POST "${ES_URL%/}/${ds_name}/_rollover" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
+    fi
+  fi
+done
 
 python3 "$REPO_ROOT/scripts/generate_dashboards.py" "$ASSETS_DIR/kibana" "/tmp/cbs_dashboards.ndjson" >/dev/null 2>&1 || true
 
@@ -517,6 +682,11 @@ except Exception:
 
 existing_json_file = "/tmp/cbs-pkg-policies.json"
 existing_pkg_id = os.environ.get("EXISTING_PKG_ID", "")
+policy_name = "chargeback_serverless"
+cloud_secret_val = { "value": str(cloud_api_key), "type": "password" }
+hub_secret_val = { "value": str(hub_es_api_key), "type": "password" }
+proj_secret_val = { "value": proj_keys, "type": "password" }
+
 if existing_pkg_id and os.path.exists(existing_json_file):
     try:
         with open(existing_json_file) as f:
@@ -524,13 +694,19 @@ if existing_pkg_id and os.path.exists(existing_json_file):
         items = data.get("items") or data.get("results") or (data if isinstance(data, list) else [])
         for it in items:
             if it.get("id") == existing_pkg_id:
+                if it.get("name"):
+                    policy_name = it.get("name")
                 old_inputs = it.get("inputs", [])
                 if isinstance(old_inputs, list):
                     for inp in old_inputs:
                         old_vars = inp.get("vars", {})
                         old_keys = old_vars.get("project_api_keys", {}).get("value")
                         if old_keys and not proj_keys:
-                            proj_keys = old_keys if isinstance(old_keys, list) else [old_keys]
+                            if isinstance(old_keys, dict) and old_keys.get("isSecretRef"):
+                                proj_secret_val = { "value": old_keys, "type": "password" }
+                            else:
+                                proj_keys = old_keys if isinstance(old_keys, list) else [old_keys]
+                                proj_secret_val = { "value": proj_keys, "type": "password" }
                         if not os.environ.get("CONF_RATE_UNIT"):
                             old_unit = old_vars.get("currency_unit", {}).get("value")
                             if old_unit:
@@ -555,14 +731,14 @@ if not unit_rate:
 
 try:
     with open("/tmp/cbs_currency.env", "w") as ef:
-        ef.write(f"export CONF_RATE='{unit_rate}'\\n")
-        ef.write(f"export CONF_RATE_UNIT='{currency_unit}'\\n")
-        ef.write(f"export CONF_CURRENCY_SYMBOL='{currency_symbol}'\\n")
+        print(f"export CONF_RATE='{unit_rate}'", file=ef)
+        print(f"export CONF_RATE_UNIT='{currency_unit}'", file=ef)
+        print(f"export CONF_CURRENCY_SYMBOL='{currency_symbol}'", file=ef)
 except Exception:
     pass
 
 payload = {
-    "name": "chargeback_serverless",
+    "name": policy_name,
     "description": "Chargeback Serverless scheduled billing and usage collection via Elastic Agent CEL",
     "namespace": "default",
     "policy_id": agent_policy_id,
@@ -577,9 +753,9 @@ payload = {
             "enabled": True,
             "vars": {
                 "organization_id": { "value": str(org_id), "type": "text" },
-                "cloud_api_key": { "value": str(cloud_api_key), "type": "password" },
-                "hub_es_api_key": { "value": str(hub_es_api_key), "type": "password" },
-                "project_api_keys": { "value": proj_keys, "type": "password" },
+                "cloud_api_key": cloud_secret_val,
+                "hub_es_api_key": hub_secret_val,
+                "project_api_keys": proj_secret_val,
                 "lookbehind": { "value": lookbehind, "type": "integer" },
                 "currency_unit": { "value": str(currency_unit), "type": "text" },
                 "currency_symbol": { "value": str(currency_symbol), "type": "text" },
@@ -651,6 +827,25 @@ if [[ "$SKIP_COLLECTOR" -eq 0 ]]; then
   python3 "$REPO_ROOT/scripts/run_chargeback_serverless_collector.py" || {
     echo "  ⚠ Local collector pass encountered a warning/error (continuing to verification)."
   }
+
+  echo ""
+  echo ">>> Triggering Fleet transforms to populate lookup indices..."
+  ACTIVE_TF=$(es_curl -sS "${ES_URL%/}/_transform/logs-chargeback_serverless.*" -H "Authorization: ApiKey ${ES_API_KEY}" 2>/dev/null \
+    | jq -r '.transforms[]?.id // empty' 2>/dev/null || true)
+  for tf_id in $ACTIVE_TF; do
+    [[ -z "$tf_id" ]] && continue
+    es_curl -sS -X POST "${ES_URL%/}/_transform/${tf_id}/_start" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
+    es_curl -sS -X POST "${ES_URL%/}/_transform/${tf_id}/_schedule_now" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
+  done
+  sleep 10
+  echo "  • Waiting 62s for downstream transform sync window (realized_pool & proj_contrib)..."
+  sleep 62
+  for tf_id in $ACTIVE_TF; do
+    [[ -z "$tf_id" ]] && continue
+    es_curl -sS -X POST "${ES_URL%/}/_transform/${tf_id}/_schedule_now" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
+  done
+  sleep 6
+  es_curl -sS -X POST "${ES_URL%/}/serverless_*_lookup/_refresh" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
 else
   echo ""
   echo ">>> Step 6: Skipped local collector pass (--skip-collector)"

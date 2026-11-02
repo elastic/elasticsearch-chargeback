@@ -573,6 +573,8 @@ def paged_bottom(pfx: str) -> str:
 
 BILLING_KPI_TEMPLATE = f"""\
 <style>
+  .cb-kpi-wrap {{ position: relative; }}
+  .cb-info-toggle {{ display: none !important; position: absolute; opacity: 0; pointer-events: none; }}
   .cb-kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: var(--cc-space-s, 8px); margin: 0; padding: 0 0 4px 0; }}
   .cb-kpi {{
     background: var(--cc-color-surface);
@@ -580,7 +582,105 @@ BILLING_KPI_TEMPLATE = f"""\
     border-radius: var(--cc-radius);
     padding: 10px 14px 12px 14px;
   }}
+  .cb-kpi-unalloc {{ position: relative; }}
   .cb-kpi-label {{ color: var(--cc-color-text); opacity: 0.72; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; line-height: 1.1; }}
+  .cb-kpi-label-row {{ display: flex; align-items: center; justify-content: space-between; gap: 6px; opacity: 1; }}
+  .cb-kpi-label-text {{ color: var(--cc-color-text); opacity: 0.72; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; line-height: 1.1; }}
+  .cb-info-icon {{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 17px;
+    height: 17px;
+    border-radius: 50%;
+    border: 1px solid color-mix(in srgb, var(--cc-color-primary, #0077cc) 55%, var(--cc-color-border));
+    background: color-mix(in srgb, var(--cc-color-primary, #0077cc) 14%, var(--cc-color-surface));
+    color: var(--cc-color-primary, #0077cc);
+    font-family: Georgia, "Times New Roman", serif;
+    font-style: italic;
+    font-weight: 700;
+    font-size: 0.74rem;
+    line-height: 1;
+    cursor: pointer;
+    user-select: none;
+    flex-shrink: 0;
+    transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+  }}
+  .cb-info-icon:hover {{
+    background: var(--cc-color-primary, #0077cc);
+    color: #ffffff;
+    transform: scale(1.06);
+  }}
+  #cb_unalloc_def_toggle:checked ~ .cb-kpis .cb-info-icon {{
+    background: var(--cc-color-primary, #0077cc);
+    color: #ffffff;
+  }}
+  .cb-def-popover {{
+    display: none;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: max(100%, 320px);
+    z-index: 60;
+    background: var(--cc-color-surface);
+    border: 1px solid color-mix(in srgb, var(--cc-color-primary, #0077cc) 55%, var(--cc-color-border));
+    border-radius: var(--cc-radius, 6px);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+    padding: 7px 11px;
+    color: var(--cc-color-text);
+    font-size: 0.73rem;
+    line-height: 1.25;
+    box-sizing: border-box;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+  }}
+  .cb-kpi-unalloc:hover .cb-def-popover,
+  #cb_unalloc_def_toggle:checked ~ .cb-kpis .cb-kpi-unalloc .cb-def-popover {{
+    display: flex !important;
+  }}
+  .cb-def-head {{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+  }}
+  .cb-def-title {{
+    font-weight: 700;
+    font-size: 0.75rem;
+    color: var(--cc-color-text);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+  }}
+  .cb-def-badge {{
+    font-family: monospace;
+    font-size: 0.67rem;
+    font-weight: 600;
+    padding: 0 5px;
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--cc-color-primary, #0077cc) 14%, transparent);
+    color: var(--cc-color-primary, #0077cc);
+  }}
+  .cb-def-close {{
+    cursor: pointer;
+    font-size: 0.72rem;
+    font-weight: 600;
+    opacity: 0.65;
+    padding: 0 4px;
+    border-radius: 3px;
+    color: var(--cc-color-text);
+    user-select: none;
+    line-height: 1.2;
+  }}
+  .cb-def-close:hover {{ opacity: 1; color: var(--cc-color-primary, #0077cc); }}
+  .cb-def-body {{
+    font-size: 0.72rem;
+    opacity: 0.88;
+    line-height: 1.28;
+  }}
   .cb-kpi-value {{ color: var(--cc-color-text); font-size: 1.45rem; font-weight: 600; margin-top: 4px; line-height: 1.1; font-variant-numeric: tabular-nums; display: flex; align-items: baseline; }}
   .cb-sym {{ font-size: 1.05rem; opacity: 0.85; margin-right: 4px; font-weight: 500; }}
   .cb-kpi-sub {{ color: var(--cc-color-text); font-size: 0.75rem; opacity: 0.68; margin-top: 4px; line-height: 1.1; }}
@@ -600,36 +700,54 @@ BILLING_KPI_TEMPLATE = f"""\
 {liquid_money_block("total", "fmt_total", with_decimals=True)}
 {liquid_money_block("alloc", "fmt_alloc", with_decimals=True)}
 {liquid_money_block("unalloc", "fmt_unalloc", with_decimals=True)}
-<div class="cb-kpis">
-  <div class="cb-kpi">
-    <div class="cb-kpi-label">Total Spend ({{{{ unit }}}})</div>
-    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_total }}}}</span></div>
-    <div class="cb-kpi-sub">All Serverless line items</div>
-  </div>
-  <div class="cb-kpi">
-    <div class="cb-kpi-label">Allocatable Pool ({{{{ unit }}}})</div>
-    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_alloc }}}}</span></div>
-    <div class="cb-kpi-sub">{{{{ alloc_pct }}}}% of total spend</div>
-  </div>
-  <div class="cb-kpi">
-    <div class="cb-kpi-label">Unallocatable Spend ({{{{ unit }}}})</div>
-    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_unalloc }}}}</span></div>
-    <div class="cb-kpi-sub">{{{{ unalloc_pct }}}}% pass-through / org-wide</div>
-  </div>
-  <div class="cb-kpi">
-    <div class="cb-kpi-label">Billed Projects</div>
-    <div class="cb-kpi-value">{{{{ r["project_count"].value | default: 0 }}}}</div>
-    <div class="cb-kpi-sub">Active projects in window</div>
-  </div>
-  <div class="cb-kpi">
-    <div class="cb-kpi-label">Days of Data</div>
-    <div class="cb-kpi-value">{{{{ r["days_count"].value | default: 0 }}}}</div>
-    <div class="cb-kpi-sub">In selected time range</div>
-  </div>
-  <div class="cb-kpi">
-    <div class="cb-kpi-label">Latest Billed Day</div>
-    <div class="cb-kpi-value">{{{{ l_day }}}}</div>
-    <div class="cb-kpi-sub">UTC invoice snapshot</div>
+<div class="cb-kpi-wrap">
+  <input type="checkbox" id="cb_unalloc_def_toggle" class="cb-info-toggle">
+  <div class="cb-kpis">
+    <div class="cb-kpi">
+      <div class="cb-kpi-label">Total Spend ({{{{ unit }}}})</div>
+      <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_total }}}}</span></div>
+      <div class="cb-kpi-sub">All Serverless line items</div>
+    </div>
+    <div class="cb-kpi">
+      <div class="cb-kpi-label">Allocatable Pool ({{{{ unit }}}})</div>
+      <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_alloc }}}}</span></div>
+      <div class="cb-kpi-sub">{{{{ alloc_pct }}}}% of total spend</div>
+    </div>
+    <div class="cb-kpi cb-kpi-unalloc">
+      <div class="cb-kpi-label-row">
+        <span class="cb-kpi-label-text">Unallocatable Spend ({{{{ unit }}}})</span>
+        <label for="cb_unalloc_def_toggle" class="cb-info-icon" aria-label="View definition">i</label>
+      </div>
+      <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_unalloc }}}}</span></div>
+      <div class="cb-kpi-sub">{{{{ unalloc_pct }}}}% pass-through / org-wide</div>
+      <div class="cb-def-popover">
+        <div class="cb-def-head">
+          <div class="cb-def-title">
+            <span>Unallocatable Spend</span>
+            <span class="cb-def-badge">is_allocatable: false</span>
+          </div>
+          <label for="cb_unalloc_def_toggle" class="cb-def-close" aria-label="Close">✕</label>
+        </div>
+        <div class="cb-def-body">
+          Org-wide &amp; pass-through charges not tied to workload telemetry: <strong>Support</strong>, <strong>Data Transfer</strong>, <strong>Snapshots</strong>, and <strong>Platform SKUs</strong>.
+        </div>
+      </div>
+    </div>
+    <div class="cb-kpi">
+      <div class="cb-kpi-label">Billed Projects</div>
+      <div class="cb-kpi-value">{{{{ r["project_count"].value | default: 0 }}}}</div>
+      <div class="cb-kpi-sub">Active projects in window</div>
+    </div>
+    <div class="cb-kpi">
+      <div class="cb-kpi-label">Days of Data</div>
+      <div class="cb-kpi-value">{{{{ r["days_count"].value | default: 0 }}}}</div>
+      <div class="cb-kpi-sub">In selected time range</div>
+    </div>
+    <div class="cb-kpi">
+      <div class="cb-kpi-label">Latest Billed Day</div>
+      <div class="cb-kpi-value">{{{{ l_day }}}}</div>
+      <div class="cb-kpi-sub">UTC invoice snapshot</div>
+    </div>
   </div>
 </div>
 """
@@ -637,7 +755,7 @@ BILLING_KPI_TEMPLATE = f"""\
 
 USAGE_KPI_TEMPLATE = f"""\
 <style>
-  .cb-kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--cc-space-s, 8px); margin: 0; padding: 0 0 4px 0; }}
+  .cb-kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--cc-space-s, 8px); margin: 0; padding: 0 0 4px 0; }}
   .cb-kpi {{
     background: var(--cc-color-surface);
     border: 1px solid var(--cc-color-border);
@@ -654,6 +772,7 @@ USAGE_KPI_TEMPLATE = f"""\
 {{% assign idx_s = r["indexing_spend"].value | default: 0.0 %}}
 {{% assign qry_s = r["query_spend"].value | default: 0.0 %}}
 {{% assign stg_s = r["storage_spend"].value | default: 0.0 %}}
+{{% assign ai_syn_s = r["ai_syn_spend"].value | default: 0.0 %}}
 {{% assign unit = r["unit"].value | default: "USD" %}}
 {{% assign sym = r["currency_symbol"].value | default: "$" %}}
 {{% assign denom = pool %}}
@@ -661,10 +780,12 @@ USAGE_KPI_TEMPLATE = f"""\
 {{% assign idx_pct = idx_s | times: 100.0 | divided_by: denom | round: 1 %}}
 {{% assign qry_pct = qry_s | times: 100.0 | divided_by: denom | round: 1 %}}
 {{% assign stg_pct = stg_s | times: 100.0 | divided_by: denom | round: 1 %}}
+{{% assign ai_syn_pct = ai_syn_s | times: 100.0 | divided_by: denom | round: 1 %}}
 {liquid_money_block("pool", "fmt_pool", with_decimals=True)}
 {liquid_money_block("idx_s", "fmt_idx_s", with_decimals=True)}
 {liquid_money_block("qry_s", "fmt_qry_s", with_decimals=True)}
 {liquid_money_block("stg_s", "fmt_stg_s", with_decimals=True)}
+{liquid_money_block("ai_syn_s", "fmt_ai_syn_s", with_decimals=True)}
 <div class="cb-kpis">
   <div class="cb-kpi">
     <div class="cb-kpi-label">Total Allocatable Pool ({{{{ unit }}}})</div>
@@ -685,6 +806,11 @@ USAGE_KPI_TEMPLATE = f"""\
     <div class="cb-kpi-label">Storage Pool ({{{{ unit }}}})</div>
     <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_stg_s }}}}</span></div>
     <div class="cb-kpi-sub">{{{{ stg_pct }}}}% · retained storage</div>
+  </div>
+  <div class="cb-kpi">
+    <div class="cb-kpi-label">AI &amp; Synthetics Pool ({{{{ unit }}}})</div>
+    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_ai_syn_s }}}}</span></div>
+    <div class="cb-kpi-sub">{{{{ ai_syn_pct }}}}% · AI, Agent Builder &amp; Synthetics</div>
   </div>
 </div>
 """
@@ -1805,9 +1931,62 @@ UNALLOC_TABLE_TEMPLATE = f"""\
   table.cb-t td {{ padding: 6px 8px; border-bottom: 1px solid var(--cc-color-border); color: var(--cc-color-text); }}
   table.cb-t th.num, table.cb-t td.num {{ text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }}
   .cb-sym {{ font-weight: 500; opacity: 0.85; margin-right: 2px; }}
+  .cb-unalloc-hdr {{
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 4px 8px 8px 8px; font-size: 0.78rem; color: var(--cc-color-text);
+    position: relative;
+  }}
+  .cb-unalloc-hdr-txt {{ opacity: 0.7; }}
+  .cb-unalloc-info-wrap {{ position: relative; display: inline-flex; align-items: center; gap: 5px; }}
+  .cb-unalloc-info-btn {{
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 2px 8px; border-radius: 999px;
+    background: rgba(37, 99, 235, 0.12); color: #3b82f6;
+    border: 1px solid rgba(37, 99, 235, 0.32);
+    font-size: 0.72rem; font-weight: 600; cursor: pointer; user-select: none;
+    transition: all 0.15s ease;
+  }}
+  .cb-unalloc-info-btn:hover, #cb_unalloc_tbl_info:checked ~ .cb-unalloc-hdr .cb-unalloc-info-btn {{
+    background: #2563eb; color: #ffffff; border-color: #2563eb;
+  }}
+  .cb-unalloc-pop {{
+    display: none; position: absolute; top: calc(100% + 6px); right: 0;
+    width: 440px; max-width: 90vw; z-index: 60;
+    background: var(--cc-color-surface, #1d1e24); color: var(--cc-color-text, #dfe5ef);
+    border: 1px solid var(--cc-color-border, rgba(128,128,128,0.35));
+    border-left: 4px solid #3b82f6; border-radius: 8px; padding: 12px 14px;
+    box-shadow: 0 10px 28px rgba(0,0,0,0.28); font-size: 0.77rem; line-height: 1.45;
+  }}
+  .cb-unalloc-info-wrap:hover .cb-unalloc-pop,
+  #cb_unalloc_tbl_info:checked ~ .cb-unalloc-hdr .cb-unalloc-pop {{
+    display: block;
+  }}
+  .cb-unalloc-pop code {{
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.71rem;
+    padding: 1px 4px; border-radius: 3px; background: rgba(128,128,128,0.16);
+  }}
 </style>
 {{% assign unit = rows[0]["unit"].value | default: "USD" %}}
 {{% assign sym = rows[0]["currency_symbol"].value | default: "$" %}}
+<input type="checkbox" id="cb_unalloc_tbl_info" style="display:none">
+<div class="cb-unalloc-hdr">
+  <span class="cb-unalloc-hdr-txt">Organization-level &amp; pass-through line items excluded from workload driver pools (<code>is_allocatable: false</code>)</span>
+  <div class="cb-unalloc-info-wrap">
+    <label for="cb_unalloc_tbl_info" class="cb-unalloc-info-btn" title="Click or hover for definition">i &nbsp;Definition</label>
+    <div class="cb-unalloc-pop">
+      <div style="font-weight:700; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center;">
+        <span>What appears in this table?</span>
+        <label for="cb_unalloc_tbl_info" style="cursor:pointer; font-size:0.7rem; opacity:0.65;">&#x2715; Close</label>
+      </div>
+      <p style="margin:0 0 6px 0;">Line items classified with <code>is_allocatable: false</code> and <code>allocation_driver: "none"</code> during billing ingestion:</p>
+      <ul style="margin:0; padding-left:16px;">
+        <li><strong>Support Tiers</strong> (<code>*support*</code>) &mdash; organization-wide support contracts (e.g. <code>serverless.support-tier4</code>).</li>
+        <li><strong>Network Egress &amp; Data Transfer</strong> (<code>*egress*</code>, <code>*data-transfer*</code>) &mdash; infrastructure pass-through charges not tied to a single data stream or model.</li>
+        <li><strong>Unclassified SKUs</strong> &mdash; any non-workload administrative or account-level adjustment.</li>
+      </ul>
+    </div>
+  </div>
+</div>
 {paged_top("unalloc", 10, 10)}
 <table class="cb-t">
   <thead>
@@ -2854,7 +3033,8 @@ def build_usage() -> dict:
 | EVAL idx_c = CASE(cost_type_label IN ("ingest-vcu", "ingest"), cost, 0.0)
 | EVAL qry_c = CASE(cost_type_label IN ("search-vcu", "search"), cost, 0.0)
 | EVAL stg_c = CASE(cost_type_label == "retained", cost, 0.0)
-| STATS pool_spend = SUM(cost), indexing_spend = SUM(idx_c), query_spend = SUM(qry_c), storage_spend = SUM(stg_c), currency_symbol = MAX(currency_symbol), unit = MAX(unit)""",
+| EVAL ai_syn_c = CASE(allocation_driver IN ("ai", "synthetics") OR cost_type_label IN ("inference", "ml-vcu", "agent-builder", "synthetics"), cost, 0.0)
+| STATS pool_spend = SUM(cost), indexing_spend = SUM(idx_c), query_spend = SUM(qry_c), storage_spend = SUM(stg_c), ai_syn_spend = SUM(ai_syn_c), currency_symbol = MAX(currency_symbol), unit = MAX(unit)""",
         0,
         0,
         48,
@@ -2869,7 +3049,7 @@ def build_usage() -> dict:
         DAILY_DRIVER_COST_TEMPLATE,
         f"""{COST_PRELUDE}
 | WHERE COALESCE(is_allocatable, false) == true AND allocation_driver != "none"
-| EVAL driver = CASE(cost_type_label IN ("ingest-vcu", "ingest"), "Indexing (ingest-vcu + ingest)", cost_type_label IN ("search-vcu", "search"), "Search & Query (search-vcu)", cost_type_label == "retained", "Storage (retained)", cost_type_label)
+| EVAL driver = CASE(cost_type_label IN ("ingest-vcu", "ingest"), "Indexing (ingest-vcu + ingest)", cost_type_label IN ("search-vcu", "search"), "Search & Query (search-vcu)", cost_type_label == "retained", "Storage (retained)", allocation_driver == "ai" OR cost_type_label IN ("inference", "ml-vcu", "agent-builder"), "AI & ML (inference + ml-vcu + agent-builder)", allocation_driver == "synthetics" OR cost_type_label == "synthetics", "Synthetics (pings + executions)", cost_type_label)
 | STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY b = DATE_TRUNC(1 day, @timestamp), driver
 | EVAL day = TO_STRING(b)
 | INLINE STATS day_cost = SUM(cost) BY day
@@ -3177,7 +3357,7 @@ def build_synthetics() -> dict:
         "Synthetics Billing Summary",
         SYNTHETICS_KPI_TEMPLATE,
         f"""{COST_PRELUDE}
-| EVAL is_synth = (cost_type_label == "synthetics" OR sku LIKE "*synthetics*")
+| EVAL is_synth = (cost_type_label == "synthetics" OR allocation_driver == "synthetics" OR sku LIKE "*synthetic*")
 | EVAL synth_cost = CASE(is_synth, cost, 0.0)
 | EVAL synth_ecu = CASE(is_synth, units, 0.0)
 | EVAL synth_qty = CASE(is_synth, COALESCE(quantity_value, 0.0), 0.0)
@@ -3222,7 +3402,7 @@ def build_synthetics() -> dict:
         "Daily synthetics SKU cost by project",
         DAILY_PROJECT_COST_TEMPLATE,
         f"""{COST_PRELUDE}
-| WHERE cost_type_label == "synthetics" OR sku LIKE "*synthetics*"
+| WHERE cost_type_label == "synthetics" OR allocation_driver == "synthetics" OR sku LIKE "*synthetic*"
 | STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY b = DATE_TRUNC(1 day, @timestamp), project
 | EVAL day = TO_STRING(b)
 | INLINE STATS day_cost = SUM(cost) BY day
@@ -3242,7 +3422,7 @@ def build_synthetics() -> dict:
         "Synthetics SKU cost by project",
         make_bar_template("project", "Project"),
         f"""{COST_PRELUDE}
-| WHERE cost_type_label == "synthetics" OR sku LIKE "*synthetics*"
+| WHERE cost_type_label == "synthetics" OR allocation_driver == "synthetics" OR sku LIKE "*synthetic*"
 | STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project
 | SORT cost DESC
 | LIMIT 25
@@ -3286,7 +3466,7 @@ def build_synthetics() -> dict:
         "Synthetics billing line items (SKUs)",
         SYNTHETICS_SKU_TABLE_TEMPLATE,
         f"""{COST_PRELUDE}
-| WHERE cost_type_label == "synthetics" OR sku LIKE "*synthetics*"
+| WHERE cost_type_label == "synthetics" OR allocation_driver == "synthetics" OR sku LIKE "*synthetic*"
 | STATS qty = SUM(COALESCE(quantity_value, 0.0)), ecu = SUM(units), cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project, project_type_label, sku
 | RENAME project_type_label AS project_type
 | SORT cost DESC
