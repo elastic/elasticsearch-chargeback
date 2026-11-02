@@ -561,6 +561,9 @@ with zipfile.ZipFile(zip_path, "r") as z:
                 es_req("PUT", f"/{dest_idx}", mapping_body)
             else:
                 es_req("PUT", f"/{dest_idx}/_mapping", mapping_body["mappings"])
+                dest_pipe = tf_cfg.get("dest", {}).get("pipeline")
+                if dest_pipe:
+                    es_req("PUT", f"/{dest_idx}/_settings", {"index": {"default_pipeline": dest_pipe}})
 
         tf_id = f"logs-chargeback_serverless.{tf_name}-default-{version}"
         # Stop and remove older versioned transforms for this transform name so stale pipelines do not overwrite lookup docs
@@ -575,11 +578,17 @@ with zipfile.ZipFile(zip_path, "r") as z:
                         es_req("DELETE", f"/_transform/{old_id}?force=true")
             except Exception:
                 pass
-        code, _ = es_req("GET", f"/_transform/{tf_id}")
+        code, existing_tf = es_req("GET", f"/_transform/{tf_id}")
         if code == 404:
             es_req("PUT", f"/_transform/{tf_id}", tf_cfg)
         else:
-            es_req("POST", f"/_transform/{tf_id}/_update", {k: tf_cfg[k] for k in ("source", "dest", "frequency", "description", "_meta") if k in tf_cfg})
+            cur_doc = (existing_tf.get("transforms") or [{}])[0]
+            if cur_doc.get("source", {}) != tf_cfg.get("source", {}) or cur_doc.get("pivot", {}) != tf_cfg.get("pivot", {}):
+                es_req("POST", f"/_transform/{tf_id}/_stop?force=true&wait_for_completion=true")
+                es_req("DELETE", f"/_transform/{tf_id}?force=true")
+                es_req("PUT", f"/_transform/{tf_id}", tf_cfg)
+            else:
+                es_req("POST", f"/_transform/{tf_id}/_update", {k: tf_cfg[k] for k in ("source", "dest", "frequency", "description", "_meta") if k in tf_cfg})
         es_req("POST", f"/_transform/{tf_id}/_start")
 ' || true
 echo "  ✓ Verified lookup index mappings and started 6 Fleet transforms ($VERSION)."
@@ -843,6 +852,7 @@ if [[ "$SKIP_COLLECTOR" -eq 0 ]]; then
     es_curl -sS -X POST "${ES_URL%/}/_transform/${tf_id}/_schedule_now" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
   done
   sleep 10
+  es_curl -sS -X POST "${ES_URL%/}/serverless_*_lookup/_refresh" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
   echo "  • Waiting 62s for downstream transform sync window (realized_pool & proj_contrib)..."
   sleep 62
   for tf_id in $ACTIVE_TF; do

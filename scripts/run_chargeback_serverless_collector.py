@@ -74,17 +74,29 @@ def create_ssl_context(target_url=""):
         return ctx
     return None
 
-def http_get(url, headers=None, timeout=30):
-    req = urllib.request.Request(url, headers=headers or {})
-    ctx = create_ssl_context(url)
-    with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
-        return resp.getcode(), json.loads(resp.read().decode("utf-8"))
+def http_get(url, headers=None, timeout=30, retries=3):
+    last_err = None
+    for attempt in range(retries):
+        try:
+            req = urllib.request.Request(url, headers=headers or {})
+            ctx = create_ssl_context(url)
+            with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+                return resp.getcode(), json.loads(resp.read().decode("utf-8"))
+        except Exception as e:
+            last_err = e
+    raise last_err
 
-def http_post_bulk(url, headers, bulk_body_str, timeout=60):
-    req = urllib.request.Request(url, data=bulk_body_str.encode("utf-8"), headers=headers)
-    ctx = create_ssl_context(url)
-    with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
-        return resp.getcode(), json.loads(resp.read().decode("utf-8"))
+def http_post_bulk(url, headers, bulk_body_str, timeout=60, retries=3):
+    last_err = None
+    for attempt in range(retries):
+        try:
+            req = urllib.request.Request(url, data=bulk_body_str.encode("utf-8"), headers=headers)
+            ctx = create_ssl_context(url)
+            with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+                return resp.getcode(), json.loads(resp.read().decode("utf-8"))
+        except Exception as e:
+            last_err = e
+    raise last_err
 
 def classify_sku(sku, kind, item_type):
     s = (sku or "")
@@ -433,12 +445,10 @@ def main():
 
         # Target key: only send HUB_ES_API_KEY to the local hub project, or explicit PROJECT_KEYS to remote projects.
         # Do not send HUB_ES_API_KEY to remote projects.
+        is_hub = bool(ES_URL and (pid in ES_URL or (es_endpoint and es_endpoint.rstrip("/") in ES_URL.rstrip("/"))))
         target_key = PROJECT_KEYS.get(pid)
-        is_hub = False
-        if not target_key and ES_URL:
-            if pid in ES_URL or (es_endpoint and es_endpoint.rstrip("/") in ES_URL.rstrip("/")):
-                target_key = HUB_ES_API_KEY
-                is_hub = True
+        if not target_key and is_hub:
+            target_key = HUB_ES_API_KEY
 
         indices = []
         harvest_status = "ok"
@@ -784,6 +794,8 @@ def main():
                 usage_docs.append(doc)
 
             # Emit project status record
+            key_type_val = ("hub_key" if is_hub else "remote_key") if harvest_status == "ok" else "missing_key"
+            synth_stat_val = "ok" if harvest_status == "ok" else ("billing_derived" if (day_monitors or proj_day_synth) else "unauthorized")
             doc = {
                 "@timestamp": usage_day_ts,
                 "period_start": usage_day_ts,
@@ -796,7 +808,12 @@ def main():
                 "optimized_for": p.get("optimized_for", "general_purpose"),
                 "es_url": es_endpoint,
                 "last_status": harvest_status,
+                "api_key_type": key_type_val,
+                "synthetics_status": synth_stat_val,
                 "index_count": len(indices),
+                "datastream_count": len(ds_map),
+                "ai_model_count": len(ml_models),
+                "synthetics_monitor_count": len(day_monitors),
                 "updated_at": ts_now,
                 "conf_chargeable_unit_rate": u_rate,
                 "conf_chargeable_unit_rate_unit": u_unit,
@@ -807,6 +824,43 @@ def main():
 
         print(f"  • {pname} ({pid}): status={harvest_status}, datastreams={len(ds_map)}, ai_models={len(ml_models)}")
 
+    # Emit project_status records for inactive / decommissioned projects seen in billing history
+    ts_now_inactive = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    for pid, pinfo in all_known_projects.items():
+        if pid in project_map:
+            continue
+        pname = pinfo.get("name") or pid
+        ptype = pinfo.get("project_type") or "elasticsearch"
+        u_curr = start_date
+        while u_curr <= end_date:
+            usage_day_str = u_curr.strftime("%Y-%m-%d")
+            usage_day_ts = f"{usage_day_str}T00:00:00.000Z"
+            usage_docs.append({
+                "@timestamp": usage_day_ts,
+                "period_start": usage_day_ts,
+                "event": {"ingested": (now - timedelta(seconds=90)).strftime("%Y-%m-%dT%H:%M:%SZ")},
+                "composite_key": f"{usage_day_str}_{pid}",
+                "doc_type": "project_status",
+                "project_id": pid,
+                "project_name": pname,
+                "project_type": ptype,
+                "optimized_for": "decommissioned",
+                "es_url": "",
+                "last_status": "inactive",
+                "api_key_type": "cloud_billing_only",
+                "synthetics_status": "inactive",
+                "index_count": 0,
+                "datastream_count": 0,
+                "ai_model_count": 0,
+                "synthetics_monitor_count": 0,
+                "updated_at": ts_now_inactive,
+                "conf_chargeable_unit_rate": u_rate,
+                "conf_chargeable_unit_rate_unit": u_unit,
+                "conf_currency_symbol": u_sym,
+            })
+            u_curr += timedelta(days=1)
+        print(f"  • {pname} ({pid}): status=inactive (decommissioned / historical in window)")
+
     if usage_docs:
         min_u_ts = f"{start_date.strftime('%Y-%m-%d')}T00:00:00.000Z"
         max_u_ts = f"{end_date.strftime('%Y-%m-%d')}T00:00:00.000Z"
@@ -815,7 +869,8 @@ def main():
             "serverless_datastream_contribution_lookup",
             "serverless_project_contribution_lookup",
             "serverless_ai_model_contribution_lookup",
-            "serverless_synthetics_monitor_contribution_lookup"
+            "serverless_synthetics_monitor_contribution_lookup",
+            "serverless_project_status_lookup"
         ]:
             delete_existing_window(ES_URL, ES_API_KEY, u_lk, min_u_ts, max_u_ts)
         print(f"\n  Ingesting {len(usage_docs)} daily usage documents into metrics-chargeback_serverless.usage-default...")

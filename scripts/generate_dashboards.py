@@ -136,6 +136,7 @@ AI_JOIN_BODY = f"""| EVAL ts = @timestamp
 | EVAL project_id = COALESCE(_u_pid, _ps_pid, project_id)
 | EVAL project_name = CASE(_u_pname IS NOT NULL AND _u_pname != "" AND _u_pname != project_id, _u_pname, _ps_pname IS NOT NULL AND _ps_pname != "" AND _ps_pname != project_id, _ps_pname, _u_pname IS NOT NULL AND _u_pname != "", _u_pname, _ps_pname IS NOT NULL AND _ps_pname != "", _ps_pname, project_id)
 | EVAL project_type = CASE(_u_ptype IS NOT NULL AND _u_ptype != "" AND _u_ptype != "unknown", _u_ptype, _ps_ptype IS NOT NULL AND _ps_ptype != "", _ps_ptype, "unknown")
+| EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "unknown")
 | EVAL conf_chargeable_unit_rate = COALESCE(conf_chargeable_unit_rate, _ps_rate, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _ps_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _ps_sym, _u_sym, "$")
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
 {CURRENCY_RESOLVE_ESQL}"""
@@ -718,6 +719,10 @@ BILLING_KPI_TEMPLATE = f"""\
 {{% assign unalloc_pct = unalloc | times: 100.0 | divided_by: denom | round: 1 %}}
 {{% assign l_day = r["latest_day"].value | default: "" | slice: 0, 10 %}}
 {{% if l_day == "" or l_day == "null" %}}{{% assign l_day = "—" %}}{{% endif %}}
+{{% assign tot_proj = r["project_count"].value | default: 0 | round %}}
+{{% assign act_proj = r["active_project_count"].value | default: tot_proj | round %}}
+{{% assign inact_proj = tot_proj | minus: act_proj %}}
+{{% if inact_proj < 0 %}}{{% assign inact_proj = 0 %}}{{% endif %}}
 {liquid_money_block("total", "fmt_total", with_decimals=True)}
 {liquid_money_block("alloc", "fmt_alloc", with_decimals=True)}
 {liquid_money_block("unalloc", "fmt_unalloc", with_decimals=True)}
@@ -756,8 +761,8 @@ BILLING_KPI_TEMPLATE = f"""\
     </div>
     <div class="cb-kpi">
       <div class="cb-kpi-label">Billed Projects</div>
-      <div class="cb-kpi-value">{{{{ r["project_count"].value | default: 0 }}}}</div>
-      <div class="cb-kpi-sub">Active projects in window</div>
+      <div class="cb-kpi-value">{{{{ tot_proj }}}}</div>
+      <div class="cb-kpi-sub">{{% if inact_proj > 0 %}}{{{{ act_proj }}}} active &middot; {{{{ inact_proj }}}} inactive in window{{% else %}}Active &amp; inactive in window{{% endif %}}</div>
     </div>
     <div class="cb-kpi">
       <div class="cb-kpi-label">Days of Data</div>
@@ -2201,7 +2206,13 @@ def make_bar_template(label_key: str, label_header: str) -> str:
     align-items: center; font-size: 0.85rem; padding: 2px 0;
     color: var(--cc-color-text);
   }}
-  .cb-bar-label {{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; color: var(--cc-color-text); }}
+  .cb-bar-label {{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; color: var(--cc-color-text); display: flex; align-items: center; gap: 6px; }}
+  .cb-inact-pill {{
+    display: inline-block; padding: 1px 5px; border-radius: 4px; font-size: 0.66rem;
+    font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; flex-shrink: 0;
+    background: color-mix(in srgb, var(--cc-color-warning, #f59f00) 16%, transparent);
+    color: var(--cc-color-warning, #f59f00); border: 1px solid color-mix(in srgb, var(--cc-color-warning, #f59f00) 35%, transparent);
+  }}
   .cb-share-wrap {{ display: flex; align-items: center; gap: 6px; }}
   .cb-bar-track {{
     flex: 1; height: 12px; background: var(--cc-color-border);
@@ -2241,7 +2252,7 @@ def make_bar_template(label_key: str, label_header: str) -> str:
 {bar_color_logic}
 {liquid_money_block("cost", "fmt_cost", with_decimals=True)}
   <div class="cb-bar-row cb-pg-row-{pfx} cb-pg-{pfx}-{{{{ _row_pg }}}}">
-    <div class="cb-bar-label" title="{{{{ row["{label_key}"].value }}}}">{{{{ row["{label_key}"].value }}}}</div>
+    <div class="cb-bar-label" title="{{{{ row["{label_key}"].value }}}}"><span>{{{{ row["{label_key}"].value }}}}</span>{{% if row["is_inactive"] and row["is_inactive"].value == 1 %}}<span class="cb-inact-pill">inactive</span>{{% endif %}}</div>
     <div class="cb-share-wrap">
       <div class="cb-bar-track"><div class="cb-bar-fill" style="width: {{{{ bar_pct }}}}%; background: {{{{ _bcol }}}};"></div></div>
       <span class="cb-share-pct">{{{{ share_pct }}}}%</span>
@@ -2370,6 +2381,12 @@ INVOICE_TABLE_TEMPLATE = f"""\
   table.cb-t td {{ padding: 6px 8px; border-bottom: 1px solid var(--cc-color-border); color: var(--cc-color-text); }}
   table.cb-t th.num, table.cb-t td.num {{ text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }}
   .cb-sym {{ font-weight: 500; opacity: 0.85; margin-right: 2px; }}
+  .cb-inact-pill {{
+    display: inline-block; padding: 1px 5px; border-radius: 4px; font-size: 0.66rem;
+    font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; margin-left: 6px;
+    background: color-mix(in srgb, var(--cc-color-warning, #f59f00) 16%, transparent);
+    color: var(--cc-color-warning, #f59f00); border: 1px solid color-mix(in srgb, var(--cc-color-warning, #f59f00) 35%, transparent);
+  }}
 </style>
 {{% assign unit = rows[0]["unit"].value | default: "USD" %}}
 {{% assign sym = rows[0]["currency_symbol"].value | default: "$" %}}
@@ -2391,7 +2408,7 @@ INVOICE_TABLE_TEMPLATE = f"""\
 {liquid_money_block("ecu", "fmt_ecu", with_decimals=True)}
 {liquid_money_block("qty", "fmt_qty", with_decimals=True)}
     <tr class="cb-pg-row-inv cb-pg-inv-{{{{ _row_pg }}}}">
-      <td><strong>{{{{ row["project"].value }}}}</strong></td>
+      <td><strong>{{{{ row["project"].value }}}}</strong>{{% if row["is_inactive"] and row["is_inactive"].value == 1 %}}<span class="cb-inact-pill">inactive</span>{{% endif %}}</td>
       <td>{{{{ row["project_type"].value }}}}</td>
       <td>{{{{ row["category"].value }}}}</td>
       <td>{{{{ row["cost_type"].value }}}}</td>
@@ -2634,25 +2651,26 @@ CONFIG_UNIFIED_TEMPLATE = f"""\
   }}
   .cb-cfg-banner-title {{ font-size: 1.02rem; font-weight: 700; color: var(--cc-color-text); display: flex; align-items: center; gap: 8px; line-height: 1.2; }}
   .cb-cfg-banner-sub {{ font-size: 0.76rem; opacity: 0.72; color: var(--cc-color-text); margin-top: 2px; }}
+  .cb-cfg-banner-pills {{ display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }}
   .cb-cfg-banner-pill {{
     display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 20px;
-    font-size: 0.74rem; font-weight: 600; background: var(--cc-color-surface);
+    font-size: 0.73rem; font-weight: 600; background: var(--cc-color-surface);
     border: 1px solid var(--cc-color-border); white-space: nowrap; flex-shrink: 0;
   }}
 
   /* KPI Summary Strip */
-  .cb-cfg-kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--cc-space-s, 8px); }}
+  .cb-cfg-kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: var(--cc-space-s, 8px); }}
   .cb-cfg-kpi {{
     background: var(--cc-color-surface); border: 1px solid var(--cc-color-border);
     border-radius: var(--cc-radius); padding: 10px 14px 12px 14px;
     display: flex; flex-direction: column; justify-content: space-between;
   }}
-  .cb-cfg-kpi-label {{ color: var(--cc-color-text); opacity: 0.72; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; line-height: 1.1; }}
+  .cb-cfg-kpi-label {{ color: var(--cc-color-text); opacity: 0.72; font-size: 0.73rem; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; line-height: 1.1; }}
   .cb-cfg-kpi-val {{
-    color: var(--cc-color-text); font-size: 1.35rem; font-weight: 700; margin-top: 4px; line-height: 1.15;
+    color: var(--cc-color-text); font-size: 1.3rem; font-weight: 700; margin-top: 4px; line-height: 1.15;
     font-variant-numeric: tabular-nums; display: flex; align-items: baseline; gap: 4px;
   }}
-  .cb-cfg-kpi-sub {{ color: var(--cc-color-text); font-size: 0.72rem; opacity: 0.68; margin-top: 4px; line-height: 1.1; }}
+  .cb-cfg-kpi-sub {{ color: var(--cc-color-text); font-size: 0.71rem; opacity: 0.68; margin-top: 4px; line-height: 1.15; }}
 
   /* Section Title Bar */
   .cb-cfg-sec-bar {{
@@ -2690,58 +2708,79 @@ CONFIG_UNIFIED_TEMPLATE = f"""\
   .cb-cfg-code-select {{ user-select: all; cursor: pointer; }}
   .cb-cfg-card-foot {{ font-size: 0.71rem; opacity: 0.72; display: flex; align-items: center; gap: 4px; }}
 
-  /* Registry Table */
+  /* Tables */
   .cb-paged-wrap-cfgreg {{ height: auto !important; min-height: 0; display: flex; flex-direction: column; }}
   .cb-content-wrap-cfgreg {{ overflow-x: auto; overflow-y: visible !important; flex: none !important; }}
-  table.cb-cfg-table {{ width: 100%; border-collapse: collapse; font-size: 0.82rem; color: var(--cc-color-text); }}
+  .cb-stream-wrap {{ overflow-x: auto; }}
+  table.cb-cfg-table {{ width: 100%; border-collapse: collapse; font-size: 0.8rem; color: var(--cc-color-text); }}
   table.cb-cfg-table th {{
     position: sticky; top: 0; background: var(--cc-color-surface); z-index: 1; text-align: left;
-    padding: 7px 10px; border-bottom: 2px solid var(--cc-color-border); font-weight: 600; opacity: 0.75;
-    font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--cc-color-text);
+    padding: 6px 8px; border-bottom: 2px solid var(--cc-color-border); font-weight: 600; opacity: 0.75;
+    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--cc-color-text); white-space: nowrap;
   }}
-  table.cb-cfg-table td {{ padding: 7px 10px; border-bottom: 1px solid var(--cc-color-border); color: var(--cc-color-text); vertical-align: middle; }}
+  table.cb-cfg-table td {{ padding: 6px 8px; border-bottom: 1px solid var(--cc-color-border); color: var(--cc-color-text); vertical-align: middle; }}
   table.cb-cfg-table tr:hover td {{ background: color-mix(in srgb, var(--cc-color-primary, #0077cc) 3%, transparent); }}
 
-  .cb-proj-cell {{ display: flex; flex-direction: column; gap: 2px; }}
+  .cb-proj-cell {{ display: flex; flex-direction: column; gap: 1px; }}
   .cb-proj-name {{ font-weight: 600; color: var(--cc-color-text); }}
-  .cb-proj-id {{ font-family: monospace; font-size: 0.71rem; opacity: 0.65; }}
+  .cb-proj-id {{ font-family: monospace; font-size: 0.69rem; opacity: 0.65; }}
+  .cb-sub-meta {{ font-size: 0.7rem; opacity: 0.72; margin-top: 2px; line-height: 1.2; }}
 
   .cb-type-pill {{
-    display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 0.71rem; font-weight: 600;
+    display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 0.69rem; font-weight: 600;
     text-transform: uppercase; letter-spacing: 0.02em;
     background: color-mix(in srgb, var(--cc-color-border) 70%, transparent); color: var(--cc-color-text);
   }}
-  .cb-prof-text {{ font-size: 0.71rem; opacity: 0.68; margin-top: 1px; }}
+  .cb-key-code {{
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.71rem; font-weight: 600;
+    padding: 1px 5px; border-radius: 4px;
+    background: color-mix(in srgb, var(--cc-color-primary, #0077cc) 10%, var(--cc-color-surface));
+    border: 1px solid color-mix(in srgb, var(--cc-color-primary, #0077cc) 25%, var(--cc-color-border));
+    color: var(--cc-color-text); display: inline-block;
+  }}
+  .cb-prof-text {{ font-size: 0.7rem; opacity: 0.68; margin-top: 1px; }}
   .cb-endpoint-text {{
-    font-family: monospace; font-size: 0.71rem; opacity: 0.8; max-width: 220px;
+    font-family: monospace; font-size: 0.7rem; opacity: 0.82; max-width: 240px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block;
   }}
 
-  .cb-dot {{ width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; flex-shrink: 0; }}
-  .cb-dot-ok {{ background: var(--cc-color-accent, var(--cc-vis-1, #00b474)); box-shadow: 0 0 6px var(--cc-color-accent, var(--cc-vis-1, #00b474)); }}
-  .cb-dot-err {{ background: var(--cc-color-danger, #e03131); box-shadow: 0 0 6px var(--cc-color-danger, #e03131); }}
-  .cb-dot-warn {{ background: var(--cc-color-warning, #f59f00); box-shadow: 0 0 6px var(--cc-color-warning, #f59f00); }}
+  .cb-dot {{ width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 5px; flex-shrink: 0; }}
+  .cb-dot-ok {{ background: var(--cc-color-accent, var(--cc-vis-1, #00b474)); box-shadow: 0 0 5px var(--cc-color-accent, var(--cc-vis-1, #00b474)); }}
+  .cb-dot-err {{ background: var(--cc-color-danger, #e03131); box-shadow: 0 0 5px var(--cc-color-danger, #e03131); }}
+  .cb-dot-warn {{ background: var(--cc-color-warning, #f59f00); box-shadow: 0 0 5px var(--cc-color-warning, #f59f00); }}
 
   .cb-badge {{
-    display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 12px;
-    font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap;
+    display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 12px;
+    font-size: 0.69rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap;
   }}
   .cb-badge-ok {{ background: color-mix(in srgb, var(--cc-color-accent, var(--cc-vis-1, #00b474)) 15%, transparent); color: var(--cc-color-accent, var(--cc-vis-1, #00b474)); }}
   .cb-badge-err {{ background: color-mix(in srgb, var(--cc-color-danger, #e03131) 15%, transparent); color: var(--cc-color-danger, #e03131); }}
   .cb-badge-warn {{ background: color-mix(in srgb, var(--cc-color-warning, #f59f00) 15%, transparent); color: var(--cc-color-warning, #f59f00); }}
 
-  .cb-indices-badge {{ font-variant-numeric: tabular-nums; font-weight: 600; font-size: 0.78rem; }}
-  .cb-time-col {{ font-variant-numeric: tabular-nums; font-size: 0.75rem; opacity: 0.75; white-space: nowrap; }}
+  .cb-indices-badge {{ font-variant-numeric: tabular-nums; font-weight: 600; font-size: 0.76rem; }}
+  .cb-time-col {{ font-variant-numeric: tabular-nums; font-size: 0.73rem; opacity: 0.78; white-space: nowrap; }}
 </style>
 {{% assign _total_projects = rows.size | default: 0 | round %}}
 {{% assign _active_projects = 0 %}}
 {{% assign _needs_key_projects = 0 %}}
+{{% assign _inactive_projects = 0 %}}
 {{% assign _stale_projects = 0 %}}
+{{% assign _hub_key_projects = 0 %}}
+{{% assign _remote_key_projects = 0 %}}
+{{% assign _billed_projects = 0 %}}
+{{% assign _synth_fallback_projects = 0 %}}
 {{% assign _total_indices = 0 %}}
+{{% assign _total_datastreams = 0 %}}
+{{% assign _total_ai_models = 0 %}}
+{{% assign _total_synth_monitors = 0 %}}
+{{% assign _total_org_cost = 0.0 %}}
+{{% assign _total_org_ecu = 0.0 %}}
+{{% assign _max_window_days = 0 %}}
 {{% assign _active_rate = 1.0 %}}
 {{% assign _active_unit = "USD" %}}
 {{% assign _active_sym = "$" %}}
 {{% assign _latest_poll = "—" %}}
+{{% assign _latest_bill_day = "—" %}}
 
 {{% for r in rows %}}
   {{% assign h = r["health"].value | default: "stale" %}}
@@ -2749,12 +2788,52 @@ CONFIG_UNIFIED_TEMPLATE = f"""\
     {{% assign _active_projects = _active_projects | plus: 1 %}}
   {{% elsif h == "empty_or_unauthorized" %}}
     {{% assign _needs_key_projects = _needs_key_projects | plus: 1 %}}
+  {{% elsif h == "inactive" %}}
+    {{% assign _inactive_projects = _inactive_projects | plus: 1 %}}
   {{% else %}}
     {{% assign _stale_projects = _stale_projects | plus: 1 %}}
   {{% endif %}}
 
-  {{% assign ic = r["index_count"].value | default: 0 %}}
+  {{% assign kt = r["api_key_type"].value | default: "" %}}
+  {{% if kt == "hub_key" %}}
+    {{% assign _hub_key_projects = _hub_key_projects | plus: 1 %}}
+  {{% elsif kt == "remote_key" %}}
+    {{% assign _remote_key_projects = _remote_key_projects | plus: 1 %}}
+  {{% endif %}}
+
+  {{% assign ss = r["synthetics_status"].value | default: "" %}}
+  {{% if ss == "billing_derived" %}}
+    {{% assign _synth_fallback_projects = _synth_fallback_projects | plus: 1 %}}
+  {{% endif %}}
+
+  {{% assign ic = r["index_count"].value | default: 0 | round %}}
+  {{% assign dsc = r["datastream_count"].value | default: 0 | round %}}
+  {{% assign aim = r["ai_model_count"].value | default: 0 | round %}}
+  {{% assign symon = r["synthetics_monitor_count"].value | default: 0 | round %}}
   {{% assign _total_indices = _total_indices | plus: ic %}}
+  {{% assign _total_datastreams = _total_datastreams | plus: dsc %}}
+  {{% assign _total_ai_models = _total_ai_models | plus: aim %}}
+  {{% assign _total_synth_monitors = _total_synth_monitors | plus: symon %}}
+
+  {{% assign pc = r["total_cost"].value | default: 0.0 %}}
+  {{% assign pe = r["total_ecu"].value | default: 0.0 %}}
+  {{% assign bd = r["billed_days"].value | default: 0 | round %}}
+  {{% assign wd = r["window_days"].value | default: 0 | round %}}
+  {{% assign _total_org_cost = _total_org_cost | plus: pc %}}
+  {{% assign _total_org_ecu = _total_org_ecu | plus: pe %}}
+  {{% if bd > 0 %}}
+    {{% assign _billed_projects = _billed_projects | plus: 1 %}}
+  {{% endif %}}
+  {{% if wd > _max_window_days %}}
+    {{% assign _max_window_days = wd %}}
+  {{% endif %}}
+
+  {{% assign lbt = r["latest_bill_ts"].value | default: "" | slice: 0, 10 %}}
+  {{% if lbt != "" and lbt != "null" %}}
+    {{% if _latest_bill_day == "—" or lbt > _latest_bill_day %}}
+      {{% assign _latest_bill_day = lbt %}}
+    {{% endif %}}
+  {{% endif %}}
 
   {{% if r["conf_chargeable_unit_rate"].value != null and r["conf_chargeable_unit_rate"].value != "" %}}
     {{% assign _active_rate = r["conf_chargeable_unit_rate"].value %}}
@@ -2766,79 +2845,415 @@ CONFIG_UNIFIED_TEMPLATE = f"""\
     {{% assign _active_sym = r["conf_currency_symbol"].value %}}
   {{% endif %}}
 
-  {{% if forloop.first %}}
-    {{% assign upd = r["updated_at"].value | default: "" | slice: 0, 19 | replace: "T", " " %}}
-    {{% if upd != "" and upd != "null" %}}
+  {{% assign upd = r["updated_at"].value | default: "" | slice: 0, 19 | replace: "T", " " %}}
+  {{% if upd != "" and upd != "null" %}}
+    {{% if _latest_poll == "—" or upd > _latest_poll %}}
       {{% assign _latest_poll = upd %}}
     {{% endif %}}
   {{% endif %}}
 {{% endfor %}}
+{{% assign _cp_active_projects = _total_projects | minus: _inactive_projects %}}
+{{% if _cp_active_projects < 0 %}}{{% assign _cp_active_projects = 0 %}}{{% endif %}}
+{liquid_money_block("_total_org_cost", "fmt_org_cost", with_decimals=True)}
+{liquid_money_block("_total_org_ecu", "fmt_org_ecu", with_decimals=True)}
 
 <div class="cb-cfg">
   <!-- Top Banner -->
   <div class="cb-cfg-banner">
     <div>
       <div class="cb-cfg-banner-title">
-        <span>⚙️</span> Fleet Configuration, Policy Settings &amp; Serverless Workload Registry
+        <span>⚙️</span> Fleet Configuration, API Key Data Streams &amp; Serverless Workload Registry
       </div>
       <div class="cb-cfg-banner-sub">
-        Live integration policy parameters, least-privilege remote API key deployment, and real-time usage telemetry status
+        End-to-end health of Cloud Billing, Control Plane Discovery, and Data Plane API key streams (_cat/indices, AI &amp; ML, Synthetics)
       </div>
     </div>
-    <div class="cb-cfg-banner-pill">
-      {{% if _needs_key_projects > 0 %}}
-        <span class="cb-dot cb-dot-err"></span> <span>{{{{ _needs_key_projects }}}} of {{{{ _total_projects }}}} Projects Need Key</span>
-      {{% elsif _total_projects > 0 %}}
-        <span class="cb-dot cb-dot-ok"></span> <span>{{{{ _active_projects }}}} of {{{{ _total_projects }}}} Projects Active</span>
-      {{% else %}}
-        <span class="cb-dot cb-dot-warn"></span> <span>Awaiting First Discovery</span>
-      {{% endif %}}
+    <div class="cb-cfg-banner-pills">
+      <div class="cb-cfg-banner-pill">
+        {{% if _billed_projects > 0 %}}
+          <span class="cb-dot cb-dot-ok"></span> <span>Billing Stream: Active ({{{{ _billed_projects }}}}/{{{{ _total_projects }}}} Billed)</span>
+        {{% else %}}
+          <span class="cb-dot cb-dot-warn"></span> <span>Billing Stream: Awaiting Poll</span>
+        {{% endif %}}
+      </div>
+      <div class="cb-cfg-banner-pill">
+        {{% if _needs_key_projects > 0 %}}
+          <span class="cb-dot cb-dot-err"></span> <span>Usage Streams: {{{{ _active_projects }}}}/{{{{ _cp_active_projects }}}} Active &middot; {{{{ _needs_key_projects }}}} Need Remote Key</span>
+        {{% elsif _total_projects > 0 %}}
+          <span class="cb-dot cb-dot-ok"></span> <span>Usage Streams: {{{{ _active_projects }}}}/{{{{ _cp_active_projects }}}} Active</span>
+        {{% else %}}
+          <span class="cb-dot cb-dot-warn"></span> <span>Awaiting First Discovery</span>
+        {{% endif %}}
+      </div>
     </div>
   </div>
 
   <!-- KPI Strip -->
   <div class="cb-cfg-kpis">
     <div class="cb-cfg-kpi">
-      <div class="cb-cfg-kpi-label">Discovered Projects</div>
-      <div class="cb-cfg-kpi-val">{{{{ _total_projects }}}}</div>
-      <div class="cb-cfg-kpi-sub">Serverless environments</div>
+      <div class="cb-cfg-kpi-label">Cloud Billing Stream</div>
+      <div class="cb-cfg-kpi-val" style="color: {{% if _billed_projects > 0 %}}var(--cc-color-accent, var(--cc-vis-1)){{% else %}}var(--cc-color-warning){{% endif %}};">
+        {{% if _billed_projects > 0 %}}Active{{% else %}}Pending{{% endif %}}
+      </div>
+      <div class="cb-cfg-kpi-sub">{{{{ _active_sym }}}} {{{{ fmt_org_cost }}}} &middot; {{{{ _max_window_days }}}}d (latest: {{{{ _latest_bill_day }}}})</div>
     </div>
     <div class="cb-cfg-kpi">
-      <div class="cb-cfg-kpi-label">Harvesting Status</div>
+      <div class="cb-cfg-kpi-label">Discovered Projects</div>
+      <div class="cb-cfg-kpi-val">{{{{ _total_projects }}}}</div>
+      <div class="cb-cfg-kpi-sub">{{{{ _cp_active_projects }}}} active &middot; {{{{ _inactive_projects }}}} decommissioned</div>
+    </div>
+    <div class="cb-cfg-kpi">
+      <div class="cb-cfg-kpi-label">Data Plane API Keys</div>
       <div class="cb-cfg-kpi-val" style="color: {{% if _needs_key_projects > 0 %}}var(--cc-color-warning){{% else %}}var(--cc-color-accent, var(--cc-vis-1)){{% endif %}};">
-        {{{{ _active_projects }}}} / {{{{ _total_projects }}}}
+        {{{{ _active_projects }}}} / {{{{ _cp_active_projects }}}}
       </div>
       <div class="cb-cfg-kpi-sub">
         {{% if _needs_key_projects > 0 %}}
-          <strong style="color: var(--cc-color-danger);">{{{{ _needs_key_projects }}}} need remote API key</strong>
+          <strong style="color: var(--cc-color-danger);">{{{{ _needs_key_projects }}}} need remote key</strong> ({{{{ _hub_key_projects }}}} hub, {{{{ _remote_key_projects }}}} remote)
         {{% else %}}
-          Active telemetry harvesting
+          {{{{ _hub_key_projects }}}} hub key &middot; {{{{ _remote_key_projects }}}} remote key(s)
         {{% endif %}}
       </div>
     </div>
     <div class="cb-cfg-kpi">
-      <div class="cb-cfg-kpi-label">Monitored Indices</div>
-      <div class="cb-cfg-kpi-val">{{{{ _total_indices }}}}</div>
-      <div class="cb-cfg-kpi-sub">Discovered across projects</div>
+      <div class="cb-cfg-kpi-label">Data Stream Telemetry</div>
+      <div class="cb-cfg-kpi-val">{{{{ _total_indices }}}} <span style="font-size:0.82rem; font-weight:500; opacity:0.75;">idx</span></div>
+      <div class="cb-cfg-kpi-sub">{{{{ _total_datastreams }}}} data streams harvested</div>
     </div>
     <div class="cb-cfg-kpi">
-      <div class="cb-cfg-kpi-label">Active Currency</div>
-      <div class="cb-cfg-kpi-val">
-        <span>{{{{ _active_sym }}}}</span> {{{{ _active_unit }}}}
+      <div class="cb-cfg-kpi-label">AI &amp; Synthetics Streams</div>
+      <div class="cb-cfg-kpi-val">{{{{ _total_ai_models }}}} <span style="font-size:0.82rem; font-weight:500; opacity:0.75;">AI</span> &middot; {{{{ _total_synth_monitors }}}} <span style="font-size:0.82rem; font-weight:500; opacity:0.75;">Syn</span></div>
+      <div class="cb-cfg-kpi-sub">{{{{ _total_ai_models }}}} ML models &middot; {{{{ _total_synth_monitors }}}} monitors</div>
+    </div>
+    <div class="cb-cfg-kpi">
+      <div class="cb-cfg-kpi-label">Currency &amp; Last Poll</div>
+      <div class="cb-cfg-kpi-val" style="font-size: 1.15rem;">
+        <span>{{{{ _active_sym }}}}</span> {{{{ _active_unit }}}} <span style="font-size:0.78rem; font-weight:500; opacity:0.75;">(&times;{{{{ _active_rate }}}})</span>
       </div>
-      <div class="cb-cfg-kpi-sub">{{% if _total_projects > 0 %}}1 ECU = {{{{ _active_sym }}}} {{{{ _active_rate }}}} (Fleet Policy){{% else %}}Default shown (awaiting first poll){{% endif %}}</div>
-    </div>
-    <div class="cb-cfg-kpi">
-      <div class="cb-cfg-kpi-label">Latest Harvest Poll</div>
-      <div class="cb-cfg-kpi-val" style="font-size: 1.05rem;">{{{{ _latest_poll }}}}</div>
-      <div class="cb-cfg-kpi-sub">UTC collection timestamp</div>
+      <div class="cb-cfg-kpi-sub">Poll: {{{{ _latest_poll }}}} UTC</div>
     </div>
   </div>
 
-  <!-- Setup Guide Section -->
+  <!-- Section 1: API Keys & Data Streams Status Matrix -->
   <div class="cb-cfg-sec-bar">
     <div class="cb-cfg-sec-title">
-      <span>📖</span> Fleet Integration &amp; Key Deployment Guide
+      <span>🔑</span> API Keys, Data Streams &amp; Lookup Pipeline Status
+    </div>
+    <span class="cb-cfg-sec-badge">5 Collection Streams &middot; 7 Lookup Indices</span>
+  </div>
+
+  <div class="cb-stream-wrap">
+    <table class="cb-cfg-table">
+      <thead>
+        <tr>
+          <th style="width: 175px;">Stream Status</th>
+          <th>Data Stream &amp; Lookup Target</th>
+          <th>API Key Setting</th>
+          <th>Source API Endpoint</th>
+          <th>Coverage &amp; Collected Volume</th>
+          <th style="text-align: right; width: 145px;">Latest Snapshot (UTC)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- 1. Billing Stream -->
+        <tr>
+          <td>
+            {{% if _billed_projects > 0 %}}
+              <span class="cb-badge cb-badge-ok"><span class="cb-dot cb-dot-ok"></span>Active &amp; Synced</span>
+            {{% else %}}
+              <span class="cb-badge cb-badge-warn"><span class="cb-dot cb-dot-warn"></span>Awaiting Poll</span>
+            {{% endif %}}
+          </td>
+          <td>
+            <div class="cb-proj-cell">
+              <span class="cb-proj-name">Billing &amp; Invoice Line Items (<code>chargeback_serverless.billing</code>)</span>
+              <span class="cb-proj-id">metrics-chargeback_serverless.billing-* &rarr; serverless_billing_cost_lookup, serverless_billing_realized_pool_lookup</span>
+            </div>
+          </td>
+          <td>
+            <span class="cb-key-code">cloud_api_key</span>
+            <div class="cb-prof-text">Elastic Cloud API Key + organization_id</div>
+          </td>
+          <td>
+            <span class="cb-endpoint-text" title="GET https://billing.elastic-cloud.com/api/v2/billing/organizations/{{org_id}}/costs/instances">GET /api/v2/billing/organizations/&lt;org_id&gt;/costs/instances</span>
+            <div class="cb-prof-text">Daily closed-day backfill ({{{{ _max_window_days }}}}d lookbehind)</div>
+          </td>
+          <td>
+            <strong>{{{{ _billed_projects }}}} of {{{{ _total_projects }}}} projects billed</strong> &middot; {{{{ _active_sym }}}} {{{{ fmt_org_cost }}}} ({{{{ fmt_org_ecu }}}} ECU)
+            <div class="cb-sub-meta">Includes active, $0/0-ECU, and decommissioned projects across {{{{ _max_window_days }}}} days</div>
+          </td>
+          <td style="text-align: right;" class="cb-time-col">{{{{ _latest_bill_day }}}}</td>
+        </tr>
+
+        <!-- 2. Control Plane Project Discovery -->
+        <tr>
+          <td>
+            {{% if _total_projects > 0 %}}
+              <span class="cb-badge cb-badge-ok"><span class="cb-dot cb-dot-ok"></span>Active &amp; Synced</span>
+            {{% else %}}
+              <span class="cb-badge cb-badge-warn"><span class="cb-dot cb-dot-warn"></span>Awaiting Poll</span>
+            {{% endif %}}
+          </td>
+          <td>
+            <div class="cb-proj-cell">
+              <span class="cb-proj-name">Control Plane Project Discovery (<code>chargeback_serverless.usage &middot; project_status</code>)</span>
+              <span class="cb-proj-id">metrics-chargeback_serverless.usage-* &rarr; serverless_project_status_lookup</span>
+            </div>
+          </td>
+          <td>
+            <span class="cb-key-code">cloud_api_key</span>
+            <div class="cb-prof-text">Elastic Cloud API Key</div>
+          </td>
+          <td>
+            <span class="cb-endpoint-text" title="GET https://api.elastic-cloud.com/api/v1/serverless/projects/{{elasticsearch,observability,security}}">GET /api/v1/serverless/projects/{{es,obs,security}}</span>
+            <div class="cb-prof-text">+ Historical Billing API project reconciliation</div>
+          </td>
+          <td>
+            <strong>{{{{ _total_projects }}}} projects tracked</strong> ({{{{ _cp_active_projects }}}} active in Control Plane &middot; {{{{ _inactive_projects }}}} decommissioned)
+            <div class="cb-sub-meta">Resolves human-readable project_name, project_type, and endpoint URLs</div>
+          </td>
+          <td style="text-align: right;" class="cb-time-col">{{{{ _latest_poll }}}}</td>
+        </tr>
+
+        <!-- 3. Data Stream Usage (_cat/indices) -->
+        <tr>
+          <td>
+            {{% if _needs_key_projects > 0 %}}
+              <span class="cb-badge cb-badge-warn"><span class="cb-dot cb-dot-warn"></span>Partial ({{{{ _needs_key_projects }}}} Need Key)</span>
+            {{% elsif _active_projects > 0 %}}
+              <span class="cb-badge cb-badge-ok"><span class="cb-dot cb-dot-ok"></span>Active (All Keys OK)</span>
+            {{% else %}}
+              <span class="cb-badge cb-badge-err"><span class="cb-dot cb-dot-err"></span>Needs API Key</span>
+            {{% endif %}}
+          </td>
+          <td>
+            <div class="cb-proj-cell">
+              <span class="cb-proj-name">Data Stream Usage &amp; Storage (<code>chargeback_serverless.usage &middot; datastream</code>)</span>
+              <span class="cb-proj-id">metrics-chargeback_serverless.usage-* &rarr; serverless_datastream_contribution_lookup, serverless_project_contribution_lookup</span>
+            </div>
+          </td>
+          <td>
+            <span class="cb-key-code">hub_es_api_key</span> <span class="cb-key-code">project_api_keys</span>
+            <div class="cb-prof-text">{{{{ _hub_key_projects }}}} Hub key &middot; {{{{ _remote_key_projects }}}} Remote key &middot; {{{{ _needs_key_projects }}}} Missing</div>
+          </td>
+          <td>
+            <span class="cb-endpoint-text" title="GET /_cat/indices?h=index,dataset.size,indexing.index_time,search.query_time&format=json">GET /_cat/indices?h=index,dataset.size,indexing...,search...</span>
+            <div class="cb-prof-text">Per-project Elasticsearch data plane</div>
+          </td>
+          <td>
+            <strong>{{{{ _total_indices }}}} indices &rarr; {{{{ _total_datastreams }}}} data streams</strong> across {{{{ _active_projects }}}}/{{{{ _cp_active_projects }}}} active projects
+            <div class="cb-sub-meta">Attributes Indexing, Search, and Retained Storage pools by namespace &amp; type</div>
+          </td>
+          <td style="text-align: right;" class="cb-time-col">{{{{ _latest_poll }}}}</td>
+        </tr>
+
+        <!-- 4. AI & ML Inference Telemetry -->
+        <tr>
+          <td>
+            {{% if _needs_key_projects > 0 %}}
+              <span class="cb-badge cb-badge-warn"><span class="cb-dot cb-dot-warn"></span>Partial ({{{{ _needs_key_projects }}}} Need Key)</span>
+            {{% elsif _active_projects > 0 %}}
+              <span class="cb-badge cb-badge-ok"><span class="cb-dot cb-dot-ok"></span>Active &amp; Synced</span>
+            {{% else %}}
+              <span class="cb-badge cb-badge-err"><span class="cb-dot cb-dot-err"></span>Needs API Key</span>
+            {{% endif %}}
+          </td>
+          <td>
+            <div class="cb-proj-cell">
+              <span class="cb-proj-name">AI &amp; ML Model Inference (<code>chargeback_serverless.usage &middot; ai_model</code>)</span>
+              <span class="cb-proj-id">metrics-chargeback_serverless.usage-* &rarr; serverless_ai_model_contribution_lookup</span>
+            </div>
+          </td>
+          <td>
+            <span class="cb-key-code">hub_es_api_key</span> <span class="cb-key-code">project_api_keys</span>
+            <div class="cb-prof-text">Cluster monitor privilege on target projects</div>
+          </td>
+          <td>
+            <span class="cb-endpoint-text" title="GET /_ml/trained_models/_stats">GET /_ml/trained_models/_stats</span>
+            <div class="cb-prof-text">+ Billing AI SKUs (ml-vcu, inference, agent-builder)</div>
+          </td>
+          <td>
+            <strong>{{{{ _total_ai_models }}}} trained AI/ML models</strong> harvested ({{{{ _active_projects }}}}/{{{{ _cp_active_projects }}}} active projects polled)
+            <div class="cb-sub-meta">Attributes AI/ML &amp; Search VCU pools across ELSER, E5, and LLM deployments</div>
+          </td>
+          <td style="text-align: right;" class="cb-time-col">{{{{ _latest_poll }}}}</td>
+        </tr>
+
+        <!-- 5. Synthetics Monitor Telemetry -->
+        <tr>
+          <td>
+            {{% if _total_synth_monitors > 0 and _synth_fallback_projects > 0 %}}
+              <span class="cb-badge cb-badge-warn"><span class="cb-dot cb-dot-warn"></span>Active (SKU Fallback)</span>
+            {{% elsif _active_projects > 0 or _total_synth_monitors > 0 %}}
+              <span class="cb-badge cb-badge-ok"><span class="cb-dot cb-dot-ok"></span>Active &amp; Synced</span>
+            {{% else %}}
+              <span class="cb-badge cb-badge-err"><span class="cb-dot cb-dot-err"></span>Needs API Key</span>
+            {{% endif %}}
+          </td>
+          <td>
+            <div class="cb-proj-cell">
+              <span class="cb-proj-name">Synthetics Monitor Telemetry (<code>chargeback_serverless.usage &middot; synthetics_monitor</code>)</span>
+              <span class="cb-proj-id">metrics-chargeback_serverless.usage-* &rarr; serverless_synthetics_monitor_contribution_lookup</span>
+            </div>
+          </td>
+          <td>
+            <span class="cb-key-code">project_api_keys</span> <span class="cb-key-code">cloud_api_key</span>
+            <div class="cb-prof-text">Index monitor on synthetics-* or Billing SKU fallback</div>
+          </td>
+          <td>
+            <span class="cb-endpoint-text" title="GET /synthetics-*/_search">GET /synthetics-*/_search (aggs by monitor.id)</span>
+            <div class="cb-prof-text">+ synthetic-pings &amp; synthetic-executions SKUs</div>
+          </td>
+          <td>
+            <strong>{{{{ _total_synth_monitors }}}} Synthetics monitors</strong> tracked ({{% if _synth_fallback_projects > 0 %}}{{{{ _synth_fallback_projects }}}} project via Billing SKU attribution{{% else %}}direct _search harvest{{% endif %}})
+            <div class="cb-sub-meta">Attributes lightweight ping and Playwright browser execution pools per monitor</div>
+          </td>
+          <td style="text-align: right;" class="cb-time-col">{{{{ _latest_poll }}}}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Section 2: Per-Project Registry Table -->
+  <div class="cb-cfg-sec-bar">
+    <div class="cb-cfg-sec-title">
+      <span>🖥️</span> Per-Project API Key &amp; Data Stream Status Registry
+    </div>
+    <span class="cb-cfg-sec-badge">{{{{ _total_projects }}}} Projects ({{{{ _cp_active_projects }}}} Active &middot; {{{{ _inactive_projects }}}} Inactive)</span>
+  </div>
+
+  {paged_top("cfgreg", 10, 20)}
+  <table class="cb-cfg-table">
+    <thead>
+      <tr>
+        <th>Project</th>
+        <th>Type &amp; Endpoint</th>
+        <th>API Key Credential</th>
+        <th>Billing Stream (<code>cloud_api_key</code>)</th>
+        <th>Data Streams (<code>_cat/indices</code>)</th>
+        <th>AI &amp; ML (<code>_ml</code>)</th>
+        <th>Synthetics (<code>synthetics-*</code>)</th>
+        <th style="width: 145px; text-align: right;">Last Polled (UTC)</th>
+      </tr>
+    </thead>
+    <tbody>
+    {{% if _total_items == 0 %}}
+      <tr>
+        <td colspan="8" class="cb-empty">
+          No Serverless projects discovered yet. Configure Organization ID and Cloud API Key in Fleet Integration Settings below to initiate discovery.
+        </td>
+      </tr>
+    {{% else %}}
+    {{% for row in rows %}}
+      {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
+      {{% assign h = row["health"].value | default: "stale" %}}
+      {{% assign kt = row["api_key_type"].value | default: "missing_key" %}}
+      {{% assign ss = row["synthetics_status"].value | default: "unauthorized" %}}
+      {{% assign p_cost = row["total_cost"].value | default: 0.0 %}}
+      {{% assign p_ecu = row["total_ecu"].value | default: 0.0 %}}
+      {{% assign p_bdays = row["billed_days"].value | default: 0 | round %}}
+      {{% assign p_bday = row["latest_bill_ts"].value | default: "" | slice: 0, 10 %}}
+      {{% if p_bday == "" or p_bday == "null" %}}{{% assign p_bday = "none" %}}{{% endif %}}
+      {{% assign p_idx = row["index_count"].value | default: 0 | round %}}
+      {{% assign p_ds = row["datastream_count"].value | default: 0 | round %}}
+      {{% assign p_ai = row["ai_model_count"].value | default: 0 | round %}}
+      {{% assign p_syn = row["synthetics_monitor_count"].value | default: 0 | round %}}
+      {liquid_money_block("p_cost", "fmt_p_cost", with_decimals=True)}
+      {liquid_money_block("p_ecu", "fmt_p_ecu", with_decimals=True)}
+      <tr class="cb-pg-row-cfgreg cb-pg-cfgreg-{{{{ _row_pg }}}}">
+        <td>
+          <div class="cb-proj-cell">
+            <span class="cb-proj-name">{{{{ row["project_name"].value | default: row["project_id"].value }}}}</span>
+            <span class="cb-proj-id">{{{{ row["project_id"].value }}}}</span>
+          </div>
+        </td>
+        <td>
+          <span class="cb-type-pill">{{{{ row["project_type"].value | default: "unknown" }}}}</span>
+          <span class="cb-prof-text" style="margin-left:4px;">{{{{ row["optimized_for"].value | default: "general_purpose" }}}}</span>
+          {{% assign ep = row["es_url"].value | default: "" %}}
+          {{% if ep != "" and ep != "null" %}}
+            <span class="cb-endpoint-text" title="{{{{ ep }}}}">{{{{ ep }}}}</span>
+          {{% else %}}
+            <span class="cb-endpoint-text" style="opacity:0.5;">No active endpoint (decommissioned)</span>
+          {{% endif %}}
+        </td>
+        <td>
+          {{% if kt == "hub_key" or (h == "ok" and kt != "remote_key") %}}
+            <span class="cb-badge cb-badge-ok"><span class="cb-dot cb-dot-ok"></span>Hub ES API Key</span>
+            <div class="cb-sub-meta"><code>hub_es_api_key</code> authenticated</div>
+          {{% elsif kt == "remote_key" %}}
+            <span class="cb-badge cb-badge-ok"><span class="cb-dot cb-dot-ok"></span>Remote Project Key</span>
+            <div class="cb-sub-meta"><code>project_api_keys</code> authenticated</div>
+          {{% elsif h == "inactive" or kt == "cloud_billing_only" %}}
+            <span class="cb-badge cb-badge-warn"><span class="cb-dot cb-dot-warn"></span>Cloud Key Only</span>
+            <div class="cb-sub-meta">Project decommissioned in Control Plane</div>
+          {{% else %}}
+            <span class="cb-badge cb-badge-err"><span class="cb-dot cb-dot-err"></span>Needs Remote API Key</span>
+            <div class="cb-sub-meta">Add <code>&lt;id&gt;:&lt;key&gt;</code> to <code>project_api_keys</code></div>
+          {{% endif %}}
+        </td>
+        <td>
+          {{% if p_bdays > 0 %}}
+            <span class="cb-badge cb-badge-ok"><span class="cb-dot cb-dot-ok"></span>Active &middot; {{{{ _active_sym }}}} {{{{ fmt_p_cost }}}}</span>
+            <div class="cb-sub-meta">{{{{ fmt_p_ecu }}}} ECU &middot; {{{{ p_bdays }}}}d billed (latest: {{{{ p_bday }}}})</div>
+          {{% else %}}
+            <span class="cb-badge cb-badge-warn"><span class="cb-dot cb-dot-warn"></span>$0.00 in Window</span>
+            <div class="cb-sub-meta">0.00 ECU &middot; 0 billed days</div>
+          {{% endif %}}
+        </td>
+        <td>
+          {{% if h == "ok" %}}
+            <span class="cb-badge cb-badge-ok"><span class="cb-dot cb-dot-ok"></span>Active &middot; {{{{ p_idx }}}} idx</span>
+            <div class="cb-sub-meta">{{{{ p_ds }}}} data streams harvested</div>
+          {{% elsif h == "inactive" %}}
+            <span class="cb-badge cb-badge-warn"><span class="cb-dot cb-dot-warn"></span>Inactive</span>
+            <div class="cb-sub-meta">Decommissioned project</div>
+          {{% else %}}
+            <span class="cb-badge cb-badge-err"><span class="cb-dot cb-dot-err"></span>Unauthorized</span>
+            <div class="cb-sub-meta">{{% if p_ds > 0 %}}{{{{ p_ds }}}} streams via SKU fallback{{% else %}}Needs Remote Project API Key{{% endif %}}</div>
+          {{% endif %}}
+        </td>
+        <td>
+          {{% if h == "ok" %}}
+            <span class="cb-badge cb-badge-ok"><span class="cb-dot cb-dot-ok"></span>Active &middot; {{{{ p_ai }}}} models</span>
+            <div class="cb-sub-meta"><code>_ml/trained_models/_stats</code> OK</div>
+          {{% elsif h == "inactive" %}}
+            <span class="cb-badge cb-badge-warn"><span class="cb-dot cb-dot-warn"></span>Inactive</span>
+            <div class="cb-sub-meta">Decommissioned project</div>
+          {{% else %}}
+            <span class="cb-badge cb-badge-err"><span class="cb-dot cb-dot-err"></span>Unauthorized</span>
+            <div class="cb-sub-meta">Needs Remote Project API Key</div>
+          {{% endif %}}
+        </td>
+        <td>
+          {{% if ss == "ok" or h == "ok" %}}
+            <span class="cb-badge cb-badge-ok"><span class="cb-dot cb-dot-ok"></span>Active &middot; {{{{ p_syn }}}} monitors</span>
+            <div class="cb-sub-meta"><code>synthetics-*/_search</code> OK</div>
+          {{% elsif ss == "billing_derived" or p_syn > 0 %}}
+            <span class="cb-badge cb-badge-warn"><span class="cb-dot cb-dot-warn"></span>SKU Fallback &middot; {{{{ p_syn }}}}</span>
+            <div class="cb-sub-meta">Derived from Synthetics billing SKUs</div>
+          {{% elsif h == "inactive" %}}
+            <span class="cb-badge cb-badge-warn"><span class="cb-dot cb-dot-warn"></span>Inactive</span>
+            <div class="cb-sub-meta">Decommissioned project</div>
+          {{% else %}}
+            <span class="cb-badge cb-badge-err"><span class="cb-dot cb-dot-err"></span>Unauthorized</span>
+            <div class="cb-sub-meta">Needs Remote Project API Key</div>
+          {{% endif %}}
+        </td>
+        <td style="text-align: right;" class="cb-time-col">
+          {{{{ row["updated_at"].value | default: "never" | slice: 0, 19 | replace: "T", " " }}}}
+        </td>
+      </tr>
+    {{% endfor %}}
+    {{% endif %}}
+    </tbody>
+  </table>
+  {paged_bottom("cfgreg")}
+
+  <!-- Section 3: Setup Guide -->
+  <div class="cb-cfg-sec-bar">
+    <div class="cb-cfg-sec-title">
+      <span>📖</span> Fleet Integration &amp; API Key Deployment Guide
     </div>
     <span class="cb-cfg-sec-badge">3 Steps to Full Coverage</span>
   </div>
@@ -2848,9 +3263,9 @@ CONFIG_UNIFIED_TEMPLATE = f"""\
     <div class="cb-cfg-card">
       <div class="cb-cfg-card-head">
         <span class="cb-cfg-step-pill">Step 1</span>
-        <span class="cb-cfg-card-title">Fleet Integration Settings</span>
+        <span class="cb-cfg-card-title">Cloud API Key &amp; Currency Settings</span>
       </div>
-      <p class="cb-cfg-card-desc">Set Organization ID, Cloud API Key, and Currency Rates in Fleet Settings.</p>
+      <p class="cb-cfg-card-desc">Powers <code>chargeback_serverless.billing</code> and Control Plane project discovery.</p>
       <pre class="cb-cfg-code"># Configured in Kibana Fleet UI:
 Organization ID:  &lt;YOUR_ORG_ID&gt;
 Cloud API Key:    ••••••••••••••••
@@ -2866,9 +3281,9 @@ Unit Rate:        {{{{ _active_rate }}}}</pre>
     <div class="cb-cfg-card">
       <div class="cb-cfg-card-head">
         <span class="cb-cfg-step-pill">Step 2</span>
-        <span class="cb-cfg-card-title">Remote Least-Privilege API Key</span>
+        <span class="cb-cfg-card-title">Remote Least-Privilege ES API Key</span>
       </div>
-      <p class="cb-cfg-card-desc">Generate on remote project (Dev Tools or API) for index storage metadata monitoring.</p>
+      <p class="cb-cfg-card-desc">Generate on each remote project (Dev Tools or API) to unlock <code>_cat/indices</code>, <code>_ml</code>, and <code>synthetics-*</code> harvesting.</p>
       <pre class="cb-cfg-code cb-cfg-code-select" title="Click to select full Dev Tools snippet">POST _security/api_key
 {{
   "name": "chargeback-usage-harvesting",
@@ -2893,10 +3308,11 @@ Unit Rate:        {{{{ _active_rate }}}}</pre>
     <div class="cb-cfg-card">
       <div class="cb-cfg-card-head">
         <span class="cb-cfg-step-pill">Step 3</span>
-        <span class="cb-cfg-card-title">Add Keys to Integration Policy</span>
+        <span class="cb-cfg-card-title">Register Keys in Integration Policy</span>
       </div>
-      <p class="cb-cfg-card-desc">Add under Remote Project API Keys in Settings (&lt;project_id&gt;:&lt;encoded_key&gt;).</p>
+      <p class="cb-cfg-card-desc">Add under Remote Project API Keys in Fleet Settings (<code>&lt;project_id&gt;:&lt;encoded_key&gt;</code>).</p>
       <pre class="cb-cfg-code"># In Integration Settings:
+Hub ES API Key:   •••••••••••••••• (local hub project)
 Remote Project API Keys:
   - &lt;PROJECT_ID&gt;:&lt;ENCODED_KEY&gt;
 
@@ -2907,74 +3323,6 @@ Zero secrets are stored in indices.</pre>
       </div>
     </div>
   </div>
-
-  <!-- Registry Table Section -->
-  <div class="cb-cfg-sec-bar">
-    <div class="cb-cfg-sec-title">
-      <span>🖥️</span> Discovered Serverless Projects &amp; Harvest Registry
-    </div>
-    <span class="cb-cfg-sec-badge">{{{{ _total_projects }}}} Discovered</span>
-  </div>
-
-  {paged_top("cfgreg", 10, 20)}
-  <table class="cb-cfg-table">
-    <thead>
-      <tr>
-        <th style="width: 175px;">Harvest Status</th>
-        <th>Project</th>
-        <th>Type &amp; Profile</th>
-        <th>Elasticsearch Endpoint</th>
-        <th style="text-align: right; width: 90px;">Indices</th>
-        <th style="width: 155px; text-align: right;">Last Polled (UTC)</th>
-      </tr>
-    </thead>
-    <tbody>
-    {{% if _total_items == 0 %}}
-      <tr>
-        <td colspan="6" class="cb-empty">
-          No Serverless projects discovered yet. Configure Organization ID and Cloud API Key in Fleet Integration Settings above to initiate discovery.
-        </td>
-      </tr>
-    {{% else %}}
-    {{% for row in rows %}}
-      {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
-      {{% assign h = row["health"].value | default: "stale" %}}
-      <tr class="cb-pg-row-cfgreg cb-pg-cfgreg-{{{{ _row_pg }}}}">
-        <td>
-          {{% if h == "ok" %}}
-            <span class="cb-badge cb-badge-ok"><span class="cb-dot cb-dot-ok"></span>Harvesting Active</span>
-          {{% elsif h == "empty_or_unauthorized" %}}
-            <span class="cb-badge cb-badge-err"><span class="cb-dot cb-dot-err"></span>Needs Remote API Key</span>
-          {{% else %}}
-            <span class="cb-badge cb-badge-warn"><span class="cb-dot cb-dot-warn"></span>Pending Poll</span>
-          {{% endif %}}
-        </td>
-        <td>
-          <div class="cb-proj-cell">
-            <span class="cb-proj-name">{{{{ row["project_name"].value | default: row["project_id"].value }}}}</span>
-            <span class="cb-proj-id">{{{{ row["project_id"].value }}}}</span>
-          </div>
-        </td>
-        <td>
-          <span class="cb-type-pill">{{{{ row["project_type"].value | default: "unknown" }}}}</span>
-          <div class="cb-prof-text">{{{{ row["optimized_for"].value | default: "general_purpose" }}}}</div>
-        </td>
-        <td>
-          {{% assign ep = row["es_url"].value | default: "—" %}}
-          <span class="cb-endpoint-text" title="{{{{ ep }}}}">{{{{ ep }}}}</span>
-        </td>
-        <td style="text-align: right;">
-          <span class="cb-indices-badge">{{{{ row["index_count"].value | default: 0 }}}}</span>
-        </td>
-        <td style="text-align: right;" class="cb-time-col">
-          {{{{ row["updated_at"].value | default: "never" | slice: 0, 19 | replace: "T", " " }}}}
-        </td>
-      </tr>
-    {{% endfor %}}
-    {{% endif %}}
-    </tbody>
-  </table>
-  {paged_bottom("cfgreg")}
 </div>
 """
 
@@ -3190,7 +3538,8 @@ def build_billing() -> dict:
 | EVAL alloc_cost = CASE(COALESCE(is_allocatable, false) == true AND allocation_driver != "none", cost, 0.0)
 | EVAL unalloc_cost = CASE(COALESCE(is_allocatable, false) == false OR allocation_driver == "none", cost, 0.0)
 | EVAL day = DATE_TRUNC(1 day, ts)
-| STATS total_spend = SUM(cost), allocatable_spend = SUM(alloc_cost), unallocatable_spend = SUM(unalloc_cost), project_count = COUNT_DISTINCT(project_id), days_count = COUNT_DISTINCT(day), billed_days = COUNT_DISTINCT(day), latest_day = TO_STRING(MAX(ts)), currency_symbol = MAX(currency_symbol), unit = MAX(unit)""",
+| EVAL active_pid = CASE(cost > 0 AND COALESCE(last_status, "") != "inactive", project_id, null)
+| STATS total_spend = SUM(cost), allocatable_spend = SUM(alloc_cost), unallocatable_spend = SUM(unalloc_cost), project_count = COUNT_DISTINCT(project_id), active_project_count = COUNT_DISTINCT(active_pid), days_count = COUNT_DISTINCT(day), billed_days = COUNT_DISTINCT(day), latest_day = TO_STRING(MAX(ts)), currency_symbol = MAX(currency_symbol), unit = MAX(unit)""",
         0,
         2,
         48,
@@ -3222,6 +3571,7 @@ def build_billing() -> dict:
         "Daily cost by cost category",
         DAILY_CATEGORY_COST_TEMPLATE,
         f"""{COST_PRELUDE}
+| WHERE COALESCE(sku, "none") != "none"
 | STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY b = DATE_TRUNC(1 day, @timestamp), category_label
 | RENAME category_label AS category
 | EVAL day = TO_STRING(b)
@@ -3242,10 +3592,10 @@ def build_billing() -> dict:
         "Cost by project",
         make_bar_template("project", "Project"),
         f"""{COST_PRELUDE}
-| STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project
-| SORT cost DESC
+| STATS cost = SUM(cost), is_inactive = MAX(CASE(COALESCE(last_status, "") == "inactive", 1, 0)), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project
+| SORT cost DESC, project ASC
 | LIMIT 25
-| KEEP project, cost, currency_symbol, unit""",
+| KEEP project, cost, is_inactive, currency_symbol, unit""",
         0,
         19,
         24,
@@ -3258,6 +3608,7 @@ def build_billing() -> dict:
         "Cost by cost category",
         make_bar_template("category", "Cost category"),
         f"""{COST_PRELUDE}
+| WHERE COALESCE(sku, "none") != "none"
 | STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY category_label
 | RENAME category_label AS category
 | SORT cost DESC
@@ -3275,6 +3626,7 @@ def build_billing() -> dict:
         "Spend flow (Cost category → Cost type → Project type)",
         SANKEY_TEMPLATE,
         f"""{COST_PRELUDE}
+| WHERE COALESCE(sku, "none") != "none"
 | STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY category_label, cost_type_label, project_type_label
 | SORT cost DESC
 | LIMIT 25
@@ -3292,10 +3644,13 @@ def build_billing() -> dict:
         "Unallocatable & pass-through charges",
         UNALLOC_TABLE_TEMPLATE,
         f"""{COST_PRELUDE}
-| WHERE COALESCE(is_allocatable, false) == false OR allocation_driver == "none"
+| EVAL is_placeholder = (COALESCE(sku, "none") == "none")
+| EVAL real_sku_cnt = CASE(is_placeholder, 0, 1)
+| INLINE STATS proj_real_skus = SUM(real_sku_cnt) BY project_id
+| WHERE (COALESCE(is_allocatable, false) == false OR allocation_driver == "none") AND (NOT is_placeholder OR proj_real_skus == 0)
 | STATS cost = SUM(cost), ecu = SUM(units), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY category_label, cost_type_label, sku, project
 | RENAME category_label AS category, cost_type_label AS cost_type
-| SORT cost DESC
+| SORT cost DESC, ecu DESC, project ASC
 | LIMIT 50
 | KEEP category, cost_type, sku, project, ecu, cost, currency_symbol, unit""",
         24,
@@ -3310,11 +3665,15 @@ def build_billing() -> dict:
         "Invoice reconciliation detail",
         INVOICE_TABLE_TEMPLATE,
         f"""{COST_PRELUDE}
-| STATS qty = SUM(COALESCE(quantity_value, 0.0)), ecu = SUM(units), cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project, project_type_label, category_label, cost_type_label, sku, allocation_driver
+| EVAL is_placeholder = (COALESCE(sku, "none") == "none")
+| EVAL real_sku_cnt = CASE(is_placeholder, 0, 1)
+| INLINE STATS proj_real_skus = SUM(real_sku_cnt) BY project_id
+| WHERE NOT is_placeholder OR proj_real_skus == 0
+| STATS qty = SUM(COALESCE(quantity_value, 0.0)), ecu = SUM(units), cost = SUM(cost), is_inactive = MAX(CASE(COALESCE(last_status, "") == "inactive", 1, 0)), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project, project_type_label, category_label, cost_type_label, sku, allocation_driver
 | RENAME project_type_label AS project_type, category_label AS category, cost_type_label AS cost_type, allocation_driver AS driver
-| SORT cost DESC
+| SORT cost DESC, ecu DESC, qty DESC, project ASC
 | LIMIT 200
-| KEEP project, project_type, category, cost_type, sku, driver, qty, ecu, cost, currency_symbol, unit""",
+| KEEP project, project_type, category, cost_type, sku, driver, qty, ecu, cost, is_inactive, currency_symbol, unit""",
         0,
         51,
         48,
@@ -3770,7 +4129,7 @@ def build_synthetics() -> dict:
 {TIME_FILTER_ESQL}
 {SYNTHETICS_JOIN_BODY}
 {SYNTHETICS_MONITOR_COST_EVAL}
-| STATS monitors = COUNT_DISTINCT(monitor_id), checks = SUM(monitor_check_count), cost = SUM(day_monitor_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY monitor_type
+| STATS monitors = COUNT_DISTINCT(monitor_id), checks = SUM(check_count), cost = SUM(day_monitor_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY monitor_type
 | SORT cost DESC, checks DESC
 | LIMIT 25
 | KEEP monitor_type, monitors, checks, cost, currency_symbol, unit""",
@@ -3789,7 +4148,7 @@ def build_synthetics() -> dict:
 {TIME_FILTER_ESQL}
 {SYNTHETICS_JOIN_BODY}
 {SYNTHETICS_MONITOR_COST_EVAL}
-| EVAL monitor_label = COALESCE(monitor_name, monitor_id, "unknown") + " (" + monitor_type + ")"
+| EVAL monitor_label = CONCAT(COALESCE(monitor_name, monitor_id, "unknown"), " (", monitor_type, ")")
 | STATS cost = SUM(day_monitor_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY monitor_label
 | SORT cost DESC
 | LIMIT 25
@@ -3826,8 +4185,8 @@ def build_synthetics() -> dict:
 {TIME_FILTER_ESQL}
 {SYNTHETICS_JOIN_BODY}
 {SYNTHETICS_MONITOR_COST_EVAL}
-| EVAL weighted_dur = TO_DOUBLE(COALESCE(monitor_avg_duration_ms, 0.0)) * TO_DOUBLE(COALESCE(monitor_check_count, 0))
-| STATS monitor_name = MAX(monitor_name), monitor_namespace = MAX(monitor_namespace), locations = MAX(monitor_locations_count), checks = SUM(monitor_check_count), up_checks = SUM(monitor_up_count), sum_weighted_dur = SUM(weighted_dur), cost = SUM(day_monitor_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project, monitor_id, monitor_type
+| EVAL weighted_dur = TO_DOUBLE(COALESCE(average_duration_ms, 0.0)) * TO_DOUBLE(COALESCE(check_count, 0))
+| STATS monitor_name = MAX(monitor_name), monitor_namespace = MAX(monitor_namespace), locations = MAX(locations_count), checks = SUM(check_count), up_checks = SUM(up_count), sum_weighted_dur = SUM(weighted_dur), cost = SUM(day_monitor_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project, monitor_id, monitor_type
 | EVAL availability_pct = CASE(checks > 0, TO_DOUBLE(up_checks) * 100.0 / TO_DOUBLE(checks), 100.0)
 | EVAL avg_duration_ms = CASE(checks > 0, sum_weighted_dur / TO_DOUBLE(checks), 0.0)
 | SORT cost DESC, checks DESC
@@ -3856,7 +4215,7 @@ def build_synthetics() -> dict:
 | EVAL stg_cost = COALESCE(storage_ecu, 0.0) * rate * stg_share
 | EVAL total_ds_cost = idx_cost + qry_cost + stg_cost
 | EVAL synth_type = COALESCE(ds_dataset, CASE(datastream LIKE "synthetics-browser.network-*", "browser.network", datastream LIKE "synthetics-browser.screenshot-*", "browser.screenshot", datastream LIKE "synthetics-browser-*", "browser", datastream LIKE "synthetics-http-*", "http", datastream LIKE "synthetics-icmp-*", "icmp", datastream LIKE "synthetics-tcp-*", "tcp", datastream LIKE "synthetics-dns-*", "dns", "http"))
-| EVAL synth_stream_label = synth_type + " (" + COALESCE(ds_namespace, "default") + ")"
+| EVAL synth_stream_label = CONCAT(synth_type, " (", COALESCE(ds_namespace, "default"), ")")
 | STATS cost = SUM(total_ds_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY synth_stream_label
 | SORT cost DESC
 | LIMIT 25
@@ -3937,32 +4296,55 @@ def build_config() -> dict:
         "Fleet Configuration, Policy Settings & Serverless Project Registry",
         CONFIG_UNIFIED_TEMPLATE,
         f"""FROM {PROJECT_STATUS}
-| INLINE STATS latest_ts = MAX(@timestamp) BY project_id
-| WHERE @timestamp == latest_ts
+| EVAL ts = @timestamp
+| RENAME project_id AS _ps_pid, conf_chargeable_unit_rate AS _ps_rate, conf_chargeable_unit_rate_unit AS _ps_unit, conf_currency_symbol AS _ps_sym
+| LOOKUP JOIN {REALIZED_POOL} ON composite_key
+| RENAME project_id AS _rp_pid
+| LOOKUP JOIN {PROJECT_CONTRIB} ON composite_key
+| EVAL @timestamp = ts
+| EVAL project_id = COALESCE(_ps_pid, _rp_pid, project_id)
+| EVAL conf_chargeable_unit_rate = COALESCE(_ps_rate, conf_chargeable_unit_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(_ps_unit, conf_chargeable_unit_rate_unit, "USD"), conf_currency_symbol = COALESCE(_ps_sym, conf_currency_symbol, "$")
+{CURRENCY_RESOLVE_ESQL}
+| EVAL day_ecu = COALESCE(all_sku_ecu, total_ecu, 0.0)
+| EVAL day_cost = day_ecu * COALESCE(conf_chargeable_unit_rate, 1.0)
+| EVAL billed_day = CASE(day_ecu > 0.0, ts, null)
 | STATS
     project_name = MAX(project_name),
     project_type = MAX(project_type),
     optimized_for = MAX(optimized_for),
     es_url = MAX(es_url),
     last_status = MAX(last_status),
+    api_key_type = MAX(api_key_type),
+    synthetics_status = MAX(synthetics_status),
     index_count = MAX(index_count),
+    datastream_count = MAX(datastream_count),
+    ai_model_count = MAX(ai_model_count),
+    synthetics_monitor_count = MAX(synthetics_monitor_count),
+    store_bytes = MAX(deployment_sum_data_set_store_size),
+    total_ecu = ROUND(SUM(day_ecu), 2),
+    total_cost = ROUND(SUM(day_cost), 2),
+    billed_days = COUNT_DISTINCT(billed_day),
+    latest_bill_ts = MAX(billed_day),
+    window_days = COUNT_DISTINCT(ts),
     updated_at = MAX(updated_at),
     conf_chargeable_unit_rate = MAX(conf_chargeable_unit_rate),
-    conf_chargeable_unit_rate_unit = MAX(conf_chargeable_unit_rate_unit),
-    conf_currency_symbol = MAX(conf_currency_symbol)
+    conf_chargeable_unit_rate_unit = MAX(unit),
+    conf_currency_symbol = MAX(currency_symbol)
   BY project_id
 | EVAL health = CASE(
+    last_status == "inactive", "inactive",
     last_status == "empty_or_unauthorized", "empty_or_unauthorized",
     updated_at IS NOT NULL AND updated_at > NOW() - 26 hours, "ok",
     "stale"
   )
-| SORT updated_at DESC NULLS LAST, project_name ASC
+| EVAL sort_order = CASE(health == "ok", 1, health == "empty_or_unauthorized", 2, health == "inactive", 3, 4)
+| SORT sort_order ASC, total_cost DESC, project_name ASC
 | LIMIT 200
-| KEEP project_id, project_name, project_type, optimized_for, es_url, last_status, index_count, updated_at, health, conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_currency_symbol""",
+| KEEP project_id, project_name, project_type, optimized_for, es_url, last_status, api_key_type, synthetics_status, index_count, datastream_count, ai_model_count, synthetics_monitor_count, store_bytes, total_ecu, total_cost, billed_days, latest_bill_ts, window_days, updated_at, health, conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_currency_symbol""",
         0,
         2,
         48,
-        34,
+        44,
     )
     panels.append(p)
 
@@ -4020,7 +4402,7 @@ def build_alerts() -> list[dict]:
             f"""FROM {PROJECT_STATUS}
 | INLINE STATS latest_ts = MAX(@timestamp) BY project_id
 | WHERE @timestamp == latest_ts
-| WHERE COALESCE(last_status, "") != "ok" OR updated_at IS NULL OR updated_at < NOW() - 26 hours
+| WHERE COALESCE(last_status, "") != "inactive" AND (COALESCE(last_status, "") != "ok" OR updated_at IS NULL OR updated_at < NOW() - 26 hours)
 | EVAL result = CONCAT("Project `", COALESCE(project_name, project_id, "unknown"), "` (", COALESCE(project_id, "unknown"), ") status=", COALESCE(last_status, "stale"), " last updated ", COALESCE(TO_STRING(updated_at), "never"), ".")
 | STATS result = VALUES(result)
 | MV_EXPAND result""",
