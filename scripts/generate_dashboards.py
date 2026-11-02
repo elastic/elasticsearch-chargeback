@@ -3178,12 +3178,12 @@ CONFIG_UNIFIED_TEMPLATE = f"""\
           {{% endif %}}
         </td>
         <td>
-          {{% if kt == "hub_key" or (h == "ok" and kt != "remote_key") %}}
-            <span class="cb-badge cb-badge-ok"><span class="cb-dot cb-dot-ok"></span>Hub ES API Key</span>
-            <div class="cb-sub-meta"><code>hub_es_api_key</code> authenticated</div>
-          {{% elsif kt == "remote_key" %}}
+          {{% if kt == "remote_key" %}}
             <span class="cb-badge cb-badge-ok"><span class="cb-dot cb-dot-ok"></span>Remote Project Key</span>
             <div class="cb-sub-meta"><code>project_api_keys</code> authenticated</div>
+          {{% elsif kt == "hub_key" or h == "ok" %}}
+            <span class="cb-badge cb-badge-ok"><span class="cb-dot cb-dot-ok"></span>Hub ES API Key</span>
+            <div class="cb-sub-meta"><code>hub_es_api_key</code> authenticated</div>
           {{% elsif h == "inactive" or kt == "cloud_billing_only" %}}
             <span class="cb-badge cb-badge-warn"><span class="cb-dot cb-dot-warn"></span>Cloud Key Only</span>
             <div class="cb-sub-meta">Project decommissioned in Control Plane</div>
