@@ -97,10 +97,10 @@ COST_PRELUDE_BODY = f"""| EVAL ts = @timestamp
 | EVAL project_id = COALESCE(_b_pid, project_id)
 | EVAL project_name = CASE(_b_pname IS NOT NULL AND _b_pname != "" AND _b_pname != project_id, _b_pname, project_name IS NOT NULL AND project_name != "" AND project_name != project_id, project_name, _b_pname IS NOT NULL AND _b_pname != "", _b_pname, project_name IS NOT NULL AND project_name != "", project_name, project_id)
 | EVAL project_type = CASE(_b_ptype IS NOT NULL AND _b_ptype != "" AND _b_ptype != "unknown", _b_ptype, project_type IS NOT NULL AND project_type != "", project_type, _b_ptype)
-| EVAL conf_chargeable_unit_rate = COALESCE(_b_rate, conf_chargeable_unit_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(_b_unit, conf_chargeable_unit_rate_unit, "USD"), conf_currency_symbol = COALESCE(_b_sym, conf_currency_symbol, "$")
+| EVAL conf_chargeable_unit_rate = CASE(_b_rate IS NOT NULL, _b_rate, conf_chargeable_unit_rate IS NOT NULL, conf_chargeable_unit_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(_b_unit, conf_chargeable_unit_rate_unit, "USD"), conf_currency_symbol = COALESCE(_b_sym, conf_currency_symbol, "$")
 {CURRENCY_RESOLVE_ESQL}
-| EVAL units = COALESCE(total_ecu, 0.0)
-| EVAL cost = units * COALESCE(conf_chargeable_unit_rate, 1.0)
+| EVAL units = CASE(total_ecu IS NOT NULL, total_ecu, 0.0)
+| EVAL cost = units * conf_chargeable_unit_rate
 | EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "organization")
 | EVAL project_type_label = CASE(project_type IS NOT NULL AND project_type != "", project_type, "organization")
 | EVAL category_label = COALESCE(cost_category, "other")
@@ -129,8 +129,8 @@ USAGE_JOIN_BODY = f"""| EVAL ts = @timestamp
 | EVAL project_name = CASE(_u_pname IS NOT NULL AND _u_pname != "" AND _u_pname != project_id, _u_pname, _ps_pname IS NOT NULL AND _ps_pname != "" AND _ps_pname != project_id, _ps_pname, _u_pname IS NOT NULL AND _u_pname != "", _u_pname, _ps_pname IS NOT NULL AND _ps_pname != "", _ps_pname, project_id)
 | EVAL project_type = CASE(_u_ptype IS NOT NULL AND _u_ptype != "" AND _u_ptype != "unknown", _u_ptype, _ps_ptype IS NOT NULL AND _ps_ptype != "", _ps_ptype, "unknown")
 | EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "unknown")
-| EVAL conf_chargeable_unit_rate = COALESCE(conf_chargeable_unit_rate, _ps_rate, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _ps_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _ps_sym, _u_sym, "$")
-| EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
+| EVAL conf_chargeable_unit_rate = CASE(conf_chargeable_unit_rate IS NOT NULL, conf_chargeable_unit_rate, _ps_rate IS NOT NULL, _ps_rate, _u_rate IS NOT NULL, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _ps_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _ps_sym, _u_sym, "$")
+| EVAL rate = conf_chargeable_unit_rate
 {CURRENCY_RESOLVE_ESQL}"""
 
 # Shared ES|QL join body for AI_USAGE (serverless_ai_model_contribution_lookup):
@@ -144,8 +144,8 @@ AI_JOIN_BODY = f"""| EVAL ts = @timestamp
 | EVAL project_name = CASE(_u_pname IS NOT NULL AND _u_pname != "" AND _u_pname != project_id, _u_pname, _ps_pname IS NOT NULL AND _ps_pname != "" AND _ps_pname != project_id, _ps_pname, _u_pname IS NOT NULL AND _u_pname != "", _u_pname, _ps_pname IS NOT NULL AND _ps_pname != "", _ps_pname, project_id)
 | EVAL project_type = CASE(_u_ptype IS NOT NULL AND _u_ptype != "" AND _u_ptype != "unknown", _u_ptype, _ps_ptype IS NOT NULL AND _ps_ptype != "", _ps_ptype, "unknown")
 | EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "unknown")
-| EVAL conf_chargeable_unit_rate = COALESCE(conf_chargeable_unit_rate, _ps_rate, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _ps_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _ps_sym, _u_sym, "$")
-| EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
+| EVAL conf_chargeable_unit_rate = CASE(conf_chargeable_unit_rate IS NOT NULL, conf_chargeable_unit_rate, _ps_rate IS NOT NULL, _ps_rate, _u_rate IS NOT NULL, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _ps_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _ps_sym, _u_sym, "$")
+| EVAL rate = conf_chargeable_unit_rate
 {CURRENCY_RESOLVE_ESQL}"""
 
 # Shared ES|QL join body for SYNTHETICS_USAGE (serverless_synthetics_monitor_contribution_lookup):
@@ -155,17 +155,17 @@ SYNTHETICS_JOIN_BODY = AI_JOIN_BODY
 # browser monitors and lightweight ping SKU pool across http/icmp/tcp/dns monitors by check volume.
 SYNTHETICS_MONITOR_COST_EVAL = """| EVAL monitor_type = COALESCE(monitor_type, "http")
 | EVAL is_browser = (monitor_type == "browser")
-| EVAL pings_pool_cost = COALESCE(synthetics_pings_ecu, 0.0) * rate
-| EVAL exec_pool_cost = COALESCE(synthetics_executions_ecu, 0.0) * rate
-| EVAL tot_pool_cost = COALESCE(synthetics_ecu, 0.0) * rate
-| EVAL chk = COALESCE(check_count, 0)
-| EVAL b_chk = CASE(is_browser, chk, 0)
-| EVAL p_chk = CASE(NOT is_browser, chk, 0)
+| EVAL pings_pool_cost = CASE(synthetics_pings_ecu IS NOT NULL, synthetics_pings_ecu, 0.0) * rate
+| EVAL exec_pool_cost = CASE(synthetics_executions_ecu IS NOT NULL, synthetics_executions_ecu, 0.0) * rate
+| EVAL tot_pool_cost = CASE(synthetics_ecu IS NOT NULL, synthetics_ecu, 0.0) * rate
+| EVAL chk = CASE(check_count IS NOT NULL, TO_DOUBLE(check_count), 0.0)
+| EVAL b_chk = CASE(is_browser, chk, 0.0)
+| EVAL p_chk = CASE(NOT is_browser, chk, 0.0)
 | INLINE STATS day_b_checks = SUM(b_chk), day_p_checks = SUM(p_chk), day_tot_checks = SUM(chk) BY composite_key
 | EVAL day_monitor_cost = CASE(
-    (pings_pool_cost > 0.0 OR exec_pool_cost > 0.0) AND is_browser AND day_b_checks > 0, (TO_DOUBLE(chk) / TO_DOUBLE(day_b_checks)) * exec_pool_cost,
-    (pings_pool_cost > 0.0 OR exec_pool_cost > 0.0) AND NOT is_browser AND day_p_checks > 0, (TO_DOUBLE(chk) / TO_DOUBLE(day_p_checks)) * pings_pool_cost,
-    tot_pool_cost > 0.0 AND day_tot_checks > 0, (TO_DOUBLE(chk) / TO_DOUBLE(day_tot_checks)) * tot_pool_cost,
+    (pings_pool_cost > 0.0 OR exec_pool_cost > 0.0) AND is_browser AND day_b_checks > 0.0, (chk / day_b_checks) * exec_pool_cost,
+    (pings_pool_cost > 0.0 OR exec_pool_cost > 0.0) AND NOT is_browser AND day_p_checks > 0.0, (chk / day_p_checks) * pings_pool_cost,
+    tot_pool_cost > 0.0 AND day_tot_checks > 0.0, (chk / day_tot_checks) * tot_pool_cost,
     0.0
   )"""
 
@@ -459,11 +459,13 @@ def liquid_money_block(val_var: str, out_var: str, with_decimals: bool = True) -
 
 PAGED_BASE_CSS = """\
   .cb-paged-wrap {
+    position: relative;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
     height: 100%;
     min-height: 0;
+    width: 100%;
     box-sizing: border-box;
     overflow: hidden;
   }
@@ -534,6 +536,257 @@ PAGED_BASE_CSS = """\
   }
 """
 
+DEF_BASE_CSS = """\
+  .cb-def-toggle {
+    display: none !important;
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .cb-def-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 2px 4px 5px 4px;
+    margin-bottom: 2px;
+    border-bottom: 1px solid color-mix(in srgb, var(--cc-color-border) 65%, transparent);
+    font-size: 0.74rem;
+    color: var(--cc-color-text);
+    flex-shrink: 0;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+  .cb-def-bar-kpi {
+    padding: 0 2px 3px 2px;
+    margin-bottom: 3px;
+    border-bottom: none;
+  }
+  .cb-def-bar-sub {
+    opacity: 0.72;
+    font-size: 0.73rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  .cb-def-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 2px 4px 2px 8px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--cc-color-primary, #0077cc) 12%, var(--cc-color-surface));
+    color: var(--cc-color-primary, #0077cc);
+    border: 1px solid color-mix(in srgb, var(--cc-color-primary, #0077cc) 38%, var(--cc-color-border));
+    font-size: 0.71rem;
+    font-weight: 600;
+    line-height: 1.1;
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  }
+  .cb-def-btn:hover {
+    background: color-mix(in srgb, var(--cc-color-primary, #0077cc) 22%, var(--cc-color-surface));
+    border-color: var(--cc-color-primary, #0077cc);
+  }
+  .cb-def-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--cc-color-primary, #0077cc) 18%, transparent);
+    color: var(--cc-color-primary, #0077cc);
+    font-family: Georgia, "Times New Roman", serif;
+    font-style: italic;
+    font-weight: 700;
+    font-size: 0.69rem;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .cb-def-box {
+    display: none;
+    position: absolute;
+    top: 30px;
+    left: 4px;
+    right: 4px;
+    max-width: calc(100% - 8px);
+    max-height: calc(100% - 34px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    z-index: 60;
+    background: var(--cc-color-surface, #1d1e24);
+    color: var(--cc-color-text, #dfe5ef);
+    border: 1px solid color-mix(in srgb, var(--cc-color-primary, #0077cc) 55%, var(--cc-color-border, rgba(128,128,128,0.35)));
+    border-left: 4px solid var(--cc-color-primary, #0077cc);
+    border-radius: var(--cc-radius, 6px);
+    padding: 8px 12px;
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.24);
+    font-size: 0.74rem;
+    line-height: 1.38;
+    box-sizing: border-box;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .cb-def-box-kpi {
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    max-width: 100% !important;
+    max-height: 100% !important;
+    padding: 6px 10px !important;
+  }
+  .cb-def-box-cfg {
+    position: relative !important;
+    top: auto !important;
+    left: auto !important;
+    right: auto !important;
+    max-width: 100% !important;
+    max-height: 220px !important;
+  }
+  .cb-def-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid color-mix(in srgb, var(--cc-color-border) 70%, transparent);
+    flex-shrink: 0;
+  }
+  .cb-def-title {
+    font-weight: 700;
+    font-size: 0.76rem;
+    color: var(--cc-color-text);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+  .cb-def-badge {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.67rem;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--cc-color-primary, #0077cc) 14%, transparent);
+    color: var(--cc-color-primary, #0077cc);
+  }
+  .cb-def-close {
+    cursor: pointer;
+    font-size: 0.71rem;
+    font-weight: 600;
+    opacity: 0.78;
+    padding: 1px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--cc-color-border);
+    background: var(--cc-color-surface);
+    color: var(--cc-color-text);
+    user-select: none;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .cb-def-close:hover {
+    opacity: 1;
+    border-color: var(--cc-color-primary, #0077cc);
+    color: var(--cc-color-primary, #0077cc);
+  }
+  .cb-def-body {
+    font-size: 0.73rem;
+    opacity: 0.92;
+    line-height: 1.36;
+  }
+  .cb-def-body p {
+    margin: 0 0 4px 0;
+  }
+  .cb-def-body ul {
+    margin: 0;
+    padding-left: 16px;
+  }
+  .cb-def-body li {
+    margin-bottom: 2px;
+  }
+  .cb-def-body code, .cb-def-grid code, .cb-def-bar-sub code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.69rem;
+    padding: 1px 4px;
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--cc-color-border) 65%, transparent);
+  }
+  .cb-def-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(195px, 1fr));
+    gap: 4px 12px;
+    font-size: 0.71rem;
+    line-height: 1.26;
+  }
+  .cb-def-item {
+    min-width: 0;
+  }
+"""
+
+
+def def_css(def_id: str) -> str:
+    return f"""\
+{DEF_BASE_CSS}
+  #cb_def_{def_id}:checked ~ .cb-def-box-{def_id} {{
+    display: flex !important;
+  }}
+  #cb_def_{def_id}:checked ~ * .cb-def-btn-{def_id},
+  #cb_def_{def_id}:checked ~ .cb-def-bar .cb-def-btn-{def_id} {{
+    background: var(--cc-color-primary, #0077cc);
+    color: #ffffff !important;
+    border-color: var(--cc-color-primary, #0077cc);
+  }}
+  #cb_def_{def_id}:checked ~ * .cb-def-btn-{def_id} .cb-def-icon,
+  #cb_def_{def_id}:checked ~ .cb-def-bar .cb-def-btn-{def_id} .cb-def-icon {{
+    background: #ffffff;
+    color: var(--cc-color-primary, #0077cc);
+  }}"""
+
+
+def def_btn_html(def_id: str, extra_style: str = "") -> str:
+    style_attr = f' style="{extra_style}"' if extra_style else ""
+    return (
+        f'<label for="cb_def_{def_id}" class="cb-def-btn cb-def-btn-{def_id}" title="Click for definition"{style_attr}>'
+        f'<span>Definition</span><span class="cb-def-icon">i</span></label>'
+    )
+
+
+def def_bar_html(def_id: str, subtitle: str, kpi: bool = False) -> str:
+    cls = "cb-def-bar cb-def-bar-kpi" if kpi else "cb-def-bar"
+    return f"""\
+<div class="{cls}">
+  <span class="cb-def-bar-sub">{subtitle}</span>
+  {def_btn_html(def_id)}
+</div>"""
+
+
+def def_box_html(def_id: str, title: str, badge: str, body_html: str, mode: str = "panel") -> str:
+    mode_cls = " cb-def-box-kpi" if mode == "kpi" else (" cb-def-box-cfg" if mode == "cfg" else "")
+    badge_html = f'<span class="cb-def-badge">{badge}</span>' if badge else ""
+    return f"""\
+<div class="cb-def-box cb-def-box-{def_id}{mode_cls}">
+  <div class="cb-def-head">
+    <div class="cb-def-title">
+      <span>{title}</span>
+      {badge_html}
+    </div>
+    <label for="cb_def_{def_id}" class="cb-def-close" title="Close definition">&#x2715; Close</label>
+  </div>
+  <div class="cb-def-body">
+    {body_html}
+  </div>
+</div>"""
+
 
 def paged_css(pfx: str, max_pages: int, display_mode: str = "table-row") -> str:
     rules = [
@@ -559,17 +812,30 @@ def paged_css(pfx: str, max_pages: int, display_mode: str = "table-row") -> str:
     return "\n".join(rules)
 
 
-def paged_top(pfx: str, page_size: int, max_pages: int) -> str:
+def paged_top(
+    pfx: str,
+    page_size: int,
+    max_pages: int,
+    *,
+    def_id: str | None = None,
+    subtitle: str = "",
+    def_title: str = "",
+    def_badge: str = "",
+    def_body: str = "",
+) -> str:
+    def_input = f'  <input type="checkbox" id="cb_def_{def_id}" class="cb-def-toggle">\n' if def_id else ""
+    def_bar = f"{def_bar_html(def_id, subtitle)}\n" if def_id else ""
+    def_box = f"{def_box_html(def_id, def_title, def_badge, def_body)}\n" if def_id else ""
     return f"""\
 {{% assign _total_items = rows.size | default: 0 | round %}}
 {{% assign _total_pages = _total_items | minus: 1 | divided_by: {page_size} | floor | plus: 1 %}}
 {{% if _total_pages < 1 %}}{{% assign _total_pages = 1 %}}{{% endif %}}
 {{% if _total_pages > {max_pages} %}}{{% assign _total_pages = {max_pages} %}}{{% endif %}}
 <div class="cb-paged-wrap cb-paged-wrap-{pfx}">
-{{% for _p_i in (1.._total_pages) %}}
+{def_input}{{% for _p_i in (1.._total_pages) %}}
   <input type="radio" name="{pfx}_pg" id="{pfx}_pg_{{{{ _p_i }}}}" class="cb-pg-radio-{pfx}" {{% if _p_i == 1 %}}checked{{% endif %}}>
 {{% endfor %}}
-<div class="cb-content-wrap cb-content-wrap-{pfx}">\
+{def_bar}{def_box}<div class="cb-content-wrap cb-content-wrap-{pfx}">\
 """
 
 
@@ -601,27 +867,45 @@ def paged_bottom(pfx: str) -> str:
 """
 
 
+BILLING_KPI_DEF_BODY = """\
+<div class="cb-def-grid">
+  <div class="cb-def-item"><strong>Total Spend:</strong> Sum of all Serverless invoice line items (<code>total_ecu &times; conf_chargeable_unit_rate</code>) in <code>serverless_billing_cost_lookup</code>.</div>
+  <div class="cb-def-item"><strong>Allocatable Pool:</strong> Workload-driven SKUs (<code>is_allocatable: true</code>: ingest, search, retained storage, AI/ML, Synthetics) attributed to workloads.</div>
+  <div class="cb-def-item"><strong>Unallocatable Spend:</strong> Org-wide &amp; pass-through charges (<code>is_allocatable: false</code>: <strong>Support</strong>, <strong>Data Transfer</strong>, <strong>Snapshots</strong>, <strong>Platform</strong>).</div>
+  <div class="cb-def-item"><strong>Billed Projects:</strong> Distinct <code>project_id</code> count in window, split into active Control Plane projects vs. decommissioned (<code>inactive</code>) projects.</div>
+  <div class="cb-def-item"><strong>Days of Data &amp; Latest Day:</strong> Distinct UTC billing days (<code>DATE_TRUNC(1 day, @timestamp)</code>) and most recent closed invoice snapshot.</div>
+</div>"""
+
 BILLING_KPI_TEMPLATE = f"""\
 <style>
-  .cb-kpi-wrap {{ position: relative; }}
-  .cb-info-toggle {{ display: none !important; position: absolute; opacity: 0; pointer-events: none; }}
-  .cb-kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: var(--cc-space-s, 8px); margin: 0; padding: 0 0 4px 0; }}
+{def_css("bill_kpi")}
+  .cb-kpi-wrap {{
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+  }}
+  .cb-kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: var(--cc-space-s, 8px); margin: 0; padding: 0 0 2px 0; }}
   .cb-kpi {{
     background: var(--cc-color-surface);
     border: 1px solid var(--cc-color-border);
     border-radius: var(--cc-radius);
-    padding: 10px 14px 12px 14px;
+    padding: 8px 12px 9px 12px;
   }}
   .cb-kpi-unalloc {{ position: relative; }}
-  .cb-kpi-label {{ color: var(--cc-color-text); opacity: 0.72; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; line-height: 1.1; }}
+  .cb-kpi-label {{ color: var(--cc-color-text); opacity: 0.72; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.03em; line-height: 1.1; }}
   .cb-kpi-label-row {{ display: flex; align-items: center; justify-content: space-between; gap: 6px; opacity: 1; }}
-  .cb-kpi-label-text {{ color: var(--cc-color-text); opacity: 0.72; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; line-height: 1.1; }}
+  .cb-kpi-label-text {{ color: var(--cc-color-text); opacity: 0.72; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.03em; line-height: 1.1; }}
   .cb-info-icon {{
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 17px;
-    height: 17px;
+    width: 16px;
+    height: 16px;
     border-radius: 50%;
     border: 1px solid color-mix(in srgb, var(--cc-color-primary, #0077cc) 55%, var(--cc-color-border));
     background: color-mix(in srgb, var(--cc-color-primary, #0077cc) 14%, var(--cc-color-surface));
@@ -629,90 +913,21 @@ BILLING_KPI_TEMPLATE = f"""\
     font-family: Georgia, "Times New Roman", serif;
     font-style: italic;
     font-weight: 700;
-    font-size: 0.74rem;
+    font-size: 0.72rem;
     line-height: 1;
     cursor: pointer;
     user-select: none;
     flex-shrink: 0;
-    transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+    transition: background 0.15s ease, color 0.15s ease;
   }}
-  .cb-info-icon:hover {{
-    background: var(--cc-color-primary, #0077cc);
-    color: #ffffff;
-    transform: scale(1.06);
-  }}
-  #cb_unalloc_def_toggle:checked ~ .cb-kpis .cb-info-icon {{
+  .cb-info-icon:hover,
+  #cb_def_bill_kpi:checked ~ .cb-kpis .cb-info-icon {{
     background: var(--cc-color-primary, #0077cc);
     color: #ffffff;
   }}
-  .cb-def-popover {{
-    display: none;
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    width: max(100%, 320px);
-    z-index: 60;
-    background: var(--cc-color-surface);
-    border: 1px solid color-mix(in srgb, var(--cc-color-primary, #0077cc) 55%, var(--cc-color-border));
-    border-radius: var(--cc-radius, 6px);
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
-    padding: 7px 11px;
-    color: var(--cc-color-text);
-    font-size: 0.73rem;
-    line-height: 1.25;
-    box-sizing: border-box;
-    flex-direction: column;
-    justify-content: center;
-    gap: 3px;
-  }}
-  #cb_unalloc_def_toggle:checked ~ .cb-kpis .cb-kpi-unalloc .cb-def-popover {{
-    display: flex !important;
-  }}
-  .cb-def-head {{
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 6px;
-  }}
-  .cb-def-title {{
-    font-weight: 700;
-    font-size: 0.75rem;
-    color: var(--cc-color-text);
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    white-space: nowrap;
-  }}
-  .cb-def-badge {{
-    font-family: monospace;
-    font-size: 0.67rem;
-    font-weight: 600;
-    padding: 0 5px;
-    border-radius: 3px;
-    background: color-mix(in srgb, var(--cc-color-primary, #0077cc) 14%, transparent);
-    color: var(--cc-color-primary, #0077cc);
-  }}
-  .cb-def-close {{
-    cursor: pointer;
-    font-size: 0.72rem;
-    font-weight: 600;
-    opacity: 0.65;
-    padding: 0 4px;
-    border-radius: 3px;
-    color: var(--cc-color-text);
-    user-select: none;
-    line-height: 1.2;
-  }}
-  .cb-def-close:hover {{ opacity: 1; color: var(--cc-color-primary, #0077cc); }}
-  .cb-def-body {{
-    font-size: 0.72rem;
-    opacity: 0.88;
-    line-height: 1.28;
-  }}
-  .cb-kpi-value {{ color: var(--cc-color-text); font-size: 1.45rem; font-weight: 600; margin-top: 4px; line-height: 1.1; font-variant-numeric: tabular-nums; display: flex; align-items: baseline; }}
-  .cb-sym {{ font-size: 1.05rem; opacity: 0.85; margin-right: 4px; font-weight: 500; }}
-  .cb-kpi-sub {{ color: var(--cc-color-text); font-size: 0.75rem; opacity: 0.68; margin-top: 4px; line-height: 1.1; }}
+  .cb-kpi-value {{ color: var(--cc-color-text); font-size: 1.35rem; font-weight: 600; margin-top: 3px; line-height: 1.1; font-variant-numeric: tabular-nums; display: flex; align-items: baseline; }}
+  .cb-sym {{ font-size: 1.0rem; opacity: 0.85; margin-right: 4px; font-weight: 500; }}
+  .cb-kpi-sub {{ color: var(--cc-color-text); font-size: 0.73rem; opacity: 0.68; margin-top: 3px; line-height: 1.1; }}
 </style>
 {{% assign r = rows[0] %}}
 {{% assign total = r["total_spend"].value | default: 0.0 %}}
@@ -734,7 +949,9 @@ BILLING_KPI_TEMPLATE = f"""\
 {liquid_money_block("alloc", "fmt_alloc", with_decimals=True)}
 {liquid_money_block("unalloc", "fmt_unalloc", with_decimals=True)}
 <div class="cb-kpi-wrap">
-  <input type="checkbox" id="cb_unalloc_def_toggle" class="cb-info-toggle">
+  <input type="checkbox" id="cb_def_bill_kpi" class="cb-def-toggle">
+  {def_bar_html("bill_kpi", "Organization-wide Serverless invoice totals, allocatable vs. unallocatable spend pools, and active billing window", kpi=True)}
+  {def_box_html("bill_kpi", "Billing Summary KPIs", "serverless_billing_cost_lookup", BILLING_KPI_DEF_BODY, mode="kpi")}
   <div class="cb-kpis">
     <div class="cb-kpi">
       <div class="cb-kpi-label">Total Spend ({{{{ unit }}}})</div>
@@ -749,22 +966,10 @@ BILLING_KPI_TEMPLATE = f"""\
     <div class="cb-kpi cb-kpi-unalloc">
       <div class="cb-kpi-label-row">
         <span class="cb-kpi-label-text">Unallocatable Spend ({{{{ unit }}}})</span>
-        <label for="cb_unalloc_def_toggle" class="cb-info-icon" aria-label="View definition">i</label>
+        <label for="cb_def_bill_kpi" class="cb-info-icon" title="Click for definition">i</label>
       </div>
       <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_unalloc }}}}</span></div>
       <div class="cb-kpi-sub">{{{{ unalloc_pct }}}}% pass-through / org-wide</div>
-      <div class="cb-def-popover">
-        <div class="cb-def-head">
-          <div class="cb-def-title">
-            <span>Unallocatable Spend</span>
-            <span class="cb-def-badge">is_allocatable: false</span>
-          </div>
-          <label for="cb_unalloc_def_toggle" class="cb-def-close" aria-label="Close">✕</label>
-        </div>
-        <div class="cb-def-body">
-          Org-wide &amp; pass-through charges not tied to workload telemetry: <strong>Support</strong>, <strong>Data Transfer</strong>, <strong>Snapshots</strong>, and <strong>Platform SKUs</strong>.
-        </div>
-      </div>
     </div>
     <div class="cb-kpi">
       <div class="cb-kpi-label">Billed Projects</div>
@@ -786,19 +991,39 @@ BILLING_KPI_TEMPLATE = f"""\
 """
 
 
+USAGE_KPI_DEF_BODY = """\
+<div class="cb-def-grid">
+  <div class="cb-def-item"><strong>Total Allocatable Pool:</strong> All workload-attributable spend (<code>is_allocatable: true AND allocation_driver != "none"</code>).</div>
+  <div class="cb-def-item"><strong>Indexing Pool:</strong> Spend from <code>ingest-vcu</code> &amp; <code>ingest</code> SKUs, attributed across data streams by <code>indexing.index_time</code>.</div>
+  <div class="cb-def-item"><strong>Search &amp; Query Pool:</strong> Spend from <code>search-vcu</code> &amp; <code>search</code> SKUs, attributed across data streams by <code>search.query_time</code>.</div>
+  <div class="cb-def-item"><strong>Storage Pool:</strong> Spend from <code>retained</code> storage SKUs, attributed across data streams by <code>dataset.size</code>.</div>
+  <div class="cb-def-item"><strong>AI &amp; Synthetics Pool:</strong> Spend from <code>ml-vcu</code>, <code>inference</code>, <code>agent-builder</code>, and <code>synthetics</code> SKUs.</div>
+</div>"""
+
 USAGE_KPI_TEMPLATE = f"""\
 <style>
-  .cb-kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--cc-space-s, 8px); margin: 0; padding: 0 0 4px 0; }}
+{def_css("usage_kpi")}
+  .cb-kpi-wrap {{
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+  }}
+  .cb-kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--cc-space-s, 8px); margin: 0; padding: 0 0 2px 0; }}
   .cb-kpi {{
     background: var(--cc-color-surface);
     border: 1px solid var(--cc-color-border);
     border-radius: var(--cc-radius);
-    padding: 10px 14px 12px 14px;
+    padding: 8px 12px 9px 12px;
   }}
-  .cb-kpi-label {{ color: var(--cc-color-text); opacity: 0.72; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; line-height: 1.1; }}
-  .cb-kpi-value {{ color: var(--cc-color-text); font-size: 1.45rem; font-weight: 600; margin-top: 4px; line-height: 1.1; font-variant-numeric: tabular-nums; display: flex; align-items: baseline; }}
-  .cb-sym {{ font-size: 1.05rem; opacity: 0.85; margin-right: 4px; font-weight: 500; }}
-  .cb-kpi-sub {{ color: var(--cc-color-text); font-size: 0.75rem; opacity: 0.68; margin-top: 4px; line-height: 1.1; }}
+  .cb-kpi-label {{ color: var(--cc-color-text); opacity: 0.72; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.03em; line-height: 1.1; }}
+  .cb-kpi-value {{ color: var(--cc-color-text); font-size: 1.35rem; font-weight: 600; margin-top: 3px; line-height: 1.1; font-variant-numeric: tabular-nums; display: flex; align-items: baseline; }}
+  .cb-sym {{ font-size: 1.0rem; opacity: 0.85; margin-right: 4px; font-weight: 500; }}
+  .cb-kpi-sub {{ color: var(--cc-color-text); font-size: 0.73rem; opacity: 0.68; margin-top: 3px; line-height: 1.1; }}
 </style>
 {{% assign r = rows[0] %}}
 {{% assign pool = r["pool_spend"].value | default: 0.0 %}}
@@ -819,39 +1044,53 @@ USAGE_KPI_TEMPLATE = f"""\
 {liquid_money_block("qry_s", "fmt_qry_s", with_decimals=True)}
 {liquid_money_block("stg_s", "fmt_stg_s", with_decimals=True)}
 {liquid_money_block("ai_syn_s", "fmt_ai_syn_s", with_decimals=True)}
-<div class="cb-kpis">
-  <div class="cb-kpi">
-    <div class="cb-kpi-label">Total Allocatable Pool ({{{{ unit }}}})</div>
-    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_pool }}}}</span></div>
-    <div class="cb-kpi-sub">100% workload-attributable spend</div>
-  </div>
-  <div class="cb-kpi">
-    <div class="cb-kpi-label">Indexing Pool ({{{{ unit }}}})</div>
-    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_idx_s }}}}</span></div>
-    <div class="cb-kpi-sub">{{{{ idx_pct }}}}% · ingest-vcu + ingest</div>
-  </div>
-  <div class="cb-kpi">
-    <div class="cb-kpi-label">Search &amp; Query Pool ({{{{ unit }}}})</div>
-    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_qry_s }}}}</span></div>
-    <div class="cb-kpi-sub">{{{{ qry_pct }}}}% · search-vcu</div>
-  </div>
-  <div class="cb-kpi">
-    <div class="cb-kpi-label">Storage Pool ({{{{ unit }}}})</div>
-    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_stg_s }}}}</span></div>
-    <div class="cb-kpi-sub">{{{{ stg_pct }}}}% · retained storage</div>
-  </div>
-  <div class="cb-kpi">
-    <div class="cb-kpi-label">AI &amp; Synthetics Pool ({{{{ unit }}}})</div>
-    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_ai_syn_s }}}}</span></div>
-    <div class="cb-kpi-sub">{{{{ ai_syn_pct }}}}% · AI, Agent Builder &amp; Synthetics</div>
+<div class="cb-kpi-wrap">
+  <input type="checkbox" id="cb_def_usage_kpi" class="cb-def-toggle">
+  {def_bar_html("usage_kpi", "Realized allocatable spend pools partitioned by workload driver (Indexing, Search, Storage, AI & Synthetics)", kpi=True)}
+  {def_box_html("usage_kpi", "Workload Pool Summary KPIs", "is_allocatable: true", USAGE_KPI_DEF_BODY, mode="kpi")}
+  <div class="cb-kpis">
+    <div class="cb-kpi">
+      <div class="cb-kpi-label">Total Allocatable Pool ({{{{ unit }}}})</div>
+      <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_pool }}}}</span></div>
+      <div class="cb-kpi-sub">100% workload-attributable spend</div>
+    </div>
+    <div class="cb-kpi">
+      <div class="cb-kpi-label">Indexing Pool ({{{{ unit }}}})</div>
+      <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_idx_s }}}}</span></div>
+      <div class="cb-kpi-sub">{{{{ idx_pct }}}}% · ingest-vcu + ingest</div>
+    </div>
+    <div class="cb-kpi">
+      <div class="cb-kpi-label">Search &amp; Query Pool ({{{{ unit }}}})</div>
+      <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_qry_s }}}}</span></div>
+      <div class="cb-kpi-sub">{{{{ qry_pct }}}}% · search-vcu</div>
+    </div>
+    <div class="cb-kpi">
+      <div class="cb-kpi-label">Storage Pool ({{{{ unit }}}})</div>
+      <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_stg_s }}}}</span></div>
+      <div class="cb-kpi-sub">{{{{ stg_pct }}}}% · retained storage</div>
+    </div>
+    <div class="cb-kpi">
+      <div class="cb-kpi-label">AI &amp; Synthetics Pool ({{{{ unit }}}})</div>
+      <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_ai_syn_s }}}}</span></div>
+      <div class="cb-kpi-sub">{{{{ ai_syn_pct }}}}% · AI, Agent Builder &amp; Synthetics</div>
+    </div>
   </div>
 </div>
 """
 
 
+SANKEY_DEF_BODY = """\
+<p>Maps end-to-end invoice spend flow across three billing dimensions from <code>serverless_billing_cost_lookup</code> (where <code>sku != "none"</code>):</p>
+<ul>
+  <li><strong>Category</strong> (<code>cost_category</code>): High-level bucket (<code>data_tier</code>, <code>platform</code>, <code>support</code>, <code>transfer</code>, <code>snapshot</code>).</li>
+  <li><strong>Cost Type</strong> (<code>cost_type</code>): Normalized SKU family (<code>ingest-vcu</code>, <code>search-vcu</code>, <code>retained</code>, <code>synthetics</code>, <code>inference</code>, <code>support</code>).</li>
+  <li><strong>Project Type</strong> (<code>project_type</code>): Serverless solution type (<code>elasticsearch</code>, <code>observability</code>, <code>security</code>, or <code>organization</code>).</li>
+</ul>"""
+
 SANKEY_TEMPLATE = f"""\
 <style>
 {PAGED_BASE_CSS}
+{def_css("sankey")}
 {paged_css("sankey", 6, "grid")}
   .cb-flow {{ display: flex; flex-direction: column; gap: 6px; padding: 4px 6px; }}
   .cb-flow-head {{
@@ -894,7 +1133,7 @@ SANKEY_TEMPLATE = f"""\
 {{% endfor %}}
 {{% assign denom_tot = tot_cost %}}
 {{% if denom_tot <= 0 %}}{{% assign denom_tot = 1.0 %}}{{% endif %}}
-{paged_top("sankey", 10, 6)}
+{paged_top("sankey", 10, 6, def_id="sankey", subtitle="End-to-end spend flow from SKU category to cost type and Serverless project type", def_title="Spend Flow Breakdown", def_badge="category → cost_type → project_type", def_body=SANKEY_DEF_BODY)}
 <div class="cb-flow">
   <div class="cb-flow-head">
     <div>Category</div>
@@ -936,23 +1175,43 @@ SANKEY_TEMPLATE = f"""\
 """
 
 
+AI_KPI_DEF_BODY = """\
+<div class="cb-def-grid">
+  <div class="cb-def-item"><strong>AI &amp; ML Spend:</strong> Dedicated AI SKU spend (<code>ml-vcu</code>, <code>inference</code>, <code>agent-builder</code>); falls back to shared <code>search-vcu</code> pool when built-in models run without dedicated ML SKUs.</div>
+  <div class="cb-def-item"><strong>Inference Volume:</strong> Total model inference calls (<code>SUM(inference_count)</code>) harvested via <code>GET /_ml/trained_models/_stats</code>.</div>
+  <div class="cb-def-item"><strong>Active AI Models:</strong> Distinct <code>model_id</code> count with recorded inference activity in the selected window.</div>
+  <div class="cb-def-item"><strong>Avg Model Latency:</strong> Mean inference execution time (<code>average_inference_time_ms</code>) across active deployments.</div>
+  <div class="cb-def-item"><strong>Unit Cost (1k Inferences):</strong> Effective cost per 1,000 inference calls (<code>ai_spend &times; 1000 / total_inferences</code>).</div>
+</div>"""
+
 AI_KPIS_TEMPLATE = f"""\
 <style>
+{def_css("ai_kpi")}
+  .cb-kpi-wrap {{
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+  }}
   .cb-kpis {{
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
     gap: var(--cc-space-s, 8px);
     margin: 0;
-    padding: 0 0 4px 0;
+    padding: 0 0 2px 0;
   }}
   .cb-kpi {{
     background: var(--cc-color-surface);
     border: 1px solid var(--cc-color-border);
     border-radius: var(--cc-radius);
-    padding: 10px 14px 12px 14px;
+    padding: 8px 12px 9px 12px;
   }}
   .cb-kpi-label {{
-    font-size: 0.78rem;
+    font-size: 0.76rem;
     color: var(--cc-color-text);
     opacity: 0.72;
     text-transform: uppercase;
@@ -960,9 +1219,9 @@ AI_KPIS_TEMPLATE = f"""\
     line-height: 1.1;
   }}
   .cb-kpi-value {{
-    font-size: 1.45rem;
+    font-size: 1.35rem;
     font-weight: 600;
-    margin-top: 4px;
+    margin-top: 3px;
     line-height: 1.1;
     color: var(--cc-color-text);
     font-variant-numeric: tabular-nums;
@@ -970,16 +1229,16 @@ AI_KPIS_TEMPLATE = f"""\
     align-items: baseline;
   }}
   .cb-sym {{
-    font-size: 1.05rem;
+    font-size: 1.0rem;
     font-weight: 500;
     opacity: 0.85;
     margin-right: 4px;
   }}
   .cb-kpi-sub {{
-    font-size: 0.75rem;
+    font-size: 0.73rem;
     color: var(--cc-color-text);
     opacity: 0.68;
-    margin-top: 4px;
+    margin-top: 3px;
     display: flex;
     align-items: center;
     gap: 4px;
@@ -1012,45 +1271,58 @@ AI_KPIS_TEMPLATE = f"""\
 {liquid_money_block("inf_count", "fmt_inf_count", with_decimals=False)}
 {liquid_money_block("cost_per_k", "fmt_cost_per_k", with_decimals=True)}
 
-<div class="cb-kpis">
-  <div class="cb-kpi">
-    {{% if ded_spend <= 0.0 and ai_spend > 0.0 %}}
-      <div class="cb-kpi-label">AI &amp; ML Pool (Shared Search, {{{{ unit }}}})</div>
-      <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_ai_spend }}}}</span></div>
-      <div class="cb-kpi-sub"><span class="cb-ai-pill cb-ai-pill-shared">search-vcu fallback</span> · shared with Search pool</div>
-    {{% else %}}
-      <div class="cb-kpi-label">Total AI &amp; ML Spend ({{{{ unit }}}})</div>
-      <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_ai_spend }}}}</span></div>
-      <div class="cb-kpi-sub"><span class="cb-ai-pill">ml-vcu + inference</span> · dedicated AI SKUs</div>
-    {{% endif %}}
-  </div>
-  <div class="cb-kpi">
-    <div class="cb-kpi-label">Inference Volume</div>
-    <div class="cb-kpi-value">{{{{ fmt_inf_count }}}}</div>
-    <div class="cb-kpi-sub">Total model inference calls</div>
-  </div>
-  <div class="cb-kpi">
-    <div class="cb-kpi-label">Active AI Models</div>
-    <div class="cb-kpi-value">{{{{ model_count }}}}</div>
-    <div class="cb-kpi-sub">Trained models in window</div>
-  </div>
-  <div class="cb-kpi">
-    <div class="cb-kpi-label">Avg Model Latency</div>
-    <div class="cb-kpi-value">{{{{ avg_latency }}}} <span style="font-size: 0.95rem; font-weight: 500; margin-left: 4px; opacity: 0.85;">ms</span></div>
-    <div class="cb-kpi-sub">Compute execution speed</div>
-  </div>
-  <div class="cb-kpi">
-    <div class="cb-kpi-label">Unit Cost (1k Inferences)</div>
-    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_cost_per_k }}}}</span></div>
-    <div class="cb-kpi-sub">Effective unit economics</div>
+<div class="cb-kpi-wrap">
+  <input type="checkbox" id="cb_def_ai_kpi" class="cb-def-toggle">
+  {def_bar_html("ai_kpi", "AI & ML pool spend, inference volume, active trained models, execution latency, and unit economics", kpi=True)}
+  {def_box_html("ai_kpi", "AI & Machine Learning FinOps KPIs", "serverless_ai_model_contribution_lookup", AI_KPI_DEF_BODY, mode="kpi")}
+  <div class="cb-kpis">
+    <div class="cb-kpi">
+      {{% if ded_spend <= 0.0 and ai_spend > 0.0 %}}
+        <div class="cb-kpi-label">AI &amp; ML Pool (Shared Search, {{{{ unit }}}})</div>
+        <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_ai_spend }}}}</span></div>
+        <div class="cb-kpi-sub"><span class="cb-ai-pill cb-ai-pill-shared">search-vcu fallback</span> · shared with Search pool</div>
+      {{% else %}}
+        <div class="cb-kpi-label">Total AI &amp; ML Spend ({{{{ unit }}}})</div>
+        <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_ai_spend }}}}</span></div>
+        <div class="cb-kpi-sub"><span class="cb-ai-pill">ml-vcu + inference</span> · dedicated AI SKUs</div>
+      {{% endif %}}
+    </div>
+    <div class="cb-kpi">
+      <div class="cb-kpi-label">Inference Volume</div>
+      <div class="cb-kpi-value">{{{{ fmt_inf_count }}}}</div>
+      <div class="cb-kpi-sub">Total model inference calls</div>
+    </div>
+    <div class="cb-kpi">
+      <div class="cb-kpi-label">Active AI Models</div>
+      <div class="cb-kpi-value">{{{{ model_count }}}}</div>
+      <div class="cb-kpi-sub">Trained models in window</div>
+    </div>
+    <div class="cb-kpi">
+      <div class="cb-kpi-label">Avg Model Latency</div>
+      <div class="cb-kpi-value">{{{{ avg_latency }}}} <span style="font-size: 0.9rem; font-weight: 500; margin-left: 4px; opacity: 0.85;">ms</span></div>
+      <div class="cb-kpi-sub">Compute execution speed</div>
+    </div>
+    <div class="cb-kpi">
+      <div class="cb-kpi-label">Unit Cost (1k Inferences)</div>
+      <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_cost_per_k }}}}</span></div>
+      <div class="cb-kpi-sub">Effective unit economics</div>
+    </div>
   </div>
 </div>
 """
 
 
+AI_MODELS_DEF_BODY = """\
+<p>Attributes project AI/ML spend across individual trained models harvested from <code>GET /_ml/trained_models/_stats</code> (stored in <code>serverless_ai_model_contribution_lookup</code>):</p>
+<ul>
+  <li><strong>Compute Allocation Share:</strong> Model's share of total inference compute time (<code>total_inference_time_ms = inference_count &times; average_inference_time_ms</code>, falling back to <code>inference_count</code>).</li>
+  <li><strong>Attributed Cost:</strong> Daily project AI pool (<code>ai_ecu &times; rate</code>, or <code>query_ecu &times; rate</code> fallback) weighted by the model's daily compute share.</li>
+</ul>"""
+
 AI_MODELS_TEMPLATE = f"""\
 <style>
 {PAGED_BASE_CSS}
+{def_css("aimod")}
 {paged_css("aimod", 6, "grid")}
   .cb-model-list {{
     display: flex;
@@ -1157,7 +1429,7 @@ AI_MODELS_TEMPLATE = f"""\
   {{% assign tot_inferences = tot_inferences | plus: ti %}}
 {{% endfor %}}
 
-{paged_top("aimod", 10, 6)}
+{paged_top("aimod", 10, 6, def_id="aimod", subtitle="Per-model inference volume, compute allocation share, execution latency, and attributed AI spend", def_title="AI Model Compute & Spend Attribution", def_badge="_ml/trained_models/_stats", def_body=AI_MODELS_DEF_BODY)}
 <div class="cb-model-list">
   <div class="cb-model-head">
     <div>Task Type</div>
@@ -1221,19 +1493,39 @@ AI_MODELS_TEMPLATE = f"""\
 """
 
 
+SYNTHETICS_KPI_DEF_BODY = """\
+<div class="cb-def-grid">
+  <div class="cb-def-item"><strong>Direct Synthetics Spend:</strong> Sum of all Synthetics SKU charges (<code>cost_type == "synthetics"</code>) in <code>serverless_billing_cost_lookup</code>.</div>
+  <div class="cb-def-item"><strong>Lightweight Ping Spend:</strong> Spend on <code>observability-synthetic-pings</code> SKUs covering <code>http</code>, <code>icmp</code>, <code>tcp</code>, and <code>dns</code> monitors.</div>
+  <div class="cb-def-item"><strong>Browser Execution Spend:</strong> Spend on <code>observability-synthetic-executions</code> SKUs covering Playwright <code>browser</code> journeys.</div>
+  <div class="cb-def-item"><strong>Total Check Executions &amp; Unit Cost:</strong> Billed check runs and blended cost per 1,000 check executions (<code>synthetics_spend &times; 1000 / synthetics_runs</code>).</div>
+  <div class="cb-def-item"><strong>Billed Synthetics Projects:</strong> Distinct Serverless projects incurring direct Synthetics SKU charges in the selected window.</div>
+</div>"""
+
 SYNTHETICS_KPI_TEMPLATE = f"""\
 <style>
-  .cb-kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: var(--cc-space-s, 8px); margin: 0; padding: 0 0 4px 0; }}
+{def_css("synth_kpi")}
+  .cb-kpi-wrap {{
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+  }}
+  .cb-kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: var(--cc-space-s, 8px); margin: 0; padding: 0 0 2px 0; }}
   .cb-kpi {{
     background: var(--cc-color-surface);
     border: 1px solid var(--cc-color-border);
     border-radius: var(--cc-radius);
-    padding: 10px 14px 12px 14px;
+    padding: 8px 12px 9px 12px;
   }}
-  .cb-kpi-label {{ color: var(--cc-color-text); opacity: 0.72; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; line-height: 1.1; }}
-  .cb-kpi-value {{ color: var(--cc-color-text); font-size: 1.45rem; font-weight: 600; margin-top: 4px; line-height: 1.1; font-variant-numeric: tabular-nums; display: flex; align-items: baseline; }}
-  .cb-sym {{ font-size: 1.05rem; opacity: 0.85; margin-right: 4px; font-weight: 500; }}
-  .cb-kpi-sub {{ color: var(--cc-color-text); font-size: 0.75rem; opacity: 0.68; margin-top: 4px; line-height: 1.1; }}
+  .cb-kpi-label {{ color: var(--cc-color-text); opacity: 0.72; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.03em; line-height: 1.1; }}
+  .cb-kpi-value {{ color: var(--cc-color-text); font-size: 1.35rem; font-weight: 600; margin-top: 3px; line-height: 1.1; font-variant-numeric: tabular-nums; display: flex; align-items: baseline; }}
+  .cb-sym {{ font-size: 1.0rem; opacity: 0.85; margin-right: 4px; font-weight: 500; }}
+  .cb-kpi-sub {{ color: var(--cc-color-text); font-size: 0.73rem; opacity: 0.68; margin-top: 3px; line-height: 1.1; }}
 </style>
 {{% assign r = rows[0] %}}
 {{% assign synth_spend = r["synthetics_spend"].value | default: 0.0 %}}
@@ -1257,54 +1549,78 @@ SYNTHETICS_KPI_TEMPLATE = f"""\
 {liquid_money_block("exec_spend", "fmt_exec_spend", with_decimals=True)}
 {liquid_money_block("synth_runs", "fmt_synth_runs", with_decimals=False)}
 {liquid_money_block("cost_per_k", "fmt_cost_per_k", with_decimals=True)}
-<div class="cb-kpis">
-  <div class="cb-kpi">
-    <div class="cb-kpi-label">Direct Synthetics Spend ({{{{ unit }}}})</div>
-    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_synth_spend }}}}</span></div>
-    <div class="cb-kpi-sub">{{{{ synth_pct }}}}% of org spend · pings + browser</div>
-  </div>
-  <div class="cb-kpi">
-    <div class="cb-kpi-label">Lightweight Ping Spend ({{{{ unit }}}})</div>
-    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_pings_spend }}}}</span></div>
-    <div class="cb-kpi-sub">{{{{ pings_pct }}}}% · http, icmp, tcp &amp; dns</div>
-  </div>
-  <div class="cb-kpi">
-    <div class="cb-kpi-label">Browser Execution Spend ({{{{ unit }}}})</div>
-    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_exec_spend }}}}</span></div>
-    <div class="cb-kpi-sub">{{{{ exec_pct }}}}% · Playwright browser journeys</div>
-  </div>
-  <div class="cb-kpi">
-    <div class="cb-kpi-label">Total Check Executions</div>
-    <div class="cb-kpi-value">{{{{ fmt_synth_runs }}}}</div>
-    <div class="cb-kpi-sub">Lightweight pings + browser runs</div>
-  </div>
-  <div class="cb-kpi">
-    <div class="cb-kpi-label">Unit Cost (1k Checks)</div>
-    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_cost_per_k }}}}</span></div>
-    <div class="cb-kpi-sub">Blended check unit economics</div>
-  </div>
-  <div class="cb-kpi">
-    <div class="cb-kpi-label">Billed Synthetics Projects</div>
-    <div class="cb-kpi-value">{{{{ proj_cnt }}}}</div>
-    <div class="cb-kpi-sub">Projects with synthetics SKU spend</div>
+<div class="cb-kpi-wrap">
+  <input type="checkbox" id="cb_def_synth_kpi" class="cb-def-toggle">
+  {def_bar_html("synth_kpi", "Direct Synthetics SKU spend (lightweight pings vs. Playwright browser executions) and check unit economics", kpi=True)}
+  {def_box_html("synth_kpi", "Synthetics Billing Summary KPIs", "synthetic-pings + synthetic-executions", SYNTHETICS_KPI_DEF_BODY, mode="kpi")}
+  <div class="cb-kpis">
+    <div class="cb-kpi">
+      <div class="cb-kpi-label">Direct Synthetics Spend ({{{{ unit }}}})</div>
+      <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_synth_spend }}}}</span></div>
+      <div class="cb-kpi-sub">{{{{ synth_pct }}}}% of org spend · pings + browser</div>
+    </div>
+    <div class="cb-kpi">
+      <div class="cb-kpi-label">Lightweight Ping Spend ({{{{ unit }}}})</div>
+      <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_pings_spend }}}}</span></div>
+      <div class="cb-kpi-sub">{{{{ pings_pct }}}}% · http, icmp, tcp &amp; dns</div>
+    </div>
+    <div class="cb-kpi">
+      <div class="cb-kpi-label">Browser Execution Spend ({{{{ unit }}}})</div>
+      <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_exec_spend }}}}</span></div>
+      <div class="cb-kpi-sub">{{{{ exec_pct }}}}% · Playwright browser journeys</div>
+    </div>
+    <div class="cb-kpi">
+      <div class="cb-kpi-label">Total Check Executions</div>
+      <div class="cb-kpi-value">{{{{ fmt_synth_runs }}}}</div>
+      <div class="cb-kpi-sub">Lightweight pings + browser runs</div>
+    </div>
+    <div class="cb-kpi">
+      <div class="cb-kpi-label">Unit Cost (1k Checks)</div>
+      <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_cost_per_k }}}}</span></div>
+      <div class="cb-kpi-sub">Blended check unit economics</div>
+    </div>
+    <div class="cb-kpi">
+      <div class="cb-kpi-label">Billed Synthetics Projects</div>
+      <div class="cb-kpi-value">{{{{ proj_cnt }}}}</div>
+      <div class="cb-kpi-sub">Projects with synthetics SKU spend</div>
+    </div>
   </div>
 </div>
 """
 
 
+SYNTHETICS_DS_KPI_DEF_BODY = """\
+<div class="cb-def-grid">
+  <div class="cb-def-item"><strong>Attributed Data-Tier Spend:</strong> Total Elasticsearch data-tier spend (<code>Indexing + Search + Storage</code>) attributed to <code>synthetics-*</code> data streams.</div>
+  <div class="cb-def-item"><strong>Synthetics Indexing Spend:</strong> Portion of project <code>ingest-vcu</code> &amp; <code>ingest</code> pools consumed by indexing synthetic check results and browser traces.</div>
+  <div class="cb-def-item"><strong>Synthetics Storage Spend:</strong> Portion of project <code>retained</code> storage pool consumed by storing <code>synthetics-*</code> backing indices.</div>
+  <div class="cb-def-item"><strong>Synthetics Data Streams:</strong> Count of active <code>synthetics-*</code> data streams harvested via <code>_cat/indices</code>.</div>
+</div>"""
+
 SYNTHETICS_DS_KPI_TEMPLATE = f"""\
 <style>
-  .cb-kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--cc-space-s, 8px); margin: 0; padding: 0 0 4px 0; }}
+{def_css("synth_ds_kpi")}
+  .cb-kpi-wrap {{
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+  }}
+  .cb-kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--cc-space-s, 8px); margin: 0; padding: 0 0 2px 0; }}
   .cb-kpi {{
     background: var(--cc-color-surface);
     border: 1px solid var(--cc-color-border);
     border-radius: var(--cc-radius);
-    padding: 10px 14px 12px 14px;
+    padding: 8px 12px 9px 12px;
   }}
-  .cb-kpi-label {{ color: var(--cc-color-text); opacity: 0.72; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; line-height: 1.1; }}
-  .cb-kpi-value {{ color: var(--cc-color-text); font-size: 1.45rem; font-weight: 600; margin-top: 4px; line-height: 1.1; font-variant-numeric: tabular-nums; display: flex; align-items: baseline; }}
-  .cb-sym {{ font-size: 1.05rem; opacity: 0.85; margin-right: 4px; font-weight: 500; }}
-  .cb-kpi-sub {{ color: var(--cc-color-text); font-size: 0.75rem; opacity: 0.68; margin-top: 4px; line-height: 1.1; }}
+  .cb-kpi-label {{ color: var(--cc-color-text); opacity: 0.72; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.03em; line-height: 1.1; }}
+  .cb-kpi-value {{ color: var(--cc-color-text); font-size: 1.35rem; font-weight: 600; margin-top: 3px; line-height: 1.1; font-variant-numeric: tabular-nums; display: flex; align-items: baseline; }}
+  .cb-sym {{ font-size: 1.0rem; opacity: 0.85; margin-right: 4px; font-weight: 500; }}
+  .cb-kpi-sub {{ color: var(--cc-color-text); font-size: 0.73rem; opacity: 0.68; margin-top: 3px; line-height: 1.1; }}
 </style>
 {{% assign r = rows[0] %}}
 {{% assign ds_spend = r["ds_spend"].value | default: 0.0 %}}
@@ -1317,32 +1633,46 @@ SYNTHETICS_DS_KPI_TEMPLATE = f"""\
 {liquid_money_block("ds_spend", "fmt_ds_spend", with_decimals=True)}
 {liquid_money_block("idx_s", "fmt_idx_s", with_decimals=True)}
 {liquid_money_block("stg_s", "fmt_stg_s", with_decimals=True)}
-<div class="cb-kpis">
-  <div class="cb-kpi">
-    <div class="cb-kpi-label">Attributed Data-Tier Spend ({{{{ unit }}}})</div>
-    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_ds_spend }}}}</span></div>
-    <div class="cb-kpi-sub">Ingest + Search + Storage for synthetics-*</div>
-  </div>
-  <div class="cb-kpi">
-    <div class="cb-kpi-label">Synthetics Indexing Spend ({{{{ unit }}}})</div>
-    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_idx_s }}}}</span></div>
-    <div class="cb-kpi-sub">Attributed ingest-vcu + ingest</div>
-  </div>
-  <div class="cb-kpi">
-    <div class="cb-kpi-label">Synthetics Storage Spend ({{{{ unit }}}})</div>
-    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_stg_s }}}}</span></div>
-    <div class="cb-kpi-sub">Attributed retained storage</div>
-  </div>
-  <div class="cb-kpi">
-    <div class="cb-kpi-label">Synthetics Data Streams</div>
-    <div class="cb-kpi-value">{{{{ ds_cnt }}}}</div>
-    <div class="cb-kpi-sub">Monitored synthetics-* streams</div>
+<div class="cb-kpi-wrap">
+  <input type="checkbox" id="cb_def_synth_ds_kpi" class="cb-def-toggle">
+  {def_bar_html("synth_ds_kpi", "Secondary Elasticsearch data-tier costs (Indexing, Search, Storage) for storing synthetics-* telemetry", kpi=True)}
+  {def_box_html("synth_ds_kpi", "Synthetics Data Stream Attribution KPIs", "synthetics-* data streams", SYNTHETICS_DS_KPI_DEF_BODY, mode="kpi")}
+  <div class="cb-kpis">
+    <div class="cb-kpi">
+      <div class="cb-kpi-label">Attributed Data-Tier Spend ({{{{ unit }}}})</div>
+      <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_ds_spend }}}}</span></div>
+      <div class="cb-kpi-sub">Ingest + Search + Storage for synthetics-*</div>
+    </div>
+    <div class="cb-kpi">
+      <div class="cb-kpi-label">Synthetics Indexing Spend ({{{{ unit }}}})</div>
+      <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_idx_s }}}}</span></div>
+      <div class="cb-kpi-sub">Attributed ingest-vcu + ingest</div>
+    </div>
+    <div class="cb-kpi">
+      <div class="cb-kpi-label">Synthetics Storage Spend ({{{{ unit }}}})</div>
+      <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_stg_s }}}}</span></div>
+      <div class="cb-kpi-sub">Attributed retained storage</div>
+    </div>
+    <div class="cb-kpi">
+      <div class="cb-kpi-label">Synthetics Data Streams</div>
+      <div class="cb-kpi-value">{{{{ ds_cnt }}}}</div>
+      <div class="cb-kpi-sub">Monitored synthetics-* streams</div>
+    </div>
   </div>
 </div>
 """
 
 
-def make_daily_cost_template(group_field: str, header_label: str = "Project", is_category: bool = False) -> str:
+def make_daily_cost_template(
+    group_field: str,
+    header_label: str = "Project",
+    is_category: bool = False,
+    *,
+    def_id: str = "daily",
+    def_title: str = "Daily Cost Breakdown",
+    def_badge: str = "DATE_TRUNC(1 day, @timestamp)",
+    def_body: str = "",
+) -> str:
     palette_colors = (
         "var(--cc-vis-0),var(--cc-vis-1),var(--cc-vis-2),var(--cc-vis-3),var(--cc-vis-4),var(--cc-vis-5),var(--cc-vis-6),var(--cc-vis-7),var(--cc-vis-8),var(--cc-vis-9)"
     )
@@ -1389,15 +1719,18 @@ def make_daily_cost_template(group_field: str, header_label: str = "Project", is
 
     return f"""\
 {{% assign _total_rows = rows.size | default: 0 %}}
-{{% if _total_rows > 0 %}}
 <style>
+{def_css(def_id)}
   .cb-daily-container {{
+    position: relative;
     display: flex;
     flex-direction: column;
     height: 100%;
     min-height: 180px;
+    width: 100%;
     box-sizing: border-box;
     padding: 4px 8px 6px 8px;
+    overflow: hidden;
   }}
   .cb-daily-head {{
     display: flex;
@@ -1405,11 +1738,12 @@ def make_daily_cost_template(group_field: str, header_label: str = "Project", is
     align-items: center;
     font-size: 0.78rem;
     font-weight: 600;
-    opacity: 0.85;
+    opacity: 0.92;
     padding: 0 4px 6px 4px;
     border-bottom: 1px solid var(--cc-color-border);
     margin-bottom: 6px;
-    gap: 12px;
+    gap: 10px;
+    flex-shrink: 0;
   }}
   .cb-daily-title {{
     text-transform: uppercase;
@@ -1425,16 +1759,17 @@ def make_daily_cost_template(group_field: str, header_label: str = "Project", is
     flex-wrap: wrap;
     align-items: center;
     justify-content: flex-end;
-    gap: 8px 14px;
+    gap: 6px 12px;
     user-select: none;
-    max-height: 44px;
+    max-height: 40px;
     overflow-y: auto;
+    margin-left: auto;
   }}
   .cb-legend-item {{
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: 0.76rem;
+    font-size: 0.75rem;
     font-weight: 500;
     color: var(--cc-color-text);
   }}
@@ -1450,14 +1785,14 @@ def make_daily_cost_template(group_field: str, header_label: str = "Project", is
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    max-width: 180px;
+    max-width: 165px;
   }}
   .cb-daily-wrap {{
     display: flex;
     flex-direction: row;
     align-items: stretch;
     flex: 1;
-    min-height: 160px;
+    min-height: 150px;
     font-family: inherit;
     box-sizing: border-box;
     padding: 0;
@@ -1467,7 +1802,7 @@ def make_daily_cost_template(group_field: str, header_label: str = "Project", is
     display: flex;
     flex: 1;
     position: relative;
-    min-height: 160px;
+    min-height: 150px;
     gap: 8px;
     min-width: 0;
   }}
@@ -1572,6 +1907,7 @@ def make_daily_cost_template(group_field: str, header_label: str = "Project", is
     transform: translateX(-50%);
   }}
   .cb-sym {{ font-weight: 500; opacity: 0.85; margin-right: 2px; }}
+  .cb-empty {{ display:flex; align-items:center; justify-content:center; flex:1; min-height:140px; font-size:0.84rem; color:var(--cc-color-text); opacity:0.65; }}
 </style>
 {{% assign unit = "USD" %}}
 {{% assign sym = "$" %}}
@@ -1663,6 +1999,7 @@ def make_daily_cost_template(group_field: str, header_label: str = "Project", is
 {{% assign m_arr = "Jan,Feb,Mar,Apr,May,Jun,Jul,Aug,Sep,Oct,Nov,Dec" | split: "," %}}
 
 <div class="cb-daily-container">
+  <input type="checkbox" id="cb_def_{def_id}" class="cb-def-toggle">
   <div class="cb-daily-head">
     <div class="cb-daily-title">Cost ({{{{ unit }}}})</div>
     <div class="cb-daily-legend">
@@ -1676,7 +2013,10 @@ def make_daily_cost_template(group_field: str, header_label: str = "Project", is
         {{% endif %}}
       {{% endfor %}}
     </div>
+    {def_btn_html(def_id)}
   </div>
+  {def_box_html(def_id, def_title, def_badge, def_body)}
+{{% if _total_rows > 0 %}}
   <div class="cb-daily-wrap">
     <div class="cb-daily-main">
       <div class="cb-hist-y">
@@ -1757,25 +2097,90 @@ def make_daily_cost_template(group_field: str, header_label: str = "Project", is
       </div>
     </div>
   </div>
-</div>
 {{% else %}}
-<style>.cb-empty {{ display:flex; align-items:center; justify-content:center; height:100%; min-height:200px; font-size:0.84rem; color:var(--cc-color-text); opacity:0.65; }}</style>
-<div class="cb-empty">No daily cost data in the selected time range.</div>
+  <div class="cb-empty">No daily cost data in the selected time range.</div>
 {{% endif %}}
+</div>
 """
 
 
-DAILY_PROJECT_COST_TEMPLATE = make_daily_cost_template("project", "Project", is_category=False)
-DAILY_CATEGORY_COST_TEMPLATE = make_daily_cost_template("category", "Cost category", is_category=True)
-DAILY_DRIVER_COST_TEMPLATE = make_daily_cost_template("driver", "Workload driver", is_category=False)
-DAILY_MODEL_COST_TEMPLATE = make_daily_cost_template("model_id", "Model", is_category=False)
-DAILY_SYNTH_TYPE_COST_TEMPLATE = make_daily_cost_template("monitor_type", "Synthetic type", is_category=False)
+DAILY_PROJECT_COST_TEMPLATE = make_daily_cost_template(
+    "project",
+    "Project",
+    is_category=False,
+    def_id="daily_proj",
+    def_title="Daily Cost by Project",
+    def_badge="DATE_TRUNC(1 day, @timestamp) × project",
+    def_body="""\
+<p>Stacked daily invoice spend grouped by UTC day and Serverless project from <code>serverless_billing_cost_lookup</code> joined with <code>serverless_project_status_lookup</code>:</p>
+<ul>
+  <li><strong>Formula:</strong> <code>cost = SUM(total_ecu &times; conf_chargeable_unit_rate)</code> per project per UTC day.</li>
+  <li><strong>Project Resolution:</strong> Resolves human-readable <code>project_name</code> from Control Plane metadata, falling back to <code>project_id</code> or <code>organization</code> for org-wide charges.</li>
+</ul>""",
+)
+
+DAILY_CATEGORY_COST_TEMPLATE = make_daily_cost_template(
+    "category",
+    "Cost category",
+    is_category=True,
+    def_id="daily_cat",
+    def_title="Daily Cost by Cost Category",
+    def_badge="DATE_TRUNC(1 day, @timestamp) × cost_category",
+    def_body="""\
+<p>Stacked daily invoice spend grouped by UTC day and normalized <code>cost_category</code> from <code>serverless_billing_cost_lookup</code> (<code>sku != "none"</code>):</p>
+<ul>
+  <li><strong>Categories:</strong> <code>data_tier</code> (ingest, search, retained storage, AI/ML), <code>platform</code> (Synthetics, Agent Builder), <code>transfer</code> (egress), <code>snapshot</code>, <code>support</code>, and <code>other</code>.</li>
+</ul>""",
+)
+
+DAILY_DRIVER_COST_TEMPLATE = make_daily_cost_template(
+    "driver",
+    "Workload driver",
+    is_category=False,
+    def_id="daily_drv",
+    def_title="Daily Allocatable Cost by Workload Driver",
+    def_badge="is_allocatable: true",
+    def_body="""\
+<p>Stacked daily allocatable spend (<code>is_allocatable == true AND allocation_driver != "none"</code>) grouped by workload driver pool:</p>
+<ul>
+  <li><strong>Drivers:</strong> <strong>Indexing</strong> (<code>ingest-vcu + ingest</code>), <strong>Search &amp; Query</strong> (<code>search-vcu</code>), <strong>Storage</strong> (<code>retained</code>), <strong>AI &amp; ML</strong> (<code>inference + ml-vcu + agent-builder</code>), and <strong>Synthetics</strong> (<code>pings + executions</code>).</li>
+</ul>""",
+)
+
+DAILY_MODEL_COST_TEMPLATE = make_daily_cost_template(
+    "model_id",
+    "Model",
+    is_category=False,
+    def_id="daily_mod",
+    def_title="Daily Attributed AI Cost by Model",
+    def_badge="serverless_ai_model_contribution_lookup",
+    def_body="""\
+<p>Stacked daily AI/ML compute spend attributed across active trained models:</p>
+<ul>
+  <li><strong>Formula:</strong> Daily project AI pool (<code>ai_ecu &times; rate</code>, or <code>query_ecu &times; rate</code> fallback) multiplied by each model's daily share of total inference compute time (<code>total_inference_time_ms</code>).</li>
+</ul>""",
+)
+
+DAILY_SYNTH_TYPE_COST_TEMPLATE = make_daily_cost_template(
+    "monitor_type",
+    "Synthetic type",
+    is_category=False,
+    def_id="daily_syntype",
+    def_title="Daily Attributed Synthetics Cost by Synthetic Type",
+    def_badge="serverless_synthetics_monitor_contribution_lookup",
+    def_body="""\
+<p>Stacked daily Synthetics spend partitioned by monitor type (<code>http</code>, <code>browser</code>, <code>icmp</code>, <code>tcp</code>, <code>dns</code>):</p>
+<ul>
+  <li><strong>Attribution:</strong> <code>browser</code> monitors draw from the Browser Execution SKU pool (<code>synthetics_executions_ecu</code>); lightweight monitors (<code>http</code>, <code>icmp</code>, <code>tcp</code>, <code>dns</code>) draw from the Lightweight Ping SKU pool (<code>synthetics_pings_ecu</code>) proportionally by daily check volume.</li>
+</ul>""",
+)
 
 
 AI_BILLING_TABLE_TEMPLATE = f"""\
 <style>
 {PAGED_BASE_CSS}
 {paged_css("aibill", 10, "table-row")}
+{def_css("aibill")}
   table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; color: var(--cc-color-text); }}
   table.cb-t th {{
     position: sticky; top: 0; background: var(--cc-color-surface); z-index: 1;
@@ -1789,7 +2194,7 @@ AI_BILLING_TABLE_TEMPLATE = f"""\
 </style>
 {{% assign unit = rows[0]["unit"].value | default: "USD" %}}
 {{% assign sym = rows[0]["currency_symbol"].value | default: "$" %}}
-{paged_top("aibill", 10, 10)}
+{paged_top("aibill", 10, 10, def_id="aibill", subtitle="Direct AI, ML VCU, Inference & Agent Builder invoice SKUs", def_title="Dedicated AI, Inference & Agent Builder Billing Line Items", def_badge="serverless_billing_cost_lookup", def_body='<p>Invoice line items directly billed under AI &amp; ML cost types or SKUs:</p><ul><li><strong>Included SKUs:</strong> Matches <code>cost_type IN ("ml-vcu", "inference", "agent-builder")</code> or SKU patterns <code>*ml*</code>, <code>*inference*</code>, <code>*llm*</code>, and <code>*agent-builder*</code>.</li><li><strong>Quantity &amp; Units (ECU):</strong> Raw metered SKU quantity and Elastic Consumption Units prior to local currency conversion.</li></ul>')}
 <table class="cb-t">
   <thead>
     <tr><th>Project</th><th>Project Type</th><th>Cost Type</th><th>SKU</th><th class="num">Quantity</th><th class="num">Units (ECU)</th><th class="num">Cost ({{{{ unit }}}})</th></tr>
@@ -1827,6 +2232,7 @@ SYNTHETICS_SKU_TABLE_TEMPLATE = f"""\
 <style>
 {PAGED_BASE_CSS}
 {paged_css("synbill", 10, "table-row")}
+{def_css("synbill")}
   table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; color: var(--cc-color-text); }}
   table.cb-t th {{
     position: sticky; top: 0; background: var(--cc-color-surface); z-index: 1;
@@ -1840,7 +2246,7 @@ SYNTHETICS_SKU_TABLE_TEMPLATE = f"""\
 </style>
 {{% assign unit = rows[0]["unit"].value | default: "USD" %}}
 {{% assign sym = rows[0]["currency_symbol"].value | default: "$" %}}
-{paged_top("synbill", 10, 10)}
+{paged_top("synbill", 10, 10, def_id="synbill", subtitle="Direct Synthetics ping & browser execution billing SKUs", def_title="Synthetics Billing Line Items (SKUs)", def_badge="serverless_billing_cost_lookup", def_body='<p>Direct Cloud Billing line items for Elastic Synthetics:</p><ul><li><strong>Lightweight Pings (<code>*synthetic-pings*</code>):</strong> Metered per 1,000 HTTP, ICMP, TCP, or DNS check executions.</li><li><strong>Browser Executions (<code>*synthetic-executions*</code>):</strong> Metered per Playwright headless browser check execution.</li></ul>')}
 <table class="cb-t">
   <thead>
     <tr><th>Project</th><th>Project Type</th><th>SKU</th><th class="num">Check Quantity</th><th class="num">Units (ECU)</th><th class="num">Cost ({{{{ unit }}}})</th></tr>
@@ -1877,6 +2283,7 @@ SYNTHETICS_TYPE_BREAKDOWN_TEMPLATE = f"""\
 <style>
 {PAGED_BASE_CSS}
 {paged_css("syntype", 8, "table-row")}
+{def_css("syntype")}
   table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; color: var(--cc-color-text); }}
   table.cb-t th {{
     position: sticky; top: 0; background: var(--cc-color-surface); z-index: 1;
@@ -1917,7 +2324,7 @@ SYNTHETICS_TYPE_BREAKDOWN_TEMPLATE = f"""\
 {{% endfor %}}
 {{% assign denom_tot = tot_cost %}}
 {{% if denom_tot <= 0 %}}{{% assign denom_tot = 1.0 %}}{{% endif %}}
-{paged_top("syntype", 10, 8)}
+{paged_top("syntype", 10, 8, def_id="syntype", subtitle="Monitor count, check runs & attributed SKU spend by protocol", def_title="Synthetics Cost & Check Volume by Synthetic Type", def_badge="serverless_synthetics_monitor_contribution_lookup", def_body='<p>Aggregates Synthetics monitors and check runs by protocol type (<code>http</code>, <code>browser</code>, <code>icmp</code>, <code>tcp</code>, <code>dns</code>):</p><ul><li><strong>Monitors &amp; Check Runs:</strong> Distinct <code>monitor.id</code> count and total executed check runs in the time window.</li><li><strong>Attributed Cost:</strong> Proportional share of the daily Browser Execution SKU pool (for <code>browser</code>) or Lightweight Ping SKU pool (for <code>http</code>, <code>icmp</code>, <code>tcp</code>, <code>dns</code>).</li></ul>')}
 <table class="cb-t">
   <thead>
     <tr><th>Synthetic Type</th><th class="num">Monitors</th><th class="num">Check Runs</th><th>Cost Share</th><th class="num">Attributed Cost ({{{{ unit }}}})</th></tr>
@@ -1966,6 +2373,7 @@ SYNTHETICS_MONITORS_TABLE_TEMPLATE = f"""\
 <style>
 {PAGED_BASE_CSS}
 {paged_css("synmon", 25, "table-row")}
+{def_css("synmon")}
   .cb-flt-bar-synmon {{ display: flex; align-items: center; gap: 5px; padding: 2px 2px 6px 2px; font-size: 0.75rem; color: var(--cc-color-text); flex-shrink: 0; flex-wrap: wrap; }}
   .cb-flt-lbl {{ opacity: 0.72; font-weight: 600; font-size: 0.73rem; text-transform: uppercase; letter-spacing: 0.03em; margin-right: 2px; }}
   #synmon_flt_all:checked ~ .cb-flt-bar-synmon .cb-flt-btn-synmon-all,
@@ -2039,6 +2447,7 @@ SYNTHETICS_MONITORS_TABLE_TEMPLATE = f"""\
 {{% if _total_pages < 1 %}}{{% assign _total_pages = 1 %}}{{% endif %}}
 {{% if _total_pages > 25 %}}{{% assign _total_pages = 25 %}}{{% endif %}}
 <div class="cb-paged-wrap cb-paged-wrap-synmon">
+  <input type="checkbox" id="cb_def_synmon" class="cb-def-toggle">
   <input type="radio" name="synmon_flt" id="synmon_flt_all" class="cb-pg-radio-synmon" checked>
   <input type="radio" name="synmon_flt" id="synmon_flt_http" class="cb-pg-radio-synmon">
   <input type="radio" name="synmon_flt" id="synmon_flt_browser" class="cb-pg-radio-synmon">
@@ -2056,7 +2465,9 @@ SYNTHETICS_MONITORS_TABLE_TEMPLATE = f"""\
   <label for="synmon_flt_dns" class="cb-pg-btn cb-flt-btn-synmon-dns">dns</label>
   <label for="synmon_flt_tcp" class="cb-pg-btn cb-flt-btn-synmon-tcp">tcp</label>
   <label for="synmon_flt_icmp" class="cb-pg-btn cb-flt-btn-synmon-icmp">icmp</label>
+  {def_btn_html("synmon", "margin-left: auto;")}
 </div>
+{def_box_html("synmon", "Synthetics Monitor Usage & Cost Attribution Breakdown", "synthetics-*/_search", '<p>Per-monitor availability, check latency, and SKU cost attribution:</p><ul><li><strong>Availability &amp; Avg Duration:</strong> Percentage of <code>up</code> check runs and check-weighted mean duration (ms).</li><li><strong>Pool Attribution:</strong> Browser monitors split <code>synthetics_executions_ecu</code>; lightweight monitors (<code>http</code>, <code>icmp</code>, <code>tcp</code>, <code>dns</code>) split <code>synthetics_pings_ecu</code> proportionally by daily check count.</li></ul>')}
 <div class="cb-content-wrap cb-content-wrap-synmon">
 <table class="cb-t">
   <thead>
@@ -2114,6 +2525,7 @@ SYNTHETICS_DS_TABLE_TEMPLATE = f"""\
 <style>
 {PAGED_BASE_CSS}
 {paged_css("synds", 20, "table-row")}
+{def_css("synds")}
   table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; color: var(--cc-color-text); }}
   table.cb-t th {{
     position: sticky; top: 0; background: var(--cc-color-surface); z-index: 1;
@@ -2138,7 +2550,7 @@ SYNTHETICS_DS_TABLE_TEMPLATE = f"""\
 </style>
 {{% assign unit = rows[0]["unit"].value | default: "USD" %}}
 {{% assign sym = rows[0]["currency_symbol"].value | default: "$" %}}
-{paged_top("synds", 10, 20)}
+{paged_top("synds", 10, 20, def_id="synds", subtitle="Indexing, Search & Storage pool attribution for synthetics-* streams", def_title="Synthetics Data Stream Cost Attribution (synthetics-*)", def_badge="_cat/indices × realized_pool", def_body='<p>Attributes Elasticsearch data-tier costs (Indexing, Search, and Retained Storage) to individual <code>synthetics-*</code> data streams:</p><ul><li><strong>Formula:</strong> Each stream&#39;s daily indexing time, query time, and dataset size share is multiplied by the project&#39;s daily realized <code>indexing_ecu</code>, <code>query_ecu</code>, and <code>storage_ecu</code> pools.</li></ul>')}
 <table class="cb-t">
   <thead>
     <tr><th>Project</th><th>Project Type</th><th>Synthetic Type</th><th>Namespace</th><th>Data Stream</th><th class="num">Indexing ({{{{ sym }}}})</th><th class="num">Search ({{{{ sym }}}})</th><th class="num">Storage ({{{{ sym }}}})</th><th class="num">Attributed Cost ({{{{ unit }}}})</th></tr>
@@ -2178,8 +2590,18 @@ SYNTHETICS_DS_TABLE_TEMPLATE = f"""\
 """
 
 
-def make_bar_template(label_key: str, label_header: str) -> str:
-    pfx = f"bar_{label_key}"
+def make_bar_template(
+    label_key: str,
+    label_header: str,
+    *,
+    def_id: str = "",
+    subtitle: str = "",
+    def_title: str = "",
+    def_badge: str = "",
+    def_body: str = "",
+) -> str:
+    did = def_id or label_key
+    pfx = f"bar_{did}"
     if label_key == "category":
         bar_color_logic = """\
   {% assign _lbl = row["category"].value | default: "other" %}
@@ -2195,6 +2617,7 @@ def make_bar_template(label_key: str, label_header: str) -> str:
 <style>
 {PAGED_BASE_CSS}
 {paged_css(pfx, 8, "grid")}
+{def_css(did)}
   .cb-bars {{ display: flex; flex-direction: column; gap: 6px; padding: 4px 6px; }}
   .cb-bar-head {{
     display: grid;
@@ -2241,7 +2664,7 @@ def make_bar_template(label_key: str, label_header: str) -> str:
 {{% endfor %}}
 {{% assign denom_tot = tot_cost %}}
 {{% if denom_tot <= 0 %}}{{% assign denom_tot = 1.0 %}}{{% endif %}}
-{paged_top(pfx, 10, 8)}
+{paged_top(pfx, 10, 8, def_id=did, subtitle=subtitle, def_title=def_title or f"Cost by {label_header}", def_badge=def_badge or "ES|QL Breakdown", def_body=def_body or f"<p>Ranks <strong>{label_header}</strong> by total spend in the selected time range, showing both relative bar length (vs top item) and percentage share of total displayed spend.</p>")}
 <div class="cb-bars">
   <div class="cb-bar-head">
     <div>{label_header}</div>
@@ -2277,6 +2700,7 @@ UNALLOC_TABLE_TEMPLATE = f"""\
 <style>
 {PAGED_BASE_CSS}
 {paged_css("unalloc", 10, "table-row")}
+{def_css("unalloc")}
   table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; color: var(--cc-color-text); }}
   table.cb-t th {{
     position: sticky; top: 0; background: var(--cc-color-surface); z-index: 1;
@@ -2287,63 +2711,10 @@ UNALLOC_TABLE_TEMPLATE = f"""\
   table.cb-t td {{ padding: 6px 8px; border-bottom: 1px solid var(--cc-color-border); color: var(--cc-color-text); }}
   table.cb-t th.num, table.cb-t td.num {{ text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }}
   .cb-sym {{ font-weight: 500; opacity: 0.85; margin-right: 2px; }}
-  .cb-unalloc-hdr {{
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 4px 8px 8px 8px; font-size: 0.78rem; color: var(--cc-color-text);
-    position: relative;
-  }}
-  .cb-unalloc-hdr-txt {{ opacity: 0.7; }}
-  .cb-unalloc-info-wrap {{ position: relative; display: inline-flex; align-items: center; gap: 5px; }}
-  .cb-unalloc-info-btn {{
-    display: inline-flex; align-items: center; justify-content: center;
-    padding: 2px 8px; border-radius: 999px;
-    background: rgba(37, 99, 235, 0.12); color: #3b82f6;
-    border: 1px solid rgba(37, 99, 235, 0.32);
-    font-size: 0.72rem; font-weight: 600; cursor: pointer; user-select: none;
-    transition: all 0.15s ease;
-  }}
-  .cb-unalloc-info-btn:hover, #cb_unalloc_tbl_info:checked ~ .cb-unalloc-hdr .cb-unalloc-info-btn {{
-    background: #2563eb; color: #ffffff; border-color: #2563eb;
-  }}
-  .cb-unalloc-pop {{
-    display: none; position: absolute; top: calc(100% + 6px); right: 0;
-    width: 440px; max-width: 90vw; z-index: 60;
-    background: var(--cc-color-surface, #1d1e24); color: var(--cc-color-text, #dfe5ef);
-    border: 1px solid var(--cc-color-border, rgba(128,128,128,0.35));
-    border-left: 4px solid #3b82f6; border-radius: 8px; padding: 12px 14px;
-    box-shadow: 0 10px 28px rgba(0,0,0,0.28); font-size: 0.77rem; line-height: 1.45;
-  }}
-  .cb-unalloc-info-wrap:hover .cb-unalloc-pop,
-  #cb_unalloc_tbl_info:checked ~ .cb-unalloc-hdr .cb-unalloc-pop {{
-    display: block;
-  }}
-  .cb-unalloc-pop code {{
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.71rem;
-    padding: 1px 4px; border-radius: 3px; background: rgba(128,128,128,0.16);
-  }}
 </style>
 {{% assign unit = rows[0]["unit"].value | default: "USD" %}}
 {{% assign sym = rows[0]["currency_symbol"].value | default: "$" %}}
-<input type="checkbox" id="cb_unalloc_tbl_info" style="display:none">
-<div class="cb-unalloc-hdr">
-  <span class="cb-unalloc-hdr-txt">Organization-level &amp; pass-through line items excluded from workload driver pools (<code>is_allocatable: false</code>)</span>
-  <div class="cb-unalloc-info-wrap">
-    <label for="cb_unalloc_tbl_info" class="cb-unalloc-info-btn" title="Click or hover for definition">i &nbsp;Definition</label>
-    <div class="cb-unalloc-pop">
-      <div style="font-weight:700; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center;">
-        <span>What appears in this table?</span>
-        <label for="cb_unalloc_tbl_info" style="cursor:pointer; font-size:0.7rem; opacity:0.65;">&#x2715; Close</label>
-      </div>
-      <p style="margin:0 0 6px 0;">Line items classified with <code>is_allocatable: false</code> and <code>allocation_driver: "none"</code> during billing ingestion:</p>
-      <ul style="margin:0; padding-left:16px;">
-        <li><strong>Support Tiers</strong> (<code>*support*</code>) &mdash; organization-wide support contracts (e.g. <code>serverless.support-tier4</code>).</li>
-        <li><strong>Network Egress &amp; Data Transfer</strong> (<code>*egress*</code>, <code>*data-transfer*</code>) &mdash; infrastructure pass-through charges not tied to a single data stream or model.</li>
-        <li><strong>Unclassified SKUs</strong> &mdash; any non-workload administrative or account-level adjustment.</li>
-      </ul>
-    </div>
-  </div>
-</div>
-{paged_top("unalloc", 10, 10)}
+{paged_top("unalloc", 10, 10, def_id="unalloc", subtitle="Organization-level & pass-through line items (is_allocatable: false)", def_title="Unallocatable & Pass-Through Charges", def_badge='is_allocatable: false · driver: "none"', def_body='<p>Line items classified with <code>is_allocatable: false</code> and <code>allocation_driver: &quot;none&quot;</code> during billing ingestion:</p><ul><li><strong>Support Tiers (<code>*support*</code>):</strong> Organization-wide support contracts (e.g. <code>serverless.support-tier4</code>).</li><li><strong>Network Egress &amp; Data Transfer (<code>*egress*</code>, <code>*data-transfer*</code>):</strong> Infrastructure pass-through charges not tied to a single data stream or model.</li><li><strong>Unclassified SKUs:</strong> Any non-workload administrative or account-level adjustment.</li></ul>')}
 <table class="cb-t">
   <thead>
     <tr><th>Category</th><th>Cost Type</th><th>SKU</th><th>Project</th><th class="num">Units (ECU)</th><th class="num">Cost ({{{{ unit }}}})</th></tr>
@@ -2378,6 +2749,7 @@ INVOICE_TABLE_TEMPLATE = f"""\
 <style>
 {PAGED_BASE_CSS}
 {paged_css("inv", 25, "table-row")}
+{def_css("inv")}
   table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; color: var(--cc-color-text); }}
   table.cb-t th {{
     position: sticky; top: 0; background: var(--cc-color-surface); z-index: 1;
@@ -2397,7 +2769,7 @@ INVOICE_TABLE_TEMPLATE = f"""\
 </style>
 {{% assign unit = rows[0]["unit"].value | default: "USD" %}}
 {{% assign sym = rows[0]["currency_symbol"].value | default: "$" %}}
-{paged_top("inv", 10, 25)}
+{paged_top("inv", 10, 25, def_id="inv", subtitle="Full invoice SKU reconciliation by project, category & allocation driver", def_title="Invoice Reconciliation Detail", def_badge="serverless_billing_cost_lookup", def_body='<p>Complete SKU-level invoice ledger across all discovered projects:</p><ul><li><strong>Driver:</strong> Workload driver pool assigned to the SKU (<code>indexing</code>, <code>query</code>, <code>storage</code>, <code>ai</code>, <code>synthetics</code>, or <code>none</code>).</li><li><strong>Quantity, Units (ECU) &amp; Cost:</strong> Raw metered SKU quantity, Elastic Consumption Units, and local currency spend (<code>ECU &times; chargeable_unit_rate</code>).</li></ul>')}
 <table class="cb-t">
   <thead>
     <tr><th>Project</th><th>Type</th><th>Category</th><th>Cost Type</th><th>SKU</th><th>Driver</th><th class="num">Quantity</th><th class="num">Units (ECU)</th><th class="num">Cost ({{{{ unit }}}})</th></tr>
@@ -2437,6 +2809,7 @@ DATASTREAM_COST_TABLE_TEMPLATE = f"""\
 <style>
 {PAGED_BASE_CSS}
 {paged_css("dscost", 25, "table-row")}
+{def_css("dscost")}
   .cb-flt-bar-dscost {{ display: flex; align-items: center; gap: 5px; padding: 2px 2px 6px 2px; font-size: 0.75rem; color: var(--cc-color-text); flex-shrink: 0; flex-wrap: wrap; }}
   .cb-flt-lbl {{ opacity: 0.72; font-weight: 600; font-size: 0.73rem; text-transform: uppercase; letter-spacing: 0.03em; margin-right: 2px; }}
   #dscost_flt_all:checked ~ .cb-flt-bar-dscost .cb-flt-btn-dscost-all {{ background: var(--cc-color-primary); color: #ffffff !important; border-color: var(--cc-color-primary); font-weight: 700; }}
@@ -2483,6 +2856,7 @@ DATASTREAM_COST_TABLE_TEMPLATE = f"""\
 {{% if _total_pages < 1 %}}{{% assign _total_pages = 1 %}}{{% endif %}}
 {{% if _total_pages > 25 %}}{{% assign _total_pages = 25 %}}{{% endif %}}
 <div class="cb-paged-wrap cb-paged-wrap-dscost">
+  <input type="checkbox" id="cb_def_dscost" class="cb-def-toggle">
   <input type="radio" name="dscost_flt" id="dscost_flt_all" class="cb-pg-radio-dscost" checked>
   <input type="radio" name="dscost_flt" id="dscost_flt_logs" class="cb-pg-radio-dscost">
   <input type="radio" name="dscost_flt" id="dscost_flt_metrics" class="cb-pg-radio-dscost">
@@ -2500,7 +2874,9 @@ DATASTREAM_COST_TABLE_TEMPLATE = f"""\
   <label for="dscost_flt_traces" class="cb-pg-btn cb-flt-btn-dscost-traces">traces</label>
   <label for="dscost_flt_synthetics" class="cb-pg-btn cb-flt-btn-dscost-synthetics">synthetics</label>
   <label for="dscost_flt_other" class="cb-pg-btn cb-flt-btn-dscost-other">other</label>
+  {def_btn_html("dscost", "margin-left: auto;")}
 </div>
+{def_box_html("dscost", "Data Stream Cost Attribution", "_cat/indices × realized_pool", '<p>Attributes daily project workload pools (Indexing, Search, and Retained Storage) to individual data streams:</p><ul><li><strong>Indexing Cost:</strong> <code>indexing_ecu &times; rate &times; (datastream_sum_indexing_time / deployment_sum_indexing_time)</code></li><li><strong>Search Cost:</strong> <code>query_ecu &times; rate &times; (datastream_sum_query_time / deployment_sum_query_time)</code></li><li><strong>Storage Cost:</strong> <code>storage_ecu &times; rate &times; (datastream_sum_data_set_store_size / deployment_sum_data_set_store_size)</code></li></ul>')}
 <div class="cb-content-wrap cb-content-wrap-dscost">
 <table class="cb-t">
   <thead>
@@ -2545,6 +2921,7 @@ DATASTREAM_METRICS_TABLE_TEMPLATE = f"""\
 <style>
 {PAGED_BASE_CSS}
 {paged_css("dsmet", 25, "table-row")}
+{def_css("dsmet")}
   .cb-flt-bar-dsmet {{ display: flex; align-items: center; gap: 5px; padding: 2px 2px 6px 2px; font-size: 0.75rem; color: var(--cc-color-text); flex-shrink: 0; flex-wrap: wrap; }}
   .cb-flt-lbl {{ opacity: 0.72; font-weight: 600; font-size: 0.73rem; text-transform: uppercase; letter-spacing: 0.03em; margin-right: 2px; }}
   #dsmet_flt_all:checked ~ .cb-flt-bar-dsmet .cb-flt-btn-dsmet-all {{ background: var(--cc-color-primary); color: #ffffff !important; border-color: var(--cc-color-primary); font-weight: 700; }}
@@ -2588,6 +2965,7 @@ DATASTREAM_METRICS_TABLE_TEMPLATE = f"""\
 {{% if _total_pages < 1 %}}{{% assign _total_pages = 1 %}}{{% endif %}}
 {{% if _total_pages > 25 %}}{{% assign _total_pages = 25 %}}{{% endif %}}
 <div class="cb-paged-wrap cb-paged-wrap-dsmet">
+  <input type="checkbox" id="cb_def_dsmet" class="cb-def-toggle">
   <input type="radio" name="dsmet_flt" id="dsmet_flt_all" class="cb-pg-radio-dsmet" checked>
   <input type="radio" name="dsmet_flt" id="dsmet_flt_logs" class="cb-pg-radio-dsmet">
   <input type="radio" name="dsmet_flt" id="dsmet_flt_metrics" class="cb-pg-radio-dsmet">
@@ -2605,7 +2983,9 @@ DATASTREAM_METRICS_TABLE_TEMPLATE = f"""\
   <label for="dsmet_flt_traces" class="cb-pg-btn cb-flt-btn-dsmet-traces">traces</label>
   <label for="dsmet_flt_synthetics" class="cb-pg-btn cb-flt-btn-dsmet-synthetics">synthetics</label>
   <label for="dsmet_flt_other" class="cb-pg-btn cb-flt-btn-dsmet-other">other</label>
+  {def_btn_html("dsmet", "margin-left: auto;")}
 </div>
+{def_box_html("dsmet", "Data Stream Harvested Usage Metrics (_cat/indices)", "GET /_cat/indices", '<p>Raw data-plane usage telemetry harvested from each Serverless project via <code>GET /_cat/indices</code>:</p><ul><li><strong>Indexing Time (ms):</strong> Cumulative shard indexing time (<code>indexing.index_time</code>) used to weight the Indexing pool.</li><li><strong>Search Query Time (ms):</strong> Cumulative shard query execution time (<code>search.query_time</code>) used to weight the Search pool.</li><li><strong>Avg Dataset Size (MB):</strong> Mean primary dataset store size (<code>dataset.size</code>) used to weight the Retained Storage pool.</li></ul>')}
 <div class="cb-content-wrap cb-content-wrap-dsmet">
 <table class="cb-t">
   <thead>
@@ -2646,7 +3026,8 @@ CONFIG_UNIFIED_TEMPLATE = f"""\
 <style>
 {PAGED_BASE_CSS}
 {paged_css("cfgreg", 20, "table-row")}
-  .cb-cfg {{ display: flex; flex-direction: column; gap: var(--cc-space-m, 12px); color: var(--cc-color-text); }}
+{def_css("cfg_unified")}
+  .cb-cfg {{ position: relative; width: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: var(--cc-space-m, 12px); color: var(--cc-color-text); }}
 
   /* Top Banner */
   .cb-cfg-banner {{
@@ -2865,6 +3246,7 @@ CONFIG_UNIFIED_TEMPLATE = f"""\
 {liquid_money_block("_total_org_ecu", "fmt_org_ecu", with_decimals=True)}
 
 <div class="cb-cfg">
+  <input type="checkbox" id="cb_def_cfg_unified" class="cb-def-toggle">
   <!-- Top Banner -->
   <div class="cb-cfg-banner">
     <div>
@@ -2892,8 +3274,10 @@ CONFIG_UNIFIED_TEMPLATE = f"""\
           <span class="cb-dot cb-dot-warn"></span> <span>Awaiting First Discovery</span>
         {{% endif %}}
       </div>
+      {def_btn_html("cfg_unified")}
     </div>
   </div>
+  {def_box_html("cfg_unified", "Fleet Configuration, API Key Data Streams & Workload Registry Definitions", "serverless_project_status_lookup", '<div class="cb-def-grid"><div class="cb-def-item"><strong>1. Cloud Billing &amp; Control Plane</strong><span><code>cloud_api_key</code> + <code>organization_id</code> poll daily closed-day billing (<code>/api/v2/billing/organizations/&lt;org_id&gt;/costs/instances</code>) and discover active Serverless projects across Elasticsearch, Observability, and Security.</span></div><div class="cb-def-item"><strong>2. Data Plane API Keys</strong><span><code>hub_es_api_key</code> authenticates the local hub project; <code>project_api_keys</code> (<code>&lt;project_id&gt;:&lt;encoded_key&gt;</code>) authenticate remote projects for <code>_cat/indices</code>, <code>_ml/trained_models/_stats</code>, and <code>synthetics-*/_search</code>.</span></div><div class="cb-def-item"><strong>3. Health &amp; SKU Fallback</strong><span><code>ok</code> = live data-plane harvest active; <code>inactive</code> = decommissioned in Control Plane (historical billing preserved); <code>empty_or_unauthorized</code> = needs remote API key (Synthetics falls back to billing SKU derivation when available).</span></div><div class="cb-def-item"><strong>4. Currency &amp; Rate Settings</strong><span><code>chargeable_unit_rate</code>, <code>chargeable_unit_rate_unit</code>, and <code>currency_symbol</code> convert raw Elastic Consumption Units (ECU) into local currency across all dashboards.</span></div></div>', mode="cfg")}
 
   <!-- KPI Strip -->
   <div class="cb-cfg-kpis">
@@ -3337,6 +3721,7 @@ ALLOC_TABLE_TEMPLATE = f"""\
 <style>
 {PAGED_BASE_CSS}
 {paged_css("alloc", 10, "table-row")}
+{def_css("alloc")}
   table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; color: var(--cc-color-text); }}
   table.cb-t th {{
     position: sticky; top: 0; background: var(--cc-color-surface); z-index: 1;
@@ -3366,7 +3751,7 @@ ALLOC_TABLE_TEMPLATE = f"""\
 {{% endfor %}}
 {{% assign denom_tot = tot_cost %}}
 {{% if denom_tot <= 0 %}}{{% assign denom_tot = 1.0 %}}{{% endif %}}
-{paged_top("alloc", 10, 10)}
+{paged_top("alloc", 10, 10, def_id="alloc", subtitle="Allocatable project spend by cost type & workload driver", def_title="Cost Allocation by Project", def_badge='is_allocatable: true · driver != "none"', def_body='<p>Breaks down allocatable project spend by <strong>Cost Type</strong> and <strong>Allocation Driver</strong>:</p><ul><li><strong>Drivers:</strong> <code>indexing</code> (ingest VCUs), <code>query</code> (search VCUs), <code>storage</code> (retained storage), <code>ai</code> (ML/Inference/Agent Builder), and <code>synthetics</code> (pings &amp; browser executions).</li><li><strong>Share:</strong> Percentage share of total allocatable workload spend in the selected time range.</li></ul>')}
 <table class="cb-t">
   <thead>
     <tr><th>Project</th><th>Type</th><th>Cost Type</th><th>Driver</th><th>Share</th><th class="num">Cost ({{{{ unit }}}})</th></tr>
@@ -3597,7 +3982,15 @@ def build_billing() -> dict:
     p, _ = custom_panel(
         stable_uuid("cc-billing-project"),
         "Cost by project",
-        make_bar_template("project", "Project"),
+        make_bar_template(
+            "project",
+            "Project",
+            def_id="bill_proj",
+            subtitle="Total organization invoice spend ranked by project",
+            def_title="Cost by Project",
+            def_badge="serverless_billing_cost_lookup",
+            def_body='<p>Ranks all discovered Serverless projects by total billed spend (<code>ECU &times; chargeable_unit_rate</code>) in the selected time range:</p><ul><li><strong>Inactive Badge:</strong> Projects decommissioned in the Control Plane retain their historical billing and display an <code>inactive</code> pill.</li><li><strong>Share:</strong> Percentage share of total organization spend across all projects.</li></ul>',
+        ),
         f"""{COST_PRELUDE}
 | STATS cost = SUM(cost), is_inactive = MAX(CASE(COALESCE(last_status, "") == "inactive", 1, 0)), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project
 | SORT cost DESC, project ASC
@@ -3613,7 +4006,15 @@ def build_billing() -> dict:
     p, _ = custom_panel(
         stable_uuid("cc-billing-type"),
         "Cost by cost category",
-        make_bar_template("category", "Cost category"),
+        make_bar_template(
+            "category",
+            "Cost category",
+            def_id="bill_cat",
+            subtitle="Total organization spend by Cloud Billing category",
+            def_title="Cost by Cost Category",
+            def_badge="cost_category",
+            def_body='<p>Aggregates invoice line items by high-level Cloud Billing category:</p><ul><li><strong><code>data_tier</code>:</strong> Core Serverless compute &amp; storage (<code>ingest-vcu</code>, <code>search-vcu</code>, <code>retained</code>, <code>ml-vcu</code>).</li><li><strong><code>platform</code>:</strong> Dedicated AI inference, Agent Builder, and Synthetics SKUs.</li><li><strong><code>transfer</code> / <code>snapshot</code> / <code>support</code>:</strong> Network egress, snapshot storage, and organization support tiers.</li></ul>',
+        ),
         f"""{COST_PRELUDE}
 | WHERE COALESCE(sku, "none") != "none"
 | STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY category_label
@@ -3791,7 +4192,15 @@ def build_usage() -> dict:
     p, _ = custom_panel(
         stable_uuid("cc-usage-namespace"),
         "Attributed cost by namespace",
-        make_bar_template("namespace", "Namespace"),
+        make_bar_template(
+            "namespace",
+            "Namespace",
+            def_id="usage_ns",
+            subtitle="Data-tier spend (Indexing + Search + Storage) by data stream namespace",
+            def_title="Attributed Cost by Namespace",
+            def_badge="ds_namespace",
+            def_body='<p>Sums daily attributed data-stream costs (<code>indexing_cost + query_cost + storage_cost</code>) grouped by <code>ds_namespace</code> (the <code>&lt;namespace&gt;</code> segment of <code>&lt;type&gt;-&lt;dataset&gt;-&lt;namespace&gt;</code>):</p><ul><li>Enables tenant, environment, or business-unit chargeback across shared Serverless projects.</li></ul>',
+        ),
         f"""FROM {USAGE}
 {TIME_FILTER_ESQL}
 {USAGE_JOIN_BODY}
@@ -3818,7 +4227,15 @@ def build_usage() -> dict:
     p, _ = custom_panel(
         stable_uuid("cc-usage-dstype"),
         "Attributed cost by data stream type",
-        make_bar_template("ds_type", "Data stream type"),
+        make_bar_template(
+            "ds_type",
+            "Data stream type",
+            def_id="usage_dstype",
+            subtitle="Data-tier spend (Indexing + Search + Storage) by signal type",
+            def_title="Attributed Cost by Data Stream Type",
+            def_badge="ds_type",
+            def_body='<p>Sums daily attributed data-stream costs (<code>indexing_cost + query_cost + storage_cost</code>) grouped by signal type (<code>logs</code>, <code>metrics</code>, <code>traces</code>, <code>synthetics</code>, <code>other</code>):</p><ul><li>Combines shard indexing time, search query time, and dataset storage shares weighted against daily project SKU pools.</li></ul>',
+        ),
         f"""FROM {USAGE}
 {TIME_FILTER_ESQL}
 {USAGE_JOIN_BODY}
@@ -3984,7 +4401,15 @@ def build_ai() -> dict:
     p, _ = custom_panel(
         stable_uuid("cc-ai-by-project"),
         "Attributed AI & ML cost by project",
-        make_bar_template("project", "Project"),
+        make_bar_template(
+            "project",
+            "Project",
+            def_id="ai_proj",
+            subtitle="Attributed AI & ML inference pool spend by project",
+            def_title="Attributed AI & ML Cost by Project",
+            def_badge="serverless_ai_model_contribution_lookup",
+            def_body='<p>Ranks projects by total attributed AI &amp; ML spend across all deployed models:</p><ul><li>Uses the project&#39;s daily dedicated AI pool (<code>ai_ecu</code>) when present, or the Search VCU pool (<code>query_ecu</code>) when inference runs on shared search nodes.</li></ul>',
+        ),
         ai_by_proj_esql,
         24,
         8,
@@ -4150,7 +4575,15 @@ def build_synthetics() -> dict:
     p, _ = custom_panel(
         stable_uuid("cc-synthetics-by-monitor"),
         "Attributed synthetics cost by monitor",
-        make_bar_template("monitor_label", "Monitor"),
+        make_bar_template(
+            "monitor_label",
+            "Monitor",
+            def_id="synth_mon",
+            subtitle="Attributed Synthetics SKU spend ranked by monitor",
+            def_title="Attributed Synthetics Cost by Monitor",
+            def_badge="serverless_synthetics_monitor_contribution_lookup",
+            def_body='<p>Ranks individual Synthetics monitors (<code>monitor_name (monitor_type)</code>) by attributed daily SKU spend:</p><ul><li>Browser monitors split the daily Browser Execution SKU pool (<code>synthetics_executions_ecu</code>); lightweight monitors split the daily Lightweight Ping SKU pool (<code>synthetics_pings_ecu</code>) proportionally by check count.</li></ul>',
+        ),
         f"""FROM {SYNTHETICS_USAGE}
 {TIME_FILTER_ESQL}
 {SYNTHETICS_JOIN_BODY}
@@ -4170,7 +4603,15 @@ def build_synthetics() -> dict:
     p, _ = custom_panel(
         stable_uuid("cc-synthetics-by-project"),
         "Synthetics SKU cost by project",
-        make_bar_template("project", "Project"),
+        make_bar_template(
+            "project",
+            "Project",
+            def_id="synth_proj",
+            subtitle="Direct Synthetics SKU spend (pings + browser executions) by project",
+            def_title="Synthetics SKU Cost by Project",
+            def_badge="serverless_billing_cost_lookup",
+            def_body='<p>Ranks projects by direct Cloud Billing Synthetics SKU spend (<code>*synthetic-pings*</code> and <code>*synthetic-executions*</code>).</p>',
+        ),
         f"""{COST_PRELUDE}
 | WHERE cost_type_label == "synthetics" OR allocation_driver == "synthetics" OR sku LIKE "*synthetic*"
 | STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project
@@ -4209,7 +4650,15 @@ def build_synthetics() -> dict:
     p, _ = custom_panel(
         stable_uuid("cc-synthetics-ds-namespace"),
         "Synthetics data stream cost by synthetic type & namespace",
-        make_bar_template("synth_stream_label", "Synthetic Type / Namespace"),
+        make_bar_template(
+            "synth_stream_label",
+            "Synthetic Type / Namespace",
+            def_id="synth_ds_ns",
+            subtitle="Data-tier spend (Indexing + Search + Storage) by synthetic dataset & namespace",
+            def_title="Synthetics Data Stream Cost by Synthetic Type & Namespace",
+            def_badge="_cat/indices × realized_pool",
+            def_body='<p>Aggregates Elasticsearch data-tier spend (Indexing + Search + Retained Storage) for <code>synthetics-*</code> data streams grouped by dataset type (<code>http</code>, <code>browser</code>, <code>browser.network</code>, <code>browser.screenshot</code>, <code>icmp</code>, <code>tcp</code>, <code>dns</code>) and namespace.</p>',
+        ),
         f"""FROM {USAGE}
 {TIME_FILTER_ESQL}
 | WHERE ds_type == "synthetics" OR datastream LIKE "*synthetics*"
