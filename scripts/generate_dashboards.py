@@ -39,6 +39,7 @@ REALIZED_POOL = "serverless_billing_realized_pool_lookup"
 USAGE = "serverless_datastream_contribution_lookup"
 PROJECT_CONTRIB = "serverless_project_contribution_lookup"
 AI_USAGE = "serverless_ai_model_contribution_lookup"
+SYNTHETICS_USAGE = "serverless_synthetics_monitor_contribution_lookup"
 PROJECT_STATUS = "serverless_project_status_lookup"
 
 ALERT_UNALLOCATED = "chargeback_serverless-alert-unallocated-ecu"
@@ -138,6 +139,27 @@ AI_JOIN_BODY = f"""| EVAL ts = @timestamp
 | EVAL conf_chargeable_unit_rate = COALESCE(conf_chargeable_unit_rate, _ps_rate, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _ps_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _ps_sym, _u_sym, "$")
 | EVAL rate = COALESCE(conf_chargeable_unit_rate, 1.0)
 {CURRENCY_RESOLVE_ESQL}"""
+
+# Shared ES|QL join body for SYNTHETICS_USAGE (serverless_synthetics_monitor_contribution_lookup):
+SYNTHETICS_JOIN_BODY = AI_JOIN_BODY
+
+# Shared ES|QL monitor cost attribution formula: attributes browser execution SKU pool across
+# browser monitors and lightweight ping SKU pool across http/icmp/tcp/dns monitors by check volume.
+SYNTHETICS_MONITOR_COST_EVAL = """| EVAL monitor_type = COALESCE(monitor_type, "http")
+| EVAL is_browser = (monitor_type == "browser")
+| EVAL pings_pool_cost = COALESCE(synthetics_pings_ecu, 0.0) * rate
+| EVAL exec_pool_cost = COALESCE(synthetics_executions_ecu, 0.0) * rate
+| EVAL tot_pool_cost = COALESCE(synthetics_ecu, 0.0) * rate
+| EVAL chk = COALESCE(check_count, 0)
+| EVAL b_chk = CASE(is_browser, chk, 0)
+| EVAL p_chk = CASE(NOT is_browser, chk, 0)
+| INLINE STATS day_b_checks = SUM(b_chk), day_p_checks = SUM(p_chk), day_tot_checks = SUM(chk) BY composite_key
+| EVAL day_monitor_cost = CASE(
+    (pings_pool_cost > 0.0 OR exec_pool_cost > 0.0) AND is_browser AND day_b_checks > 0, (TO_DOUBLE(chk) / TO_DOUBLE(day_b_checks)) * exec_pool_cost,
+    (pings_pool_cost > 0.0 OR exec_pool_cost > 0.0) AND NOT is_browser AND day_p_checks > 0, (TO_DOUBLE(chk) / TO_DOUBLE(day_p_checks)) * pings_pool_cost,
+    tot_pool_cost > 0.0 AND day_tot_checks > 0, (TO_DOUBLE(chk) / TO_DOUBLE(day_tot_checks)) * tot_pool_cost,
+    0.0
+  )"""
 
 
 def stable_uuid(name: str) -> str:
@@ -1189,7 +1211,7 @@ AI_MODELS_TEMPLATE = f"""\
 
 SYNTHETICS_KPI_TEMPLATE = f"""\
 <style>
-  .cb-kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--cc-space-s, 8px); margin: 0; padding: 0 0 4px 0; }}
+  .cb-kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: var(--cc-space-s, 8px); margin: 0; padding: 0 0 4px 0; }}
   .cb-kpi {{
     background: var(--cc-color-surface);
     border: 1px solid var(--cc-color-border);
@@ -1203,8 +1225,9 @@ SYNTHETICS_KPI_TEMPLATE = f"""\
 </style>
 {{% assign r = rows[0] %}}
 {{% assign synth_spend = r["synthetics_spend"].value | default: 0.0 %}}
+{{% assign pings_spend = r["pings_spend"].value | default: 0.0 %}}
+{{% assign exec_spend = r["exec_spend"].value | default: 0.0 %}}
 {{% assign org_spend = r["total_org_spend"].value | default: 0.0 %}}
-{{% assign synth_ecu = r["synthetics_ecu"].value | default: 0.0 %}}
 {{% assign synth_runs = r["synthetics_runs"].value | default: 0.0 %}}
 {{% assign proj_cnt = r["project_count"].value | default: 0 %}}
 {{% assign cost_per_k = r["cost_per_1k"].value | default: 0.0 %}}
@@ -1213,30 +1236,40 @@ SYNTHETICS_KPI_TEMPLATE = f"""\
 {{% assign denom = org_spend %}}
 {{% if denom <= 0 %}}{{% assign denom = 1.0 %}}{{% endif %}}
 {{% assign synth_pct = synth_spend | times: 100.0 | divided_by: denom | round: 1 %}}
+{{% assign s_denom = synth_spend %}}
+{{% if s_denom <= 0 %}}{{% assign s_denom = 1.0 %}}{{% endif %}}
+{{% assign pings_pct = pings_spend | times: 100.0 | divided_by: s_denom | round: 1 %}}
+{{% assign exec_pct = exec_spend | times: 100.0 | divided_by: s_denom | round: 1 %}}
 {liquid_money_block("synth_spend", "fmt_synth_spend", with_decimals=True)}
-{liquid_money_block("synth_ecu", "fmt_synth_ecu", with_decimals=True)}
+{liquid_money_block("pings_spend", "fmt_pings_spend", with_decimals=True)}
+{liquid_money_block("exec_spend", "fmt_exec_spend", with_decimals=True)}
 {liquid_money_block("synth_runs", "fmt_synth_runs", with_decimals=False)}
 {liquid_money_block("cost_per_k", "fmt_cost_per_k", with_decimals=True)}
 <div class="cb-kpis">
   <div class="cb-kpi">
     <div class="cb-kpi-label">Direct Synthetics Spend ({{{{ unit }}}})</div>
     <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_synth_spend }}}}</span></div>
-    <div class="cb-kpi-sub">{{{{ synth_pct }}}}% of org spend · synthetics SKUs</div>
+    <div class="cb-kpi-sub">{{{{ synth_pct }}}}% of org spend · pings + browser</div>
   </div>
   <div class="cb-kpi">
-    <div class="cb-kpi-label">Billed Check Quantity</div>
+    <div class="cb-kpi-label">Lightweight Ping Spend ({{{{ unit }}}})</div>
+    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_pings_spend }}}}</span></div>
+    <div class="cb-kpi-sub">{{{{ pings_pct }}}}% · http, icmp, tcp &amp; dns</div>
+  </div>
+  <div class="cb-kpi">
+    <div class="cb-kpi-label">Browser Execution Spend ({{{{ unit }}}})</div>
+    <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_exec_spend }}}}</span></div>
+    <div class="cb-kpi-sub">{{{{ exec_pct }}}}% · Playwright browser journeys</div>
+  </div>
+  <div class="cb-kpi">
+    <div class="cb-kpi-label">Total Check Executions</div>
     <div class="cb-kpi-value">{{{{ fmt_synth_runs }}}}</div>
-    <div class="cb-kpi-sub">Total synthetic test runs / units</div>
-  </div>
-  <div class="cb-kpi">
-    <div class="cb-kpi-label">Synthetics Units (ECU)</div>
-    <div class="cb-kpi-value">{{{{ fmt_synth_ecu }}}}</div>
-    <div class="cb-kpi-sub">Total billed synthetics ECU</div>
+    <div class="cb-kpi-sub">Lightweight pings + browser runs</div>
   </div>
   <div class="cb-kpi">
     <div class="cb-kpi-label">Unit Cost (1k Checks)</div>
     <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_cost_per_k }}}}</span></div>
-    <div class="cb-kpi-sub">Effective check unit economics</div>
+    <div class="cb-kpi-sub">Blended check unit economics</div>
   </div>
   <div class="cb-kpi">
     <div class="cb-kpi-label">Billed Synthetics Projects</div>
@@ -1724,6 +1757,7 @@ DAILY_PROJECT_COST_TEMPLATE = make_daily_cost_template("project", "Project", is_
 DAILY_CATEGORY_COST_TEMPLATE = make_daily_cost_template("category", "Cost category", is_category=True)
 DAILY_DRIVER_COST_TEMPLATE = make_daily_cost_template("driver", "Workload driver", is_category=False)
 DAILY_MODEL_COST_TEMPLATE = make_daily_cost_template("model_id", "Model", is_category=False)
+DAILY_SYNTH_TYPE_COST_TEMPLATE = make_daily_cost_template("monitor_type", "Synthetic type", is_category=False)
 
 
 AI_BILLING_TABLE_TEMPLATE = f"""\
@@ -1824,6 +1858,311 @@ SYNTHETICS_SKU_TABLE_TEMPLATE = f"""\
   </tbody>
 </table>
 {paged_bottom("synbill")}
+"""
+
+
+SYNTHETICS_TYPE_BREAKDOWN_TEMPLATE = f"""\
+<style>
+{PAGED_BASE_CSS}
+{paged_css("syntype", 8, "table-row")}
+  table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; color: var(--cc-color-text); }}
+  table.cb-t th {{
+    position: sticky; top: 0; background: var(--cc-color-surface); z-index: 1;
+    text-align: left; padding: 6px 8px; border-bottom: 2px solid var(--cc-color-border);
+    font-weight: 600; opacity: 0.75; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em;
+    color: var(--cc-color-text);
+  }}
+  table.cb-t td {{ padding: 6px 8px; border-bottom: 1px solid var(--cc-color-border); color: var(--cc-color-text); }}
+  table.cb-t th.num, table.cb-t td.num {{ text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }}
+  .cb-sym {{ font-weight: 500; opacity: 0.85; margin-right: 2px; }}
+  .cb-share-wrap {{ display: flex; align-items: center; gap: 6px; min-width: 110px; }}
+  .cb-bar-track {{
+    flex: 1; height: 10px; background: var(--cc-color-border);
+    border-radius: var(--cc-radius-s); overflow: hidden; min-width: 55px;
+  }}
+  .cb-bar-fill {{ height: 100%; min-width: 2px; }}
+  .cb-share-pct {{ width: 42px; text-align: right; font-variant-numeric: tabular-nums; font-size: 0.76rem; opacity: 0.78; color: var(--cc-color-text); flex-shrink: 0; }}
+  .cb-st-pill {{
+    display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 0.73rem;
+    font-weight: 600; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    text-transform: uppercase; letter-spacing: 0.03em;
+    border: 1px solid rgba(128, 128, 128, 0.25); background: rgba(128, 128, 128, 0.12);
+  }}
+  .cb-st-http {{ background: rgba(37, 99, 235, 0.14); color: #3b82f6; border-color: rgba(37, 99, 235, 0.35); }}
+  .cb-st-browser {{ background: rgba(147, 51, 234, 0.14); color: #a855f7; border-color: rgba(147, 51, 234, 0.35); }}
+  .cb-st-icmp {{ background: rgba(16, 185, 129, 0.14); color: #10b981; border-color: rgba(16, 185, 129, 0.35); }}
+  .cb-st-tcp {{ background: rgba(245, 158, 11, 0.14); color: #f59e0b; border-color: rgba(245, 158, 11, 0.35); }}
+  .cb-st-dns {{ background: rgba(6, 182, 212, 0.14); color: #06b6d4; border-color: rgba(6, 182, 212, 0.35); }}
+</style>
+{{% assign unit = rows[0]["unit"].value | default: "USD" %}}
+{{% assign sym = rows[0]["currency_symbol"].value | default: "$" %}}
+{{% assign max_cost = rows[0]["cost"].value | default: 1.0 %}}
+{{% if max_cost <= 0 %}}{{% assign max_cost = 1.0 %}}{{% endif %}}
+{{% assign tot_cost = 0.0 %}}
+{{% for r in rows %}}
+  {{% assign rc = r["cost"].value | default: 0.0 %}}
+  {{% assign tot_cost = tot_cost | plus: rc %}}
+{{% endfor %}}
+{{% assign denom_tot = tot_cost %}}
+{{% if denom_tot <= 0 %}}{{% assign denom_tot = 1.0 %}}{{% endif %}}
+{paged_top("syntype", 10, 8)}
+<table class="cb-t">
+  <thead>
+    <tr><th>Synthetic Type</th><th class="num">Monitors</th><th class="num">Check Runs</th><th>Cost Share</th><th class="num">Attributed Cost ({{{{ unit }}}})</th></tr>
+  </thead>
+  <tbody>
+  {{% if _total_items == 0 %}}
+    <tr><td colspan="5" class="cb-empty">No synthetics monitor telemetry in the selected time range.</td></tr>
+  {{% else %}}
+  {{% for row in rows %}}
+    {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
+    {{% assign mtype = row["monitor_type"].value | default: "http" | downcase %}}
+    {{% assign cost = row["cost"].value | default: 0.0 %}}
+    {{% assign checks = row["checks"].value | default: 0 %}}
+    {{% assign monitors = row["monitors"].value | default: 0 %}}
+    {{% assign bar_pct = cost | times: 100.0 | divided_by: max_cost | round: 1 %}}
+    {{% assign share_pct = cost | times: 100.0 | divided_by: denom_tot | round: 1 %}}
+    {{% if mtype == "http" %}}{{% assign _bcol = "#3b82f6" %}}
+    {{% elsif mtype == "browser" %}}{{% assign _bcol = "#a855f7" %}}
+    {{% elsif mtype == "icmp" %}}{{% assign _bcol = "#10b981" %}}
+    {{% elsif mtype == "tcp" %}}{{% assign _bcol = "#f59e0b" %}}
+    {{% elsif mtype == "dns" %}}{{% assign _bcol = "#06b6d4" %}}
+    {{% else %}}{{% assign _bcol = "var(--cc-vis-0)" %}}{{% endif %}}
+{liquid_money_block("cost", "fmt_cost", with_decimals=True)}
+{liquid_money_block("checks", "fmt_checks", with_decimals=False)}
+    <tr class="cb-pg-row-syntype cb-pg-syntype-{{{{ _row_pg }}}}">
+      <td><span class="cb-st-pill cb-st-{{{{ mtype }}}}">{{{{ mtype }}}}</span></td>
+      <td class="num">{{{{ monitors }}}}</td>
+      <td class="num">{{{{ fmt_checks }}}}</td>
+      <td>
+        <div class="cb-share-wrap">
+          <div class="cb-bar-track"><div class="cb-bar-fill" style="width: {{{{ bar_pct }}}}%; background: {{{{ _bcol }}}};"></div></div>
+          <span class="cb-share-pct">{{{{ share_pct }}}}%</span>
+        </div>
+      </td>
+      <td class="num"><strong><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_cost }}}}</span></strong></td>
+    </tr>
+  {{% endfor %}}
+  {{% endif %}}
+  </tbody>
+</table>
+{paged_bottom("syntype")}
+"""
+
+
+SYNTHETICS_MONITORS_TABLE_TEMPLATE = f"""\
+<style>
+{PAGED_BASE_CSS}
+{paged_css("synmon", 25, "table-row")}
+  .cb-flt-bar-synmon {{ display: flex; align-items: center; gap: 5px; padding: 2px 2px 6px 2px; font-size: 0.75rem; color: var(--cc-color-text); flex-shrink: 0; flex-wrap: wrap; }}
+  .cb-flt-lbl {{ opacity: 0.72; font-weight: 600; font-size: 0.73rem; text-transform: uppercase; letter-spacing: 0.03em; margin-right: 2px; }}
+  #synmon_flt_all:checked ~ .cb-flt-bar-synmon .cb-flt-btn-synmon-all,
+  #synmon_flt_http:checked ~ .cb-flt-bar-synmon .cb-flt-btn-synmon-http,
+  #synmon_flt_browser:checked ~ .cb-flt-bar-synmon .cb-flt-btn-synmon-browser,
+  #synmon_flt_dns:checked ~ .cb-flt-bar-synmon .cb-flt-btn-synmon-dns,
+  #synmon_flt_tcp:checked ~ .cb-flt-bar-synmon .cb-flt-btn-synmon-tcp,
+  #synmon_flt_icmp:checked ~ .cb-flt-bar-synmon .cb-flt-btn-synmon-icmp {{ background: var(--cc-color-primary); color: #ffffff !important; border-color: var(--cc-color-primary); font-weight: 700; }}
+  #synmon_flt_http:checked ~ .cb-content-wrap-synmon,
+  #synmon_flt_browser:checked ~ .cb-content-wrap-synmon,
+  #synmon_flt_dns:checked ~ .cb-content-wrap-synmon,
+  #synmon_flt_tcp:checked ~ .cb-content-wrap-synmon,
+  #synmon_flt_icmp:checked ~ .cb-content-wrap-synmon {{ overflow-y: auto !important; }}
+  #synmon_flt_http:checked ~ .cb-content-wrap-synmon .cb-pg-row-synmon,
+  #synmon_flt_browser:checked ~ .cb-content-wrap-synmon .cb-pg-row-synmon,
+  #synmon_flt_dns:checked ~ .cb-content-wrap-synmon .cb-pg-row-synmon,
+  #synmon_flt_tcp:checked ~ .cb-content-wrap-synmon .cb-pg-row-synmon,
+  #synmon_flt_icmp:checked ~ .cb-content-wrap-synmon .cb-pg-row-synmon {{ display: none !important; }}
+  #synmon_flt_http:checked ~ .cb-content-wrap-synmon .cb-pg-row-synmon.cb-mt-http,
+  #synmon_flt_browser:checked ~ .cb-content-wrap-synmon .cb-pg-row-synmon.cb-mt-browser,
+  #synmon_flt_dns:checked ~ .cb-content-wrap-synmon .cb-pg-row-synmon.cb-mt-dns,
+  #synmon_flt_tcp:checked ~ .cb-content-wrap-synmon .cb-pg-row-synmon.cb-mt-tcp,
+  #synmon_flt_icmp:checked ~ .cb-content-wrap-synmon .cb-pg-row-synmon.cb-mt-icmp {{ display: table-row !important; }}
+  #synmon_flt_http:checked ~ .cb-pg-bar-synmon,
+  #synmon_flt_browser:checked ~ .cb-pg-bar-synmon,
+  #synmon_flt_dns:checked ~ .cb-pg-bar-synmon,
+  #synmon_flt_tcp:checked ~ .cb-pg-bar-synmon,
+  #synmon_flt_icmp:checked ~ .cb-pg-bar-synmon {{ display: none !important; }}
+  table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; color: var(--cc-color-text); }}
+  table.cb-t th {{
+    position: sticky; top: 0; background: var(--cc-color-surface); z-index: 1;
+    text-align: left; padding: 6px 8px; border-bottom: 2px solid var(--cc-color-border);
+    font-weight: 600; opacity: 0.75; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em;
+    color: var(--cc-color-text);
+  }}
+  table.cb-t td {{ padding: 6px 8px; border-bottom: 1px solid var(--cc-color-border); color: var(--cc-color-text); }}
+  table.cb-t th.num, table.cb-t td.num {{ text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }}
+  .cb-sym {{ font-weight: 500; opacity: 0.85; margin-right: 2px; }}
+  .cb-share-wrap {{ display: flex; align-items: center; gap: 6px; min-width: 110px; }}
+  .cb-bar-track {{
+    flex: 1; height: 10px; background: var(--cc-color-border);
+    border-radius: var(--cc-radius-s); overflow: hidden; min-width: 55px;
+  }}
+  .cb-bar-fill {{ height: 100%; min-width: 2px; }}
+  .cb-share-pct {{ width: 42px; text-align: right; font-variant-numeric: tabular-nums; font-size: 0.76rem; opacity: 0.78; color: var(--cc-color-text); flex-shrink: 0; }}
+  .cb-st-pill {{
+    display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 0.72rem;
+    font-weight: 600; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    text-transform: uppercase; letter-spacing: 0.03em;
+    border: 1px solid rgba(128, 128, 128, 0.25); background: rgba(128, 128, 128, 0.12);
+  }}
+  .cb-st-http {{ background: rgba(37, 99, 235, 0.14); color: #3b82f6; border-color: rgba(37, 99, 235, 0.35); }}
+  .cb-st-browser {{ background: rgba(147, 51, 234, 0.14); color: #a855f7; border-color: rgba(147, 51, 234, 0.35); }}
+  .cb-st-icmp {{ background: rgba(16, 185, 129, 0.14); color: #10b981; border-color: rgba(16, 185, 129, 0.35); }}
+  .cb-st-tcp {{ background: rgba(245, 158, 11, 0.14); color: #f59e0b; border-color: rgba(245, 158, 11, 0.35); }}
+  .cb-st-dns {{ background: rgba(6, 182, 212, 0.14); color: #06b6d4; border-color: rgba(6, 182, 212, 0.35); }}
+</style>
+{{% assign unit = rows[0]["unit"].value | default: "USD" %}}
+{{% assign sym = rows[0]["currency_symbol"].value | default: "$" %}}
+{{% assign max_cost = rows[0]["cost"].value | default: 1.0 %}}
+{{% if max_cost <= 0 %}}{{% assign max_cost = 1.0 %}}{{% endif %}}
+{{% assign tot_cost = 0.0 %}}
+{{% for r in rows %}}
+  {{% assign rc = r["cost"].value | default: 0.0 %}}
+  {{% assign tot_cost = tot_cost | plus: rc %}}
+{{% endfor %}}
+{{% assign denom_tot = tot_cost %}}
+{{% if denom_tot <= 0 %}}{{% assign denom_tot = 1.0 %}}{{% endif %}}
+{{% assign _total_items = rows.size | default: 0 | round %}}
+{{% assign _total_pages = _total_items | minus: 1 | divided_by: 10 | floor | plus: 1 %}}
+{{% if _total_pages < 1 %}}{{% assign _total_pages = 1 %}}{{% endif %}}
+{{% if _total_pages > 25 %}}{{% assign _total_pages = 25 %}}{{% endif %}}
+<div class="cb-paged-wrap cb-paged-wrap-synmon">
+  <input type="radio" name="synmon_flt" id="synmon_flt_all" class="cb-pg-radio-synmon" checked>
+  <input type="radio" name="synmon_flt" id="synmon_flt_http" class="cb-pg-radio-synmon">
+  <input type="radio" name="synmon_flt" id="synmon_flt_browser" class="cb-pg-radio-synmon">
+  <input type="radio" name="synmon_flt" id="synmon_flt_dns" class="cb-pg-radio-synmon">
+  <input type="radio" name="synmon_flt" id="synmon_flt_tcp" class="cb-pg-radio-synmon">
+  <input type="radio" name="synmon_flt" id="synmon_flt_icmp" class="cb-pg-radio-synmon">
+{{% for _p_i in (1.._total_pages) %}}
+  <input type="radio" name="synmon_pg" id="synmon_pg_{{{{ _p_i }}}}" class="cb-pg-radio-synmon" {{% if _p_i == 1 %}}checked{{% endif %}}>
+{{% endfor %}}
+<div class="cb-flt-bar cb-flt-bar-synmon">
+  <span class="cb-flt-lbl">Synthetic Type:</span>
+  <label for="synmon_flt_all" class="cb-pg-btn cb-flt-btn-synmon-all">All ({{{{ _total_items }}}})</label>
+  <label for="synmon_flt_http" class="cb-pg-btn cb-flt-btn-synmon-http">http</label>
+  <label for="synmon_flt_browser" class="cb-pg-btn cb-flt-btn-synmon-browser">browser</label>
+  <label for="synmon_flt_dns" class="cb-pg-btn cb-flt-btn-synmon-dns">dns</label>
+  <label for="synmon_flt_tcp" class="cb-pg-btn cb-flt-btn-synmon-tcp">tcp</label>
+  <label for="synmon_flt_icmp" class="cb-pg-btn cb-flt-btn-synmon-icmp">icmp</label>
+</div>
+<div class="cb-content-wrap cb-content-wrap-synmon">
+<table class="cb-t">
+  <thead>
+    <tr><th>Monitor Name</th><th>Monitor ID</th><th>Synthetic Type</th><th>Project</th><th>Namespace</th><th class="num">Locations</th><th class="num">Check Runs</th><th class="num">Availability</th><th class="num">Avg Duration</th><th>Cost Share</th><th class="num">Attributed Spend ({{{{ unit }}}})</th></tr>
+  </thead>
+  <tbody>
+  {{% if _total_items == 0 %}}
+    <tr><td colspan="11" class="cb-empty">No synthetics monitor telemetry in the selected time range.</td></tr>
+  {{% else %}}
+  {{% for row in rows %}}
+    {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
+    {{% assign mtype = row["monitor_type"].value | default: "http" | downcase %}}
+    {{% assign cost = row["cost"].value | default: 0.0 %}}
+    {{% assign checks = row["checks"].value | default: 0 %}}
+    {{% assign avail = row["availability_pct"].value | default: 100.0 | round: 2 %}}
+    {{% assign dur = row["avg_duration_ms"].value | default: 0.0 | round: 1 %}}
+    {{% assign locs = row["locations"].value | default: 1 %}}
+    {{% assign bar_pct = cost | times: 100.0 | divided_by: max_cost | round: 1 %}}
+    {{% assign share_pct = cost | times: 100.0 | divided_by: denom_tot | round: 1 %}}
+    {{% if mtype == "http" %}}{{% assign _bcol = "#3b82f6" %}}
+    {{% elsif mtype == "browser" %}}{{% assign _bcol = "#a855f7" %}}
+    {{% elsif mtype == "icmp" %}}{{% assign _bcol = "#10b981" %}}
+    {{% elsif mtype == "tcp" %}}{{% assign _bcol = "#f59e0b" %}}
+    {{% elsif mtype == "dns" %}}{{% assign _bcol = "#06b6d4" %}}
+    {{% else %}}{{% assign _bcol = "var(--cc-vis-0)" %}}{{% endif %}}
+{liquid_money_block("cost", "fmt_cost", with_decimals=True)}
+{liquid_money_block("checks", "fmt_checks", with_decimals=False)}
+    <tr class="cb-pg-row-synmon cb-pg-synmon-{{{{ _row_pg }}}} cb-mt-{{{{ mtype }}}}">
+      <td><strong>{{{{ row["monitor_name"].value }}}}</strong></td>
+      <td><code>{{{{ row["monitor_id"].value }}}}</code></td>
+      <td><span class="cb-st-pill cb-st-{{{{ mtype }}}}">{{{{ mtype }}}}</span></td>
+      <td>{{{{ row["project"].value }}}}</td>
+      <td>{{{{ row["monitor_namespace"].value }}}}</td>
+      <td class="num">{{{{ locs }}}}</td>
+      <td class="num">{{{{ fmt_checks }}}}</td>
+      <td class="num">{{{{ avail }}}}%</td>
+      <td class="num">{{{{ dur }}}} ms</td>
+      <td>
+        <div class="cb-share-wrap">
+          <div class="cb-bar-track"><div class="cb-bar-fill" style="width: {{{{ bar_pct }}}}%; background: {{{{ _bcol }}}};"></div></div>
+          <span class="cb-share-pct">{{{{ share_pct }}}}%</span>
+        </div>
+      </td>
+      <td class="num"><strong><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_cost }}}}</span></strong></td>
+    </tr>
+  {{% endfor %}}
+  {{% endif %}}
+  </tbody>
+</table>
+{paged_bottom("synmon")}
+"""
+
+
+SYNTHETICS_DS_TABLE_TEMPLATE = f"""\
+<style>
+{PAGED_BASE_CSS}
+{paged_css("synds", 20, "table-row")}
+  table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; color: var(--cc-color-text); }}
+  table.cb-t th {{
+    position: sticky; top: 0; background: var(--cc-color-surface); z-index: 1;
+    text-align: left; padding: 6px 8px; border-bottom: 2px solid var(--cc-color-border);
+    font-weight: 600; opacity: 0.75; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em;
+    color: var(--cc-color-text);
+  }}
+  table.cb-t td {{ padding: 6px 8px; border-bottom: 1px solid var(--cc-color-border); color: var(--cc-color-text); }}
+  table.cb-t th.num, table.cb-t td.num {{ text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }}
+  .cb-sym {{ font-weight: 500; opacity: 0.85; margin-right: 2px; }}
+  .cb-st-pill {{
+    display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 0.72rem;
+    font-weight: 600; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    text-transform: uppercase; letter-spacing: 0.03em;
+    border: 1px solid rgba(128, 128, 128, 0.25); background: rgba(128, 128, 128, 0.12);
+  }}
+  .cb-st-http {{ background: rgba(37, 99, 235, 0.14); color: #3b82f6; border-color: rgba(37, 99, 235, 0.35); }}
+  .cb-st-browser {{ background: rgba(147, 51, 234, 0.14); color: #a855f7; border-color: rgba(147, 51, 234, 0.35); }}
+  .cb-st-icmp {{ background: rgba(16, 185, 129, 0.14); color: #10b981; border-color: rgba(16, 185, 129, 0.35); }}
+  .cb-st-tcp {{ background: rgba(245, 158, 11, 0.14); color: #f59e0b; border-color: rgba(245, 158, 11, 0.35); }}
+  .cb-st-dns {{ background: rgba(6, 182, 212, 0.14); color: #06b6d4; border-color: rgba(6, 182, 212, 0.35); }}
+</style>
+{{% assign unit = rows[0]["unit"].value | default: "USD" %}}
+{{% assign sym = rows[0]["currency_symbol"].value | default: "$" %}}
+{paged_top("synds", 10, 20)}
+<table class="cb-t">
+  <thead>
+    <tr><th>Project</th><th>Project Type</th><th>Synthetic Type</th><th>Namespace</th><th>Data Stream</th><th class="num">Indexing ({{{{ sym }}}})</th><th class="num">Search ({{{{ sym }}}})</th><th class="num">Storage ({{{{ sym }}}})</th><th class="num">Attributed Cost ({{{{ unit }}}})</th></tr>
+  </thead>
+  <tbody>
+  {{% if _total_items == 0 %}}
+    <tr><td colspan="9" class="cb-empty">No synthetics-* data stream usage attribution data in the selected time range.</td></tr>
+  {{% else %}}
+  {{% for row in rows %}}
+    {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
+    {{% assign st = row["synth_type"].value | default: "http" | downcase %}}
+    {{% assign st_base = st | split: "." | first %}}
+    {{% assign idx = row["indexing_cost"].value | default: 0.0 %}}
+    {{% assign qry = row["query_cost"].value | default: 0.0 %}}
+    {{% assign stg = row["storage_cost"].value | default: 0.0 %}}
+    {{% assign total = row["attributed_cost"].value | default: 0.0 %}}
+{liquid_money_block("idx", "fmt_idx", with_decimals=True)}
+{liquid_money_block("qry", "fmt_qry", with_decimals=True)}
+{liquid_money_block("stg", "fmt_stg", with_decimals=True)}
+{liquid_money_block("total", "fmt_total", with_decimals=True)}
+    <tr class="cb-pg-row-synds cb-pg-synds-{{{{ _row_pg }}}}">
+      <td><strong>{{{{ row["project"].value }}}}</strong></td>
+      <td>{{{{ row["project_type"].value }}}}</td>
+      <td><span class="cb-st-pill cb-st-{{{{ st_base }}}}">{{{{ st }}}}</span></td>
+      <td>{{{{ row["ds_namespace"].value }}}}</td>
+      <td><code>{{{{ row["datastream"].value }}}}</code></td>
+      <td class="num"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_idx }}}}</span></td>
+      <td class="num"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_qry }}}}</span></td>
+      <td class="num"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_stg }}}}</span></td>
+      <td class="num"><strong><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_total }}}}</span></strong></td>
+    </tr>
+  {{% endfor %}}
+  {{% endif %}}
+  </tbody>
+</table>
+{paged_bottom("synds")}
 """
 
 
@@ -3357,13 +3696,18 @@ def build_synthetics() -> dict:
         SYNTHETICS_KPI_TEMPLATE,
         f"""{COST_PRELUDE}
 | EVAL is_synth = (cost_type_label == "synthetics" OR allocation_driver == "synthetics" OR sku LIKE "*synthetic*")
+| EVAL is_pings = (sku LIKE "*synthetic-ping*")
+| EVAL is_exec = (sku LIKE "*synthetic-exec*")
 | EVAL synth_cost = CASE(is_synth, cost, 0.0)
+| EVAL pings_cost = CASE(is_pings, cost, 0.0)
+| EVAL exec_cost = CASE(is_exec, cost, 0.0)
 | EVAL synth_ecu = CASE(is_synth, units, 0.0)
-| EVAL synth_qty = CASE(is_synth, COALESCE(quantity_value, 0.0), 0.0)
+| EVAL raw_qty = CASE(is_synth, COALESCE(quantity_value, 0.0), 0.0)
+| EVAL norm_runs = CASE(is_pings AND raw_qty > 0.0 AND raw_qty < 100.0 AND units > raw_qty * 5.0, raw_qty * 1000.0, raw_qty)
 | EVAL synth_proj = CASE(is_synth AND cost > 0, project_id, null)
-| STATS synthetics_spend = SUM(synth_cost), total_org_spend = SUM(cost), synthetics_ecu = SUM(synth_ecu), synthetics_runs = SUM(synth_qty), project_count = COUNT_DISTINCT(synth_proj), currency_symbol = MAX(currency_symbol), unit = MAX(unit)
+| STATS synthetics_spend = SUM(synth_cost), pings_spend = SUM(pings_cost), exec_spend = SUM(exec_cost), total_org_spend = SUM(cost), synthetics_ecu = SUM(synth_ecu), synthetics_runs = SUM(norm_runs), project_count = COUNT_DISTINCT(synth_proj), currency_symbol = MAX(currency_symbol), unit = MAX(unit)
 | EVAL cost_per_1k = CASE(synthetics_runs > 0, synthetics_spend * 1000.0 / TO_DOUBLE(synthetics_runs), 0.0)
-| KEEP unit, currency_symbol, synthetics_spend, total_org_spend, synthetics_ecu, synthetics_runs, project_count, cost_per_1k""",
+| KEEP unit, currency_symbol, synthetics_spend, pings_spend, exec_spend, total_org_spend, synthetics_ecu, synthetics_runs, project_count, cost_per_1k""",
         0,
         2,
         48,
@@ -3397,20 +3741,61 @@ def build_synthetics() -> dict:
     panels.append(p)
 
     p, _ = custom_panel(
-        stable_uuid("cc-synthetics-daily-project"),
-        "Daily synthetics SKU cost by project",
-        DAILY_PROJECT_COST_TEMPLATE,
-        f"""{COST_PRELUDE}
-| WHERE cost_type_label == "synthetics" OR allocation_driver == "synthetics" OR sku LIKE "*synthetic*"
-| STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY b = DATE_TRUNC(1 day, @timestamp), project
+        stable_uuid("cc-synthetics-daily-type"),
+        "Daily attributed synthetics cost by synthetic type",
+        DAILY_SYNTH_TYPE_COST_TEMPLATE,
+        f"""FROM {SYNTHETICS_USAGE}
+{TIME_FILTER_ESQL}
+{SYNTHETICS_JOIN_BODY}
+{SYNTHETICS_MONITOR_COST_EVAL}
+| STATS cost = SUM(day_monitor_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY b = DATE_TRUNC(1 day, @timestamp), monitor_type
 | EVAL day = TO_STRING(b)
 | INLINE STATS day_cost = SUM(cost) BY day
-| INLINE STATS proj_total = SUM(cost) BY project
-| SORT day ASC, proj_total DESC, project ASC
+| INLINE STATS type_total = SUM(cost) BY monitor_type
+| SORT day ASC, type_total DESC, monitor_type ASC
 | LIMIT 5000
-| KEEP day, project, cost, day_cost, currency_symbol, unit""",
+| KEEP day, monitor_type, cost, day_cost, currency_symbol, unit""",
         0,
         14,
+        24,
+        12,
+    )
+    panels.append(p)
+
+    p, _ = custom_panel(
+        stable_uuid("cc-synthetics-by-type"),
+        "Synthetics cost & check volume by synthetic type",
+        SYNTHETICS_TYPE_BREAKDOWN_TEMPLATE,
+        f"""FROM {SYNTHETICS_USAGE}
+{TIME_FILTER_ESQL}
+{SYNTHETICS_JOIN_BODY}
+{SYNTHETICS_MONITOR_COST_EVAL}
+| STATS monitors = COUNT_DISTINCT(monitor_id), checks = SUM(monitor_check_count), cost = SUM(day_monitor_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY monitor_type
+| SORT cost DESC, checks DESC
+| LIMIT 25
+| KEEP monitor_type, monitors, checks, cost, currency_symbol, unit""",
+        24,
+        14,
+        24,
+        12,
+    )
+    panels.append(p)
+
+    p, _ = custom_panel(
+        stable_uuid("cc-synthetics-by-monitor"),
+        "Attributed synthetics cost by monitor",
+        make_bar_template("monitor_label", "Monitor"),
+        f"""FROM {SYNTHETICS_USAGE}
+{TIME_FILTER_ESQL}
+{SYNTHETICS_JOIN_BODY}
+{SYNTHETICS_MONITOR_COST_EVAL}
+| EVAL monitor_label = COALESCE(monitor_name, monitor_id, "unknown") + " (" + monitor_type + ")"
+| STATS cost = SUM(day_monitor_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY monitor_label
+| SORT cost DESC
+| LIMIT 25
+| KEEP monitor_label, cost, currency_symbol, unit""",
+        0,
+        26,
         24,
         12,
     )
@@ -3427,16 +3812,38 @@ def build_synthetics() -> dict:
 | LIMIT 25
 | KEEP project, cost, currency_symbol, unit""",
         24,
-        14,
+        26,
         24,
         12,
     )
     panels.append(p)
 
     p, _ = custom_panel(
+        stable_uuid("cc-synthetics-monitors-table"),
+        "Synthetics Monitor Usage & Cost Attribution Breakdown",
+        SYNTHETICS_MONITORS_TABLE_TEMPLATE,
+        f"""FROM {SYNTHETICS_USAGE}
+{TIME_FILTER_ESQL}
+{SYNTHETICS_JOIN_BODY}
+{SYNTHETICS_MONITOR_COST_EVAL}
+| EVAL weighted_dur = TO_DOUBLE(COALESCE(monitor_avg_duration_ms, 0.0)) * TO_DOUBLE(COALESCE(monitor_check_count, 0))
+| STATS monitor_name = MAX(monitor_name), monitor_namespace = MAX(monitor_namespace), locations = MAX(monitor_locations_count), checks = SUM(monitor_check_count), up_checks = SUM(monitor_up_count), sum_weighted_dur = SUM(weighted_dur), cost = SUM(day_monitor_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project, monitor_id, monitor_type
+| EVAL availability_pct = CASE(checks > 0, TO_DOUBLE(up_checks) * 100.0 / TO_DOUBLE(checks), 100.0)
+| EVAL avg_duration_ms = CASE(checks > 0, sum_weighted_dur / TO_DOUBLE(checks), 0.0)
+| SORT cost DESC, checks DESC
+| LIMIT 250
+| KEEP monitor_name, monitor_id, monitor_type, project, monitor_namespace, locations, checks, availability_pct, avg_duration_ms, cost, currency_symbol, unit""",
+        0,
+        38,
+        48,
+        15,
+    )
+    panels.append(p)
+
+    p, _ = custom_panel(
         stable_uuid("cc-synthetics-ds-namespace"),
-        "Synthetics data stream cost by namespace",
-        make_bar_template("namespace", "Namespace"),
+        "Synthetics data stream cost by synthetic type & namespace",
+        make_bar_template("synth_stream_label", "Synthetic Type / Namespace"),
         f"""FROM {USAGE}
 {TIME_FILTER_ESQL}
 | WHERE ds_type == "synthetics" OR datastream LIKE "*synthetics*"
@@ -3448,13 +3855,14 @@ def build_synthetics() -> dict:
 | EVAL qry_cost = COALESCE(query_ecu, 0.0) * rate * qry_share
 | EVAL stg_cost = COALESCE(storage_ecu, 0.0) * rate * stg_share
 | EVAL total_ds_cost = idx_cost + qry_cost + stg_cost
-| EVAL namespace = COALESCE(ds_namespace, "other")
-| STATS cost = SUM(total_ds_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY namespace
+| EVAL synth_type = COALESCE(ds_dataset, CASE(datastream LIKE "synthetics-browser.network-*", "browser.network", datastream LIKE "synthetics-browser.screenshot-*", "browser.screenshot", datastream LIKE "synthetics-browser-*", "browser", datastream LIKE "synthetics-http-*", "http", datastream LIKE "synthetics-icmp-*", "icmp", datastream LIKE "synthetics-tcp-*", "tcp", datastream LIKE "synthetics-dns-*", "dns", "http"))
+| EVAL synth_stream_label = synth_type + " (" + COALESCE(ds_namespace, "default") + ")"
+| STATS cost = SUM(total_ds_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY synth_stream_label
 | SORT cost DESC
 | LIMIT 25
-| KEEP namespace, cost, currency_symbol, unit""",
+| KEEP synth_stream_label, cost, currency_symbol, unit""",
         0,
-        26,
+        53,
         24,
         13,
     )
@@ -3472,7 +3880,7 @@ def build_synthetics() -> dict:
 | LIMIT 100
 | KEEP project, project_type, sku, qty, ecu, cost, currency_symbol, unit""",
         24,
-        26,
+        53,
         24,
         13,
     )
@@ -3481,7 +3889,7 @@ def build_synthetics() -> dict:
     p, _ = custom_panel(
         stable_uuid("cc-synthetics-ds-table"),
         "Synthetics data stream cost attribution & usage",
-        DATASTREAM_COST_TABLE_TEMPLATE,
+        SYNTHETICS_DS_TABLE_TEMPLATE,
         f"""FROM {USAGE}
 {TIME_FILTER_ESQL}
 | WHERE ds_type == "synthetics" OR datastream LIKE "*synthetics*"
@@ -3493,12 +3901,13 @@ def build_synthetics() -> dict:
 | EVAL day_qry_cost = COALESCE(query_ecu, 0.0) * rate * qry_share
 | EVAL day_stg_cost = COALESCE(storage_ecu, 0.0) * rate * stg_share
 | EVAL day_attr_cost = day_idx_cost + day_qry_cost + day_stg_cost
-| STATS indexing_cost = SUM(day_idx_cost), query_cost = SUM(day_qry_cost), storage_cost = SUM(day_stg_cost), attributed_cost = SUM(day_attr_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project, project_type, ds_type, ds_namespace, datastream
+| EVAL synth_type = COALESCE(ds_dataset, CASE(datastream LIKE "synthetics-browser.network-*", "browser.network", datastream LIKE "synthetics-browser.screenshot-*", "browser.screenshot", datastream LIKE "synthetics-browser-*", "browser", datastream LIKE "synthetics-http-*", "http", datastream LIKE "synthetics-icmp-*", "icmp", datastream LIKE "synthetics-tcp-*", "tcp", datastream LIKE "synthetics-dns-*", "dns", "http"))
+| STATS indexing_cost = SUM(day_idx_cost), query_cost = SUM(day_qry_cost), storage_cost = SUM(day_stg_cost), attributed_cost = SUM(day_attr_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project, project_type, synth_type, ds_namespace, datastream
 | SORT attributed_cost DESC
 | LIMIT 200
-| KEEP project, project_type, ds_type, ds_namespace, datastream, indexing_cost, query_cost, storage_cost, attributed_cost, currency_symbol, unit""",
+| KEEP project, project_type, synth_type, ds_namespace, datastream, indexing_cost, query_cost, storage_cost, attributed_cost, currency_symbol, unit""",
         0,
-        39,
+        66,
         48,
         14,
     )
@@ -3507,7 +3916,7 @@ def build_synthetics() -> dict:
     return dashboard_doc(
         DASH_SYNTHETICS,
         TITLE_SYNTHETICS,
-        "Synthetics FinOps: direct Synthetics SKU billing, test check volume, and attributed data-tier (ingest, search, storage) costs for synthetics-* data streams.",
+        "Synthetics FinOps: direct Synthetics SKU billing, synthetic type breakdown (http, browser, icmp, tcp, dns), per-monitor cost attribution, and data-tier costs for synthetics-* data streams.",
         panels,
         refs,
         with_controls=True,

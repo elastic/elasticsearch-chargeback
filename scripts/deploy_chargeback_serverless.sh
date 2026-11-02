@@ -278,6 +278,7 @@ run_verification() {
     "serverless_datastream_contribution_lookup"
     "serverless_project_contribution_lookup"
     "serverless_ai_model_contribution_lookup"
+    "serverless_synthetics_monitor_contribution_lookup"
     "serverless_project_status_lookup"
   )
   printf "\n%-50s | %-12s\n" "Lookup Index" "Doc Count"
@@ -423,6 +424,7 @@ for lk_idx in \
   "serverless_datastream_contribution_lookup" \
   "serverless_project_contribution_lookup" \
   "serverless_ai_model_contribution_lookup" \
+  "serverless_synthetics_monitor_contribution_lookup" \
   "serverless_project_status_lookup"; do
   HAS_ALIAS=$(es_curl -sS "${ES_URL%/}/${lk_idx}/_mapping" -H "Authorization: ApiKey ${ES_API_KEY}" 2>/dev/null \
     | jq -r '[.. | objects | select(.type? == "alias")] | length' 2>/dev/null || echo "0")
@@ -535,7 +537,10 @@ def fields_to_mappings(fields_list):
             cur[parts[-1]] = {"type": "alias", "path": f.get("path", "")}
         else:
             cur[parts[-1]] = {"type": ftype}
-    return {"mappings": {"properties": props}}
+    return {
+        "settings": {"index": {"mode": "lookup", "codec": "best_compression"}},
+        "mappings": {"dynamic": False, "properties": props},
+    }
 
 with zipfile.ZipFile(zip_path, "r") as z:
     names = z.namelist()
