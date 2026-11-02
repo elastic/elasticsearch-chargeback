@@ -636,7 +636,6 @@ BILLING_KPI_TEMPLATE = f"""\
     justify-content: center;
     gap: 3px;
   }}
-  .cb-kpi-unalloc:hover .cb-def-popover,
   #cb_unalloc_def_toggle:checked ~ .cb-kpis .cb-kpi-unalloc .cb-def-popover {{
     display: flex !important;
   }}
