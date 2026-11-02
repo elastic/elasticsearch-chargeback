@@ -119,6 +119,39 @@ Navigate to **Analytics → Dashboards** and search for `Chargeback Serverless`:
 
 ---
 
+## Alerting Rule Templates
+
+The integration ships 10 ES|QL alerting rule templates (9 FinOps spend & anomaly templates + 1 consolidated Data Trust & Harvest Health template) in **Stack Management → Rules**:
+
+| Rule Template | Lookback | Line-2 `EVAL` Parameters (Defaults) | Description |
+| --- | --- | --- | --- |
+| **Total daily spend threshold exceeded** | `3d` | `threshold_spend = 1000.0` | Alerts when organization-wide daily spend on the latest billed day exceeds the threshold. |
+| **Rolling 30-day total spend budget exceeded** | `30d` | `threshold_budget = 25000.0` | Alerts when cumulative 30-day spend exceeds the monthly budget, reporting daily burn rate and 30-day projection. |
+| **Cost category daily spend threshold exceeded** | `3d` | `threshold_spend = 300.0, filter_category = "*"` | Alerts per cost category (`data_tier`, `platform`, `transfer`, `snapshot`, `support`) exceeding the daily threshold. |
+| **Workload driver daily spend threshold exceeded** | `3d` | `threshold_spend = 250.0, filter_driver = "*"` | Alerts per workload driver (`indexing`, `search`, `storage`, `ai`, `synthetics`, `unallocatable`) exceeding the daily threshold. |
+| **Project daily spend threshold exceeded** | `3d` | `threshold_spend = 200.0, filter_project = "*"` | Alerts per Serverless project exceeding the daily spend threshold. |
+| **Project daily spend spike vs. 7-day baseline** | `10d` | `threshold_pct_increase = 50.0, min_daily_spend = 25.0, filter_project = "*"` | Alerts when a project's latest daily spend spikes by more than `threshold_pct_increase`% above its prior 7-day baseline average (and is at least `min_daily_spend`). |
+| **Namespace attributed daily spend threshold exceeded** | `3d` | `threshold_spend = 100.0, filter_namespace = "*"` | Alerts when attributed daily spend (indexing + search + storage) for a `ds_namespace` exceeds the threshold. |
+| **AI model attributed daily spend threshold exceeded** | `3d` | `threshold_spend = 50.0, filter_model = "*"` | Alerts when attributed daily AI/ML pool spend for a specific `model_id` in a project exceeds the threshold. |
+| **Synthetics monitor attributed daily spend threshold exceeded** | `3d` | `threshold_spend = 25.0, filter_monitor = "*"` | Alerts when attributed daily Synthetics SKU spend (browser executions or lightweight pings) for a monitor exceeds the threshold. |
+| **Data trust & project harvest health issue** | `3d` | `threshold_unallocated_spend = 100.0, threshold_unallocated_pct = 25.0` | Consolidated operational health check for stale/unauthorized usage harvest, billed projects missing a resolved `project_name`, or high unallocated spend exceeding both the floor and org percentage threshold. |
+
+### Customizing Thresholds & Entity Filters (Line-2 `EVAL`)
+
+Every rule template places its user-configurable parameters on **Line 2** of the ES|QL query, immediately after `FROM <lookup_index>`:
+
+```esql
+FROM serverless_billing_cost_lookup
+| EVAL threshold_spend = 200.0, filter_project = "*"
+```
+
+To customize a rule in **Stack Management → Rules**:
+1. Open the rule and edit **Line 2** of the ES|QL query to adjust `threshold_*` (in your configured Fleet policy currency) or scope `filter_*` from `"*"` to a specific project name/ID, category, driver, namespace, model ID, or monitor name/ID.
+2. Clone a rule template if you want different thresholds for specific high-spend projects or namespaces.
+3. All rules preserve both a human-readable `result` summary string and structured columns (`day`, `project`, `spend`, `ecu`, `threshold`, `unit`, etc.) for use in Kibana rule previews and action connector templates (`{{context.hits}}`).
+
+---
+
 ## Verification
 
 Check document counts in the native metrics data streams:

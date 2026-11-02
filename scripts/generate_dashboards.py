@@ -42,9 +42,16 @@ AI_USAGE = "serverless_ai_model_contribution_lookup"
 SYNTHETICS_USAGE = "serverless_synthetics_monitor_contribution_lookup"
 PROJECT_STATUS = "serverless_project_status_lookup"
 
-ALERT_UNALLOCATED = "chargeback_serverless-alert-unallocated-ecu"
-ALERT_STALE_STATE = "chargeback_serverless-alert-stale-project-state"
-ALERT_MISSING_PROJECTS = "chargeback_serverless-alert-missing-projects"
+ALERT_TOTAL_DAILY_SPEND = "chargeback_serverless-alert-total-daily-spend"
+ALERT_TOTAL_MONTHLY_SPEND = "chargeback_serverless-alert-total-monthly-spend"
+ALERT_CATEGORY_SPEND = "chargeback_serverless-alert-category-spend"
+ALERT_WORKLOAD_DRIVER_SPEND = "chargeback_serverless-alert-workload-driver-spend"
+ALERT_PROJECT_SPEND = "chargeback_serverless-alert-project-spend"
+ALERT_PROJECT_SPEND_SPIKE = "chargeback_serverless-alert-project-spend-spike"
+ALERT_NAMESPACE_SPEND = "chargeback_serverless-alert-namespace-spend"
+ALERT_AI_MODEL_SPEND = "chargeback_serverless-alert-ai-model-spend"
+ALERT_SYNTHETICS_MONITOR_SPEND = "chargeback_serverless-alert-synthetics-monitor-spend"
+ALERT_DATA_TRUST_HEALTH = "chargeback_serverless-alert-data-trust-health"
 
 INDEX_PATTERN_ID = "chargeback_serverless-billing"
 
@@ -4359,7 +4366,14 @@ def build_config() -> dict:
     )
 
 
-def alert_template(alert_id: str, name: str, esql: str, interval: str = "24h") -> dict:
+def alert_template(
+    alert_id: str,
+    name: str,
+    esql: str,
+    interval: str = "24h",
+    time_window_size: int = 3,
+    time_window_unit: str = "d",
+) -> dict:
     return {
         "id": alert_id,
         "type": "alerting_rule_template",
@@ -4370,8 +4384,8 @@ def alert_template(alert_id: str, name: str, esql: str, interval: str = "24h") -
             "schedule": {"interval": interval},
             "params": {
                 "searchType": "esqlQuery",
-                "timeWindowSize": 2,
-                "timeWindowUnit": "d",
+                "timeWindowSize": time_window_size,
+                "timeWindowUnit": time_window_unit,
                 "esqlQuery": {"esql": esql},
                 "size": 100,
                 "threshold": [0],
@@ -4385,46 +4399,258 @@ def alert_template(alert_id: str, name: str, esql: str, interval: str = "24h") -
 
 def build_alerts() -> list[dict]:
     return [
+        # 1. Total Organization Daily Spend Threshold
         alert_template(
-            ALERT_UNALLOCATED,
-            "[Chargeback Serverless] Unallocated cost present",
-            f"""{COST_PRELUDE_NO_TIME}
-| WHERE (COALESCE(is_allocatable, false) == false OR allocation_driver == "none") AND cost > 0
-| STATS unallocated = ROUND(SUM(cost), 2), sym = COALESCE(MAX(currency_symbol), "$"), unit = COALESCE(MAX(unit), "USD"), rows = COUNT(*)
-| WHERE unallocated > 0
-| EVAL result = CONCAT("Unallocated cost: ", COALESCE(sym, "$"), " ", TO_STRING(unallocated), " (", COALESCE(unit, "USD"), ") across ", TO_STRING(rows), " billing rows.")
-| KEEP result""",
-            "24h",
-        ),
-        alert_template(
-            ALERT_STALE_STATE,
-            "[Chargeback Serverless] Stale project usage harvest",
-            f"""FROM {PROJECT_STATUS}
-| INLINE STATS latest_ts = MAX(@timestamp) BY project_id
-| WHERE @timestamp == latest_ts
-| WHERE COALESCE(last_status, "") != "inactive" AND (COALESCE(last_status, "") != "ok" OR updated_at IS NULL OR updated_at < NOW() - 26 hours)
-| EVAL result = CONCAT("Project `", COALESCE(project_name, project_id, "unknown"), "` (", COALESCE(project_id, "unknown"), ") status=", COALESCE(last_status, "stale"), " last updated ", COALESCE(TO_STRING(updated_at), "never"), ".")
-| STATS result = VALUES(result)
-| MV_EXPAND result""",
-            "24h",
-        ),
-        alert_template(
-            ALERT_MISSING_PROJECTS,
-            "[Chargeback Serverless] Billed project missing from registry",
+            ALERT_TOTAL_DAILY_SPEND,
+            "[Chargeback Serverless] Total daily spend threshold exceeded",
             f"""FROM {BILLING}
-| EVAL ts = @timestamp
-| RENAME project_id AS _b_pid, project_name AS _b_pname, project_type AS _b_ptype
-| LOOKUP JOIN {PROJECT_STATUS} ON composite_key
-| EVAL @timestamp = ts
-| EVAL project_id = COALESCE(_b_pid, project_id)
-| EVAL project_name = CASE(_b_pname IS NOT NULL AND _b_pname != "" AND _b_pname != project_id, _b_pname, project_name IS NOT NULL AND project_name != "" AND project_name != project_id, project_name, _b_pname IS NOT NULL AND _b_pname != "", _b_pname, project_name IS NOT NULL AND project_name != "", project_name, project_id)
-| EVAL project_type = CASE(_b_ptype IS NOT NULL AND _b_ptype != "" AND _b_ptype != "unknown", _b_ptype, project_type IS NOT NULL AND project_type != "", project_type, _b_ptype)
-| WHERE project_id IS NOT NULL AND project_id != "" AND (project_name IS NULL OR project_name == "" OR project_name == project_id)
-| STATS ecu = ROUND(SUM(COALESCE(total_ecu, 0.0)), 2) BY project_id, project_type
-| EVAL result = CONCAT("Billed project `", project_id, "` (", COALESCE(project_type, "unknown"), ", ", TO_STRING(ecu), " ECU) has no resolved project_name.")
-| STATS result = VALUES(result)
-| MV_EXPAND result""",
-            "24h",
+| EVAL threshold_spend = 1000.0
+| INLINE STATS latest_day = MAX(@timestamp)
+| WHERE @timestamp == latest_day
+{COST_PRELUDE_BODY}
+| EVAL alloc_cost = CASE(COALESCE(is_allocatable, false) == true AND allocation_driver != "none", cost, 0.0)
+| EVAL unalloc_cost = CASE((COALESCE(is_allocatable, false) == false OR allocation_driver == "none") AND COALESCE(sku, "none") != "none", cost, 0.0)
+| EVAL active_pid = CASE(cost > 0 AND COALESCE(last_status, "") != "inactive", project_id, null)
+| STATS spend = ROUND(SUM(cost), 2), allocatable_spend = ROUND(SUM(alloc_cost), 2), unallocatable_spend = ROUND(SUM(unalloc_cost), 2), ecu = ROUND(SUM(units), 2), active_projects = COUNT_DISTINCT(active_pid), threshold = MAX(threshold_spend), sym = COALESCE(MAX(currency_symbol), "$"), unit = COALESCE(MAX(unit), "USD"), day = LEFT(TO_STRING(MAX(@timestamp)), 10)
+| WHERE spend > threshold
+| EVAL result = CONCAT("[", day, "] Total organization daily spend of ", sym, TO_STRING(spend), " ", unit, " (", TO_STRING(ecu), " ECU across ", TO_STRING(active_projects), " active projects) exceeded threshold of ", sym, TO_STRING(threshold), " ", unit, ".")
+| KEEP result, day, spend, allocatable_spend, unallocatable_spend, ecu, active_projects, threshold, unit""",
+            interval="24h",
+            time_window_size=3,
+            time_window_unit="d",
+        ),
+        # 2. Rolling 30-Day Total Spend Budget Threshold
+        alert_template(
+            ALERT_TOTAL_MONTHLY_SPEND,
+            "[Chargeback Serverless] Rolling 30-day total spend budget exceeded",
+            f"""FROM {BILLING}
+| EVAL threshold_budget = 25000.0
+| INLINE STATS latest_ts = MAX(@timestamp)
+| WHERE @timestamp > latest_ts - 30 days
+{COST_PRELUDE_BODY}
+| EVAL bill_day = DATE_TRUNC(1 day, ts)
+| STATS spend = ROUND(SUM(cost), 2), ecu = ROUND(SUM(units), 2), billed_days = COUNT_DISTINCT(bill_day), latest_day = LEFT(TO_STRING(MAX(ts)), 10), threshold = MAX(threshold_budget), sym = COALESCE(MAX(currency_symbol), "$"), unit = COALESCE(MAX(unit), "USD")
+| EVAL daily_avg_spend = CASE(billed_days > 0, ROUND(spend / TO_DOUBLE(billed_days), 2), 0.0)
+| EVAL projected_30d_spend = ROUND(daily_avg_spend * 30.0, 2)
+| WHERE spend > threshold
+| EVAL result = CONCAT("Rolling 30-day spend of ", sym, TO_STRING(spend), " ", unit, " (", TO_STRING(ecu), " ECU over ", TO_STRING(billed_days), " billed days; avg ", sym, TO_STRING(daily_avg_spend), "/day, projected 30d: ", sym, TO_STRING(projected_30d_spend), " ", unit, ") exceeded budget of ", sym, TO_STRING(threshold), " ", unit, ".")
+| KEEP result, latest_day, billed_days, spend, daily_avg_spend, projected_30d_spend, ecu, threshold, unit""",
+            interval="24h",
+            time_window_size=30,
+            time_window_unit="d",
+        ),
+        # 3. Cost Category Daily Spend Threshold
+        alert_template(
+            ALERT_CATEGORY_SPEND,
+            "[Chargeback Serverless] Cost category daily spend threshold exceeded",
+            f"""FROM {BILLING}
+| EVAL threshold_spend = 300.0, filter_category = "*"
+| INLINE STATS latest_day = MAX(@timestamp)
+| WHERE @timestamp == latest_day
+{COST_PRELUDE_BODY}
+| WHERE COALESCE(sku, "none") != "none"
+| EVAL category = category_label
+| WHERE filter_category == "*" OR category == filter_category
+| STATS spend = ROUND(SUM(cost), 2), ecu = ROUND(SUM(units), 2), project_count = COUNT_DISTINCT(project_id), threshold = MAX(threshold_spend), sym = COALESCE(MAX(currency_symbol), "$"), unit = COALESCE(MAX(unit), "USD") BY day = LEFT(TO_STRING(@timestamp), 10), category
+| WHERE spend > threshold
+| SORT spend DESC
+| EVAL result = CONCAT("[", day, "] Cost category `", category, "` daily spend of ", sym, TO_STRING(spend), " ", unit, " (", TO_STRING(ecu), " ECU across ", TO_STRING(project_count), " projects) exceeded threshold of ", sym, TO_STRING(threshold), " ", unit, ".")
+| KEEP result, day, category, spend, ecu, project_count, threshold, unit""",
+            interval="24h",
+            time_window_size=3,
+            time_window_unit="d",
+        ),
+        # 4. Workload Driver Daily Spend Threshold
+        alert_template(
+            ALERT_WORKLOAD_DRIVER_SPEND,
+            "[Chargeback Serverless] Workload driver daily spend threshold exceeded",
+            f"""FROM {BILLING}
+| EVAL threshold_spend = 250.0, filter_driver = "*"
+| INLINE STATS latest_day = MAX(@timestamp)
+| WHERE @timestamp == latest_day
+{COST_PRELUDE_BODY}
+| WHERE COALESCE(sku, "none") != "none"
+| EVAL workload_driver = CASE(
+    cost_type_label IN ("ingest-vcu", "ingest") OR allocation_driver == "indexing", "indexing",
+    cost_type_label IN ("search-vcu", "search") OR allocation_driver == "query", "search",
+    cost_type_label == "retained" OR allocation_driver == "storage", "storage",
+    allocation_driver == "ai" OR cost_type_label IN ("inference", "ml-vcu", "agent-builder"), "ai",
+    allocation_driver == "synthetics" OR cost_type_label == "synthetics", "synthetics",
+    "unallocatable"
+  )
+| WHERE filter_driver == "*" OR workload_driver == filter_driver
+| STATS spend = ROUND(SUM(cost), 2), ecu = ROUND(SUM(units), 2), project_count = COUNT_DISTINCT(project_id), threshold = MAX(threshold_spend), sym = COALESCE(MAX(currency_symbol), "$"), unit = COALESCE(MAX(unit), "USD") BY day = LEFT(TO_STRING(@timestamp), 10), workload_driver
+| WHERE spend > threshold
+| SORT spend DESC
+| EVAL result = CONCAT("[", day, "] Workload driver `", workload_driver, "` daily spend of ", sym, TO_STRING(spend), " ", unit, " (", TO_STRING(ecu), " ECU across ", TO_STRING(project_count), " projects) exceeded threshold of ", sym, TO_STRING(threshold), " ", unit, ".")
+| KEEP result, day, workload_driver, spend, ecu, project_count, threshold, unit""",
+            interval="24h",
+            time_window_size=3,
+            time_window_unit="d",
+        ),
+        # 5. Project Daily Spend Threshold
+        alert_template(
+            ALERT_PROJECT_SPEND,
+            "[Chargeback Serverless] Project daily spend threshold exceeded",
+            f"""FROM {BILLING}
+| EVAL threshold_spend = 200.0, filter_project = "*"
+| INLINE STATS latest_day = MAX(@timestamp)
+| WHERE @timestamp == latest_day
+{COST_PRELUDE_BODY}
+| EVAL project_type = project_type_label
+| WHERE filter_project == "*" OR project == filter_project OR project_id == filter_project
+| STATS spend = ROUND(SUM(cost), 2), ecu = ROUND(SUM(units), 2), threshold = MAX(threshold_spend), sym = COALESCE(MAX(currency_symbol), "$"), unit = COALESCE(MAX(unit), "USD") BY day = LEFT(TO_STRING(@timestamp), 10), project, project_id, project_type
+| WHERE spend > threshold
+| SORT spend DESC
+| EVAL result = CONCAT("[", day, "] Project `", project, "` (", project_id, ", ", project_type, ") daily spend of ", sym, TO_STRING(spend), " ", unit, " (", TO_STRING(ecu), " ECU) exceeded threshold of ", sym, TO_STRING(threshold), " ", unit, ".")
+| KEEP result, day, project, project_id, project_type, spend, ecu, threshold, unit""",
+            interval="24h",
+            time_window_size=3,
+            time_window_unit="d",
+        ),
+        # 6. Project Daily Spend Spike vs. 7-Day Baseline
+        alert_template(
+            ALERT_PROJECT_SPEND_SPIKE,
+            "[Chargeback Serverless] Project daily spend spike vs. 7-day baseline",
+            f"""FROM {BILLING}
+| EVAL threshold_pct_increase = 50.0, min_daily_spend = 25.0, filter_project = "*"
+| INLINE STATS latest_ts = MAX(@timestamp)
+| WHERE @timestamp >= latest_ts - 7 days
+{COST_PRELUDE_BODY}
+| EVAL project_type = project_type_label
+| WHERE filter_project == "*" OR project == filter_project OR project_id == filter_project
+| EVAL day_ts = DATE_TRUNC(1 day, @timestamp)
+| STATS day_spend = SUM(cost), day_ecu = SUM(units), threshold_pct = MAX(threshold_pct_increase), min_spend = MAX(min_daily_spend), sym = COALESCE(MAX(currency_symbol), "$"), unit = COALESCE(MAX(unit), "USD") BY day_ts, project, project_id, project_type
+| INLINE STATS latest_day_ts = MAX(day_ts)
+| EVAL is_latest = (day_ts == latest_day_ts)
+| EVAL latest_val = CASE(is_latest, day_spend, null), baseline_val = CASE(NOT is_latest, day_spend, null), latest_ecu_val = CASE(is_latest, day_ecu, null)
+| STATS latest_spend = ROUND(MAX(latest_val), 2), baseline_avg = ROUND(AVG(baseline_val), 2), baseline_days = COUNT(baseline_val), ecu = ROUND(MAX(latest_ecu_val), 2), day = LEFT(TO_STRING(MAX(latest_day_ts)), 10), threshold_pct = MAX(threshold_pct), min_spend = MAX(min_spend), sym = COALESCE(MAX(sym), "$"), unit = COALESCE(MAX(unit), "USD") BY project, project_id, project_type
+| WHERE latest_spend IS NOT NULL AND latest_spend >= min_spend AND baseline_days > 0 AND baseline_avg > 0.0
+| EVAL pct_increase = ROUND((latest_spend - baseline_avg) * 100.0 / baseline_avg, 1)
+| WHERE pct_increase > threshold_pct
+| SORT pct_increase DESC, latest_spend DESC
+| EVAL result = CONCAT("[", day, "] Project `", project, "` (", project_type, ") daily spend spiked +", TO_STRING(pct_increase), "% to ", sym, TO_STRING(latest_spend), " ", unit, " vs. ", TO_STRING(baseline_days), "-day baseline avg of ", sym, TO_STRING(baseline_avg), " ", unit, " (threshold: +", TO_STRING(threshold_pct), "%).")
+| KEEP result, day, project, project_id, project_type, latest_spend, baseline_avg, pct_increase, threshold_pct, unit""",
+            interval="24h",
+            time_window_size=10,
+            time_window_unit="d",
+        ),
+        # 7. Namespace Attributed Daily Spend Threshold
+        alert_template(
+            ALERT_NAMESPACE_SPEND,
+            "[Chargeback Serverless] Namespace attributed daily spend threshold exceeded",
+            f"""FROM {USAGE}
+| EVAL threshold_spend = 100.0, filter_namespace = "*"
+| INLINE STATS latest_day = MAX(@timestamp)
+| WHERE @timestamp == latest_day
+{USAGE_JOIN_BODY}
+| EVAL idx_share = CASE(deployment_sum_indexing_time > 0, TO_DOUBLE(datastream_sum_indexing_time) / TO_DOUBLE(deployment_sum_indexing_time), 0.0)
+| EVAL qry_share = CASE(deployment_sum_query_time > 0, TO_DOUBLE(datastream_sum_query_time) / TO_DOUBLE(deployment_sum_query_time), 0.0)
+| EVAL stg_share = CASE(deployment_sum_data_set_store_size > 0, TO_DOUBLE(datastream_sum_data_set_store_size) / TO_DOUBLE(deployment_sum_data_set_store_size), 0.0)
+| EVAL idx_cost = COALESCE(indexing_ecu, 0.0) * rate * idx_share
+| EVAL qry_cost = COALESCE(query_ecu, 0.0) * rate * qry_share
+| EVAL stg_cost = COALESCE(storage_ecu, 0.0) * rate * stg_share
+| EVAL total_ds_cost = idx_cost + qry_cost + stg_cost
+| EVAL namespace = COALESCE(ds_namespace, "other")
+| WHERE filter_namespace == "*" OR namespace == filter_namespace
+| STATS spend = ROUND(SUM(total_ds_cost), 2), indexing_spend = ROUND(SUM(idx_cost), 2), query_spend = ROUND(SUM(qry_cost), 2), storage_spend = ROUND(SUM(stg_cost), 2), datastream_count = COUNT_DISTINCT(datastream), project_count = COUNT_DISTINCT(project_id), threshold = MAX(threshold_spend), sym = COALESCE(MAX(currency_symbol), "$"), unit = COALESCE(MAX(unit), "USD") BY day = LEFT(TO_STRING(@timestamp), 10), namespace
+| WHERE spend > threshold
+| SORT spend DESC
+| EVAL result = CONCAT("[", day, "] Namespace `", namespace, "` attributed daily spend of ", sym, TO_STRING(spend), " ", unit, " across ", TO_STRING(datastream_count), " data streams (", TO_STRING(project_count), " projects) exceeded threshold of ", sym, TO_STRING(threshold), " ", unit, ".")
+| KEEP result, day, namespace, spend, indexing_spend, query_spend, storage_spend, datastream_count, threshold, unit""",
+            interval="24h",
+            time_window_size=3,
+            time_window_unit="d",
+        ),
+        # 8. AI Model Attributed Daily Spend Threshold
+        alert_template(
+            ALERT_AI_MODEL_SPEND,
+            "[Chargeback Serverless] AI model attributed daily spend threshold exceeded",
+            f"""FROM {AI_USAGE}
+| EVAL threshold_spend = 50.0, filter_model = "*"
+| INLINE STATS latest_day = MAX(@timestamp)
+| WHERE @timestamp == latest_day
+{AI_JOIN_BODY}
+| EVAL compute_time = COALESCE(total_inference_time_ms, 0)
+| EVAL model_weight = CASE(compute_time > 0, TO_DOUBLE(compute_time), TO_DOUBLE(inference_count))
+| EVAL ai_pool_cost = CASE(COALESCE(ai_ecu, 0.0) > 0.0, ai_ecu, COALESCE(query_ecu, 0.0)) * rate
+| INLINE STATS day_proj_weight = SUM(model_weight) BY composite_key
+| EVAL day_model_cost = CASE(day_proj_weight > 0, (model_weight / day_proj_weight) * ai_pool_cost, 0.0)
+| EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "unknown")
+| WHERE filter_model == "*" OR model_id == filter_model
+| STATS spend = ROUND(SUM(day_model_cost), 2), inferences = SUM(inference_count), avg_latency_ms = ROUND(AVG(average_inference_time_ms), 1), threshold = MAX(threshold_spend), sym = COALESCE(MAX(currency_symbol), "$"), unit = COALESCE(MAX(unit), "USD") BY day = LEFT(TO_STRING(@timestamp), 10), model_id, task_type, project
+| WHERE spend > threshold
+| SORT spend DESC
+| EVAL result = CONCAT("[", day, "] AI model `", model_id, "` (", COALESCE(task_type, "inference"), ") in project `", project, "` attributed spend of ", sym, TO_STRING(spend), " ", unit, " (", TO_STRING(inferences), " inferences) exceeded threshold of ", sym, TO_STRING(threshold), " ", unit, ".")
+| KEEP result, day, model_id, task_type, project, spend, inferences, avg_latency_ms, threshold, unit""",
+            interval="24h",
+            time_window_size=3,
+            time_window_unit="d",
+        ),
+        # 9. Synthetics Monitor Attributed Daily Spend Threshold
+        alert_template(
+            ALERT_SYNTHETICS_MONITOR_SPEND,
+            "[Chargeback Serverless] Synthetics monitor attributed daily spend threshold exceeded",
+            f"""FROM {SYNTHETICS_USAGE}
+| EVAL threshold_spend = 25.0, filter_monitor = "*"
+| INLINE STATS latest_day = MAX(@timestamp)
+| WHERE @timestamp == latest_day
+{SYNTHETICS_JOIN_BODY}
+{SYNTHETICS_MONITOR_COST_EVAL}
+| EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "unknown")
+| EVAL monitor_name = COALESCE(monitor_name, monitor_id, "unknown")
+| WHERE filter_monitor == "*" OR monitor_id == filter_monitor OR monitor_name == filter_monitor
+| STATS spend = ROUND(SUM(day_monitor_cost), 2), checks = SUM(chk), threshold = MAX(threshold_spend), sym = COALESCE(MAX(currency_symbol), "$"), unit = COALESCE(MAX(unit), "USD") BY day = LEFT(TO_STRING(@timestamp), 10), monitor_name, monitor_id, monitor_type, project
+| WHERE spend > threshold
+| SORT spend DESC
+| EVAL result = CONCAT("[", day, "] Synthetics monitor `", monitor_name, "` (", monitor_type, ") in project `", project, "` attributed spend of ", sym, TO_STRING(spend), " ", unit, " (", TO_STRING(checks), " checks) exceeded threshold of ", sym, TO_STRING(threshold), " ", unit, ".")
+| KEEP result, day, monitor_name, monitor_id, monitor_type, project, spend, checks, threshold, unit""",
+            interval="24h",
+            time_window_size=3,
+            time_window_unit="d",
+        ),
+        # 10. Consolidated Data Trust & Harvest Health Alert
+        alert_template(
+            ALERT_DATA_TRUST_HEALTH,
+            "[Chargeback Serverless] Data trust & project harvest health issue",
+            f"""FROM {BILLING}
+| EVAL threshold_unallocated_spend = 100.0, threshold_unallocated_pct = 25.0
+| INLINE STATS latest_day = MAX(@timestamp)
+| WHERE @timestamp == latest_day
+{COST_PRELUDE_BODY}
+| EVAL unalloc_cost = CASE((COALESCE(is_allocatable, false) == false OR allocation_driver == "none") AND COALESCE(sku, "none") != "none", cost, 0.0)
+| INLINE STATS org_total_spend = SUM(cost)
+| STATS
+    project = MAX(project),
+    raw_pname = MAX(project_name),
+    project_type = MAX(project_type_label),
+    harvest_status = COALESCE(MAX(last_status), "missing"),
+    updated_at_str = COALESCE(TO_STRING(MAX(updated_at)), "never"),
+    is_stale_time = MAX(CASE(updated_at IS NULL OR updated_at < NOW() - 26 hours, 1, 0)),
+    proj_spend = ROUND(SUM(cost), 2),
+    proj_ecu = ROUND(SUM(units), 2),
+    unallocated_spend = ROUND(SUM(unalloc_cost), 2),
+    org_spend = MAX(org_total_spend),
+    thresh_unalloc = MAX(threshold_unallocated_spend),
+    thresh_pct = MAX(threshold_unallocated_pct),
+    sym = COALESCE(MAX(currency_symbol), "$"),
+    unit = COALESCE(MAX(unit), "USD")
+  BY day = LEFT(TO_STRING(@timestamp), 10), project_id
+| EVAL has_harvest_issue = (harvest_status != "inactive" AND (harvest_status != "ok" OR is_stale_time == 1))
+| EVAL has_missing_name = (proj_ecu > 0.0 AND (raw_pname IS NULL OR raw_pname == "" OR raw_pname == project_id))
+| EVAL unallocated_pct = CASE(org_spend > 0.0, ROUND(unallocated_spend * 100.0 / org_spend, 1), 0.0)
+| EVAL has_unalloc_issue = (unallocated_spend > thresh_unalloc AND unallocated_pct > thresh_pct)
+| WHERE has_harvest_issue OR has_missing_name OR has_unalloc_issue
+| EVAL issue_type = CASE(
+    has_harvest_issue, "stale_or_unauthorized_harvest",
+    has_missing_name, "missing_project_name",
+    "high_unallocated_spend"
+  )
+| EVAL result = CONCAT("[", day, "] Project `", COALESCE(project, project_id), "` (", project_id, ") issue=", issue_type, ": harvest_status=", harvest_status, " (last updated ", updated_at_str, "), unallocated=", sym, TO_STRING(unallocated_spend), " ", unit, " (", TO_STRING(unallocated_pct), "% of org spend).")
+| KEEP result, day, project, project_id, project_type, issue_type, harvest_status, unallocated_spend, unallocated_pct, unit""",
+            interval="24h",
+            time_window_size=3,
+            time_window_unit="d",
         ),
     ]
 
