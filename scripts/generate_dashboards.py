@@ -3343,6 +3343,28 @@ def control_group(mode: str = "billing") -> dict:
         controls = [
             (stable_uuid("ctrl-project-type"), "project_type", "Project type", 0),
             (stable_uuid("ctrl-project-name"), "project_name", "Project name", 1),
+            (stable_uuid("ctrl-allocation-driver"), "allocation_driver", "Workload driver", 2),
+            (stable_uuid("ctrl-ds-namespace"), "ds_namespace", "Namespace", 3),
+            (stable_uuid("ctrl-ds-type"), "ds_type", "Data stream type", 4),
+        ]
+    elif mode == "ai":
+        controls = [
+            (stable_uuid("ctrl-project-type"), "project_type", "Project type", 0),
+            (stable_uuid("ctrl-project-name"), "project_name", "Project name", 1),
+            (stable_uuid("ctrl-model-id"), "model_id", "AI model", 2),
+            (stable_uuid("ctrl-task-type"), "task_type", "Task type", 3),
+        ]
+    elif mode == "synthetics":
+        controls = [
+            (stable_uuid("ctrl-project-type"), "project_type", "Project type", 0),
+            (stable_uuid("ctrl-project-name"), "project_name", "Project name", 1),
+            (stable_uuid("ctrl-monitor-type"), "monitor_type", "Monitor type", 2),
+            (stable_uuid("ctrl-ds-namespace"), "ds_namespace", "Namespace", 3),
+        ]
+    elif mode == "config":
+        controls = [
+            (stable_uuid("ctrl-project-type"), "project_type", "Project type", 0),
+            (stable_uuid("ctrl-project-name"), "project_name", "Project name", 1),
         ]
     else:
         controls = [
@@ -4062,7 +4084,7 @@ def build_ai() -> dict:
         panels,
         refs,
         with_controls=True,
-        controls_mode="usage",
+        controls_mode="ai",
     )
 
 
@@ -4341,7 +4363,7 @@ def build_synthetics() -> dict:
         panels,
         refs,
         with_controls=True,
-        controls_mode="usage",
+        controls_mode="synthetics",
     )
 
 
@@ -4427,7 +4449,7 @@ def build_config() -> dict:
         panels,
         refs,
         with_controls=True,
-        controls_mode="usage",
+        controls_mode="config",
         hide_panel_titles=True,
     )
 
@@ -4755,6 +4777,15 @@ def build_index_pattern() -> dict:
         f("conf_chargeable_unit_rate", "number", "double"),
         f("conf_chargeable_unit_rate_unit", "string", "keyword"),
         f("conf_currency_symbol", "string", "keyword"),
+        f("datastream", "string", "keyword"),
+        f("ds_type", "string", "keyword"),
+        f("ds_namespace", "string", "keyword"),
+        f("model_id", "string", "keyword"),
+        f("task_type", "string", "keyword"),
+        f("monitor_id", "string", "keyword"),
+        f("monitor_name", "string", "keyword"),
+        f("monitor_type", "string", "keyword"),
+        f("monitor_namespace", "string", "keyword"),
     ]
     return {
         "attributes": {
@@ -4762,11 +4793,11 @@ def build_index_pattern() -> dict:
             "fieldAttrs": "{}",
             "fieldFormatMap": "{}",
             "fields": json.dumps(fields),
-            "name": "[Chargeback Serverless] Billing",
+            "name": "[Chargeback Serverless] Billing & Usage",
             "runtimeFieldMap": "{}",
             "sourceFilters": "[]",
             "timeFieldName": "@timestamp",
-            "title": BILLING,
+            "title": "serverless_*_lookup",
         },
         "coreMigrationVersion": "8.8.0",
         "id": INDEX_PATTERN_ID,

@@ -24,7 +24,7 @@ def get_env(key, default=""):
     return os.environ.get(key, default).strip()
 
 ORG_ID = get_env("ORGANIZATION_ID")
-CLOUD_API_KEY = get_env("CLOUD_API_KEY") or get_env("BILLING_API_KEY")
+CLOUD_API_KEY = get_env("CLOUD_API_KEY") or get_env("USAGE_API_KEY") or get_env("BILLING_API_KEY")
 ES_URL = get_env("ES_URL") or get_env("sl_url") or get_env("ES_HOST")
 ES_API_KEY = get_env("ES_API_KEY") or get_env("HUB_ES_API_KEY") or get_env("HUB_KIBANA_API_KEY")
 HUB_ES_API_KEY = get_env("HUB_ES_API_KEY") or ES_API_KEY
