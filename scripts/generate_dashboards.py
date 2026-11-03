@@ -719,7 +719,8 @@ USAGE_KPI_TEMPLATE = f"""\
 {{% assign idx_s = r["indexing_spend"].value | default: 0.0 %}}
 {{% assign qry_s = r["query_spend"].value | default: 0.0 %}}
 {{% assign stg_s = r["storage_spend"].value | default: 0.0 %}}
-{{% assign ai_syn_s = r["ai_syn_spend"].value | default: 0.0 %}}
+{{% assign ai_s = r["ai_spend"].value | default: 0.0 %}}
+{{% assign syn_s = r["synthetics_spend"].value | default: 0.0 %}}
 {{% assign unit = r["unit"].value | default: "USD" %}}
 {{% assign sym = r["currency_symbol"].value | default: "$" %}}
 {{% assign denom = pool %}}
@@ -727,12 +728,14 @@ USAGE_KPI_TEMPLATE = f"""\
 {{% assign idx_pct = idx_s | times: 100.0 | divided_by: denom | round: 1 %}}
 {{% assign qry_pct = qry_s | times: 100.0 | divided_by: denom | round: 1 %}}
 {{% assign stg_pct = stg_s | times: 100.0 | divided_by: denom | round: 1 %}}
-{{% assign ai_syn_pct = ai_syn_s | times: 100.0 | divided_by: denom | round: 1 %}}
+{{% assign ai_pct = ai_s | times: 100.0 | divided_by: denom | round: 1 %}}
+{{% assign syn_pct = syn_s | times: 100.0 | divided_by: denom | round: 1 %}}
 {liquid_money_block("pool", "fmt_pool", with_decimals=True)}
 {liquid_money_block("idx_s", "fmt_idx_s", with_decimals=True)}
 {liquid_money_block("qry_s", "fmt_qry_s", with_decimals=True)}
 {liquid_money_block("stg_s", "fmt_stg_s", with_decimals=True)}
-{liquid_money_block("ai_syn_s", "fmt_ai_syn_s", with_decimals=True)}
+{liquid_money_block("ai_s", "fmt_ai_s", with_decimals=True)}
+{liquid_money_block("syn_s", "fmt_syn_s", with_decimals=True)}
 <div class="cb-kpi-wrap">
   <div class="cb-kpis">
     <div class="cb-kpi" title="Total Allocatable Pool: All workload-attributable spend (is_allocatable: true AND allocation_driver != 'none').">
@@ -755,10 +758,15 @@ USAGE_KPI_TEMPLATE = f"""\
       <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_stg_s }}}}</span></div>
       <div class="cb-kpi-sub">{{{{ stg_pct }}}}% · retained storage</div>
     </div>
-    <div class="cb-kpi" title="AI &amp; Synthetics Pool: Spend from ml-vcu, inference, agent-builder, and synthetics SKUs.">
-      <div class="cb-kpi-label">AI &amp; Synthetics Pool ({{{{ unit }}}})</div>
-      <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_ai_syn_s }}}}</span></div>
-      <div class="cb-kpi-sub">{{{{ ai_syn_pct }}}}% · AI, Agent Builder &amp; Synthetics</div>
+    <div class="cb-kpi" title="AI &amp; ML Pool: Spend from ml-vcu, inference, and agent-builder SKUs.">
+      <div class="cb-kpi-label">AI &amp; ML Pool ({{{{ unit }}}})</div>
+      <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_ai_s }}}}</span></div>
+      <div class="cb-kpi-sub">{{{{ ai_pct }}}}% · inference + ml-vcu</div>
+    </div>
+    <div class="cb-kpi" title="Synthetics Pool: Spend from synthetics SKUs (pings and browser executions).">
+      <div class="cb-kpi-label">Synthetics Pool ({{{{ unit }}}})</div>
+      <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_syn_s }}}}</span></div>
+      <div class="cb-kpi-sub">{{{{ syn_pct }}}}% · pings + browser</div>
     </div>
   </div>
 </div>
@@ -3358,8 +3366,10 @@ def control_group(mode: str = "billing") -> dict:
         controls = [
             (stable_uuid("ctrl-project-type"), "project_type", "Project type", 0),
             (stable_uuid("ctrl-project-name"), "project_name", "Project name", 1),
-            (stable_uuid("ctrl-monitor-type"), "monitor_type", "Monitor type", 2),
-            (stable_uuid("ctrl-ds-namespace"), "ds_namespace", "Namespace", 3),
+            (stable_uuid("ctrl-monitor-type"), "monitor_type", "Synthetic type", 2),
+            (stable_uuid("ctrl-monitor-id"), "monitor_id", "Monitor", 3),
+            (stable_uuid("ctrl-ds-dataset"), "ds_dataset", "Synthetic dataset", 4),
+            (stable_uuid("ctrl-ds-namespace"), "ds_namespace", "Namespace", 5),
         ]
     elif mode == "config":
         controls = [
@@ -3730,8 +3740,9 @@ def build_usage() -> dict:
 | EVAL idx_c = CASE(cost_type_label IN ("ingest-vcu", "ingest"), cost, 0.0)
 | EVAL qry_c = CASE(cost_type_label IN ("search-vcu", "search"), cost, 0.0)
 | EVAL stg_c = CASE(cost_type_label == "retained", cost, 0.0)
-| EVAL ai_syn_c = CASE(allocation_driver IN ("ai", "synthetics") OR cost_type_label IN ("inference", "ml-vcu", "agent-builder", "synthetics"), cost, 0.0)
-| STATS pool_spend = SUM(cost), indexing_spend = SUM(idx_c), query_spend = SUM(qry_c), storage_spend = SUM(stg_c), ai_syn_spend = SUM(ai_syn_c), currency_symbol = MAX(currency_symbol), unit = MAX(unit)""",
+| EVAL ai_c = CASE(allocation_driver == "ai" OR cost_type_label IN ("inference", "ml-vcu", "agent-builder"), cost, 0.0)
+| EVAL syn_c = CASE(allocation_driver == "synthetics" OR cost_type_label == "synthetics", cost, 0.0)
+| STATS pool_spend = SUM(cost), indexing_spend = SUM(idx_c), query_spend = SUM(qry_c), storage_spend = SUM(stg_c), ai_spend = SUM(ai_c), synthetics_spend = SUM(syn_c), currency_symbol = MAX(currency_symbol), unit = MAX(unit)""",
         0,
         0,
         48,
@@ -3743,7 +3754,8 @@ def build_usage() -> dict:
             "• Indexing Pool: Spend from ingest-vcu & ingest SKUs, attributed across data streams by indexing.index_time.\n"
             "• Search & Query Pool: Spend from search-vcu & search SKUs, attributed across data streams by search.query_time.\n"
             "• Storage Pool: Spend from retained storage SKUs, attributed across data streams by dataset.size.\n"
-            "• AI & Synthetics Pool: Spend from ml-vcu, inference, agent-builder, and synthetics SKUs."
+            "• AI & ML Pool: Spend from ml-vcu, inference, and agent-builder SKUs.\n"
+            "• Synthetics Pool: Spend from synthetics SKUs (pings and browser executions)."
         ),
     )
     panels.append(p)
@@ -4395,24 +4407,14 @@ def build_config() -> dict:
 | INLINE STATS latest_upd = MAX(updated_at), latest_ts = MAX(ts) BY project_id
 | EVAL is_latest = CASE(updated_at IS NOT NULL AND latest_upd IS NOT NULL, updated_at == latest_upd, ts == latest_ts)
 | EVAL cur_status = CASE(is_latest, last_status, null),
-       cur_key_type = CASE(is_latest, api_key_type, null),
-       cur_synth_status = CASE(is_latest, synthetics_status, null),
-       cur_idx_cnt = CASE(is_latest, index_count, null),
-       cur_ds_cnt = CASE(is_latest, datastream_count, null),
-       cur_ai_cnt = CASE(is_latest, ai_model_count, null),
-       cur_syn_cnt = CASE(is_latest, synthetics_monitor_count, null)
+       cur_idx_cnt = CASE(is_latest, index_count, null)
 | STATS
     project_name = MAX(project_name),
     project_type = MAX(project_type),
     optimized_for = MAX(optimized_for),
     es_url = MAX(es_url),
     last_status = COALESCE(MAX(cur_status), MAX(last_status)),
-    api_key_type = COALESCE(MAX(cur_key_type), MAX(api_key_type)),
-    synthetics_status = COALESCE(MAX(cur_synth_status), MAX(synthetics_status)),
     index_count = COALESCE(MAX(cur_idx_cnt), MAX(index_count)),
-    datastream_count = COALESCE(MAX(cur_ds_cnt), MAX(datastream_count)),
-    ai_model_count = COALESCE(MAX(cur_ai_cnt), MAX(ai_model_count)),
-    synthetics_monitor_count = COALESCE(MAX(cur_syn_cnt), MAX(synthetics_monitor_count)),
     store_bytes = MAX(deployment_sum_data_set_store_size),
     total_ecu = ROUND(SUM(day_ecu), 2),
     total_cost = ROUND(SUM(day_cost), 2),
@@ -4433,7 +4435,7 @@ def build_config() -> dict:
 | EVAL sort_order = CASE(health == "ok", 1, health == "empty_or_unauthorized", 2, health == "inactive", 3, 4)
 | SORT sort_order ASC, total_cost DESC, project_name ASC
 | LIMIT 200
-| KEEP project_id, project_name, project_type, optimized_for, es_url, last_status, api_key_type, synthetics_status, index_count, datastream_count, ai_model_count, synthetics_monitor_count, store_bytes, total_ecu, total_cost, billed_days, latest_bill_ts, window_days, updated_at, health, conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_currency_symbol""",
+| KEEP project_id, project_name, project_type, optimized_for, es_url, last_status, index_count, store_bytes, total_ecu, total_cost, billed_days, latest_bill_ts, window_days, updated_at, health, conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_currency_symbol""",
         0,
         2,
         48,
@@ -4779,6 +4781,7 @@ def build_index_pattern() -> dict:
         f("conf_currency_symbol", "string", "keyword"),
         f("datastream", "string", "keyword"),
         f("ds_type", "string", "keyword"),
+        f("ds_dataset", "string", "keyword"),
         f("ds_namespace", "string", "keyword"),
         f("model_id", "string", "keyword"),
         f("task_type", "string", "keyword"),

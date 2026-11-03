@@ -23,7 +23,7 @@
                             "by": "_count",
                             "direction": "desc"
                         },
-                        "title": "Monitor type"
+                        "title": "Synthetic type"
                     },
                     "grow": false,
                     "order": 2,
@@ -46,7 +46,7 @@
                         "title": "Namespace"
                     },
                     "grow": false,
-                    "order": 3,
+                    "order": 5,
                     "type": "optionsListControl",
                     "width": "medium"
                 },
@@ -70,6 +70,26 @@
                     "type": "optionsListControl",
                     "width": "medium"
                 },
+                "d4690cce-a495-5dd4-a0a6-2e876eb1b5ea": {
+                    "explicitInput": {
+                        "dataViewId": "chargeback_serverless-billing",
+                        "exclude": false,
+                        "existsSelected": false,
+                        "fieldName": "monitor_id",
+                        "id": "d4690cce-a495-5dd4-a0a6-2e876eb1b5ea",
+                        "searchTechnique": "prefix",
+                        "selectedOptions": [],
+                        "sort": {
+                            "by": "_count",
+                            "direction": "desc"
+                        },
+                        "title": "Monitor"
+                    },
+                    "grow": false,
+                    "order": 3,
+                    "type": "optionsListControl",
+                    "width": "medium"
+                },
                 "d5af3850-9c5d-5af4-a129-6333630b85ac": {
                     "explicitInput": {
                         "dataViewId": "chargeback_serverless-billing",
@@ -87,6 +107,26 @@
                     },
                     "grow": false,
                     "order": 0,
+                    "type": "optionsListControl",
+                    "width": "medium"
+                },
+                "d913e5be-95e8-571c-ba4a-aa8a56c139bc": {
+                    "explicitInput": {
+                        "dataViewId": "chargeback_serverless-billing",
+                        "exclude": false,
+                        "existsSelected": false,
+                        "fieldName": "ds_dataset",
+                        "id": "d913e5be-95e8-571c-ba4a-aa8a56c139bc",
+                        "searchTechnique": "prefix",
+                        "selectedOptions": [],
+                        "sort": {
+                            "by": "_count",
+                            "direction": "desc"
+                        },
+                        "title": "Synthetic dataset"
+                    },
+                    "grow": false,
+                    "order": 4,
                     "type": "optionsListControl",
                     "width": "medium"
                 }
@@ -446,6 +486,16 @@
         {
             "id": "chargeback_serverless-billing",
             "name": "controlGroup_49ffc2e6-1014-515e-9957-980455c82399:optionsListDataView",
+            "type": "index-pattern"
+        },
+        {
+            "id": "chargeback_serverless-billing",
+            "name": "controlGroup_d4690cce-a495-5dd4-a0a6-2e876eb1b5ea:optionsListDataView",
+            "type": "index-pattern"
+        },
+        {
+            "id": "chargeback_serverless-billing",
+            "name": "controlGroup_d913e5be-95e8-571c-ba4a-aa8a56c139bc:optionsListDataView",
             "type": "index-pattern"
         },
         {
