@@ -4077,7 +4077,8 @@ def build_billing() -> dict:
 | EVAL real_sku_cnt = CASE(is_placeholder, 0, 1)
 | INLINE STATS proj_real_skus = SUM(real_sku_cnt) BY project_id
 | WHERE NOT is_placeholder OR proj_real_skus == 0
-| STATS qty = SUM(COALESCE(quantity_value, 0.0)), ecu = SUM(units), cost = SUM(cost), is_inactive = MAX(CASE(COALESCE(last_status, "") == "inactive", 1, 0)), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project, project_type_label, category_label, cost_type_label, sku, allocation_driver
+| EVAL qty_val = CASE(quantity_value IS NOT NULL, quantity_value, 0.0)
+| STATS qty = SUM(qty_val), ecu = SUM(units), cost = SUM(cost), is_inactive = MAX(CASE(COALESCE(last_status, "") == "inactive", 1, 0)), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project, project_type_label, category_label, cost_type_label, sku, allocation_driver
 | RENAME project_type_label AS project_type, category_label AS category, cost_type_label AS cost_type, allocation_driver AS driver
 | SORT cost DESC, ecu DESC, qty DESC, project ASC
 | LIMIT 200
@@ -4207,9 +4208,9 @@ def build_usage() -> dict:
 | EVAL idx_share = CASE(deployment_sum_indexing_time > 0, TO_DOUBLE(datastream_sum_indexing_time) / TO_DOUBLE(deployment_sum_indexing_time), 0.0)
 | EVAL qry_share = CASE(deployment_sum_query_time > 0, TO_DOUBLE(datastream_sum_query_time) / TO_DOUBLE(deployment_sum_query_time), 0.0)
 | EVAL stg_share = CASE(deployment_sum_data_set_store_size > 0, TO_DOUBLE(datastream_sum_data_set_store_size) / TO_DOUBLE(deployment_sum_data_set_store_size), 0.0)
-| EVAL idx_cost = COALESCE(indexing_ecu, 0.0) * rate * idx_share
-| EVAL qry_cost = COALESCE(query_ecu, 0.0) * rate * qry_share
-| EVAL stg_cost = COALESCE(storage_ecu, 0.0) * rate * stg_share
+| EVAL idx_cost = CASE(indexing_ecu IS NOT NULL, indexing_ecu, 0.0) * rate * idx_share
+| EVAL qry_cost = CASE(query_ecu IS NOT NULL, query_ecu, 0.0) * rate * qry_share
+| EVAL stg_cost = CASE(storage_ecu IS NOT NULL, storage_ecu, 0.0) * rate * stg_share
 | EVAL total_ds_cost = idx_cost + qry_cost + stg_cost
 | EVAL namespace = COALESCE(ds_namespace, "other")
 | STATS cost = SUM(total_ds_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY namespace
@@ -4242,9 +4243,9 @@ def build_usage() -> dict:
 | EVAL idx_share = CASE(deployment_sum_indexing_time > 0, TO_DOUBLE(datastream_sum_indexing_time) / TO_DOUBLE(deployment_sum_indexing_time), 0.0)
 | EVAL qry_share = CASE(deployment_sum_query_time > 0, TO_DOUBLE(datastream_sum_query_time) / TO_DOUBLE(deployment_sum_query_time), 0.0)
 | EVAL stg_share = CASE(deployment_sum_data_set_store_size > 0, TO_DOUBLE(datastream_sum_data_set_store_size) / TO_DOUBLE(deployment_sum_data_set_store_size), 0.0)
-| EVAL idx_cost = COALESCE(indexing_ecu, 0.0) * rate * idx_share
-| EVAL qry_cost = COALESCE(query_ecu, 0.0) * rate * qry_share
-| EVAL stg_cost = COALESCE(storage_ecu, 0.0) * rate * stg_share
+| EVAL idx_cost = CASE(indexing_ecu IS NOT NULL, indexing_ecu, 0.0) * rate * idx_share
+| EVAL qry_cost = CASE(query_ecu IS NOT NULL, query_ecu, 0.0) * rate * qry_share
+| EVAL stg_cost = CASE(storage_ecu IS NOT NULL, storage_ecu, 0.0) * rate * stg_share
 | EVAL total_ds_cost = idx_cost + qry_cost + stg_cost
 | EVAL ds_type_label = COALESCE(ds_type, "other")
 | STATS cost = SUM(total_ds_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY ds_type_label
@@ -4270,9 +4271,9 @@ def build_usage() -> dict:
 | EVAL idx_share = CASE(deployment_sum_indexing_time > 0, TO_DOUBLE(datastream_sum_indexing_time) / TO_DOUBLE(deployment_sum_indexing_time), 0.0)
 | EVAL qry_share = CASE(deployment_sum_query_time > 0, TO_DOUBLE(datastream_sum_query_time) / TO_DOUBLE(deployment_sum_query_time), 0.0)
 | EVAL stg_share = CASE(deployment_sum_data_set_store_size > 0, TO_DOUBLE(datastream_sum_data_set_store_size) / TO_DOUBLE(deployment_sum_data_set_store_size), 0.0)
-| EVAL day_idx_cost = COALESCE(indexing_ecu, 0.0) * rate * idx_share
-| EVAL day_qry_cost = COALESCE(query_ecu, 0.0) * rate * qry_share
-| EVAL day_stg_cost = COALESCE(storage_ecu, 0.0) * rate * stg_share
+| EVAL day_idx_cost = CASE(indexing_ecu IS NOT NULL, indexing_ecu, 0.0) * rate * idx_share
+| EVAL day_qry_cost = CASE(query_ecu IS NOT NULL, query_ecu, 0.0) * rate * qry_share
+| EVAL day_stg_cost = CASE(storage_ecu IS NOT NULL, storage_ecu, 0.0) * rate * stg_share
 | EVAL day_attr_cost = day_idx_cost + day_qry_cost + day_stg_cost
 | STATS indexing_cost = SUM(day_idx_cost), query_cost = SUM(day_qry_cost), storage_cost = SUM(day_stg_cost), attributed_cost = SUM(day_attr_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project, project_type, ds_type, ds_namespace, datastream
 | SORT attributed_cost DESC
@@ -4336,8 +4337,9 @@ def build_ai() -> dict:
     ai_kpi_esql = f"""FROM {AI_USAGE}
 {TIME_FILTER_ESQL}
 {AI_JOIN_BODY}
-| EVAL ded_cost = COALESCE(ai_ecu, 0.0) * rate
-| EVAL ai_pool_cost = CASE(COALESCE(ai_ecu, 0.0) > 0.0, ai_ecu, COALESCE(query_ecu, 0.0)) * rate
+| EVAL ai_ecu_val = CASE(ai_ecu IS NOT NULL, ai_ecu, 0.0), qry_ecu_val = CASE(query_ecu IS NOT NULL, query_ecu, 0.0)
+| EVAL ded_cost = ai_ecu_val * rate
+| EVAL ai_pool_cost = CASE(ai_ecu_val > 0.0, ai_ecu_val, qry_ecu_val) * rate
 | INLINE STATS total_models = COUNT_DISTINCT(model_id)
 | STATS proj_spend = MAX(ai_pool_cost), proj_ded = MAX(ded_cost), proj_inf = SUM(inference_count), proj_latency = AVG(average_inference_time_ms), model_count = MAX(total_models), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY composite_key
 | STATS ai_spend = SUM(proj_spend), dedicated_ai_spend = SUM(proj_ded), total_inferences = SUM(proj_inf), model_count = MAX(model_count), avg_latency_ms = ROUND(AVG(proj_latency), 1), currency_symbol = MAX(currency_symbol), unit = MAX(unit)
@@ -4359,9 +4361,10 @@ def build_ai() -> dict:
     ai_daily_model_esql = f"""FROM {AI_USAGE}
 {TIME_FILTER_ESQL}
 {AI_JOIN_BODY}
-| EVAL compute_time = COALESCE(total_inference_time_ms, 0)
-| EVAL model_weight = CASE(compute_time > 0, TO_DOUBLE(compute_time), TO_DOUBLE(inference_count))
-| EVAL ai_pool_cost = CASE(COALESCE(ai_ecu, 0.0) > 0.0, ai_ecu, COALESCE(query_ecu, 0.0)) * rate
+| EVAL compute_time = CASE(total_inference_time_ms IS NOT NULL, TO_DOUBLE(total_inference_time_ms), 0.0)
+| EVAL model_weight = CASE(compute_time > 0.0, compute_time, TO_DOUBLE(inference_count))
+| EVAL ai_ecu_val = CASE(ai_ecu IS NOT NULL, ai_ecu, 0.0), qry_ecu_val = CASE(query_ecu IS NOT NULL, query_ecu, 0.0)
+| EVAL ai_pool_cost = CASE(ai_ecu_val > 0.0, ai_ecu_val, qry_ecu_val) * rate
 | INLINE STATS day_proj_weight = SUM(model_weight) BY composite_key
 | EVAL day_model_cost = CASE(day_proj_weight > 0, (model_weight / day_proj_weight) * ai_pool_cost, 0.0)
 | STATS cost = SUM(day_model_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY b = DATE_TRUNC(1 day, @timestamp), model_id
@@ -4387,9 +4390,10 @@ def build_ai() -> dict:
     ai_by_proj_esql = f"""FROM {AI_USAGE}
 {TIME_FILTER_ESQL}
 {AI_JOIN_BODY}
-| EVAL compute_time = COALESCE(total_inference_time_ms, 0)
-| EVAL model_weight = CASE(compute_time > 0, TO_DOUBLE(compute_time), TO_DOUBLE(inference_count))
-| EVAL ai_pool_cost = CASE(COALESCE(ai_ecu, 0.0) > 0.0, ai_ecu, COALESCE(query_ecu, 0.0)) * rate
+| EVAL compute_time = CASE(total_inference_time_ms IS NOT NULL, TO_DOUBLE(total_inference_time_ms), 0.0)
+| EVAL model_weight = CASE(compute_time > 0.0, compute_time, TO_DOUBLE(inference_count))
+| EVAL ai_ecu_val = CASE(ai_ecu IS NOT NULL, ai_ecu, 0.0), qry_ecu_val = CASE(query_ecu IS NOT NULL, query_ecu, 0.0)
+| EVAL ai_pool_cost = CASE(ai_ecu_val > 0.0, ai_ecu_val, qry_ecu_val) * rate
 | INLINE STATS day_proj_weight = SUM(model_weight) BY composite_key
 | EVAL day_model_cost = CASE(day_proj_weight > 0, (model_weight / day_proj_weight) * ai_pool_cost, 0.0)
 | EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "unknown")
@@ -4421,9 +4425,10 @@ def build_ai() -> dict:
     ai_models_esql = f"""FROM {AI_USAGE}
 {TIME_FILTER_ESQL}
 {AI_JOIN_BODY}
-| EVAL compute_time = COALESCE(total_inference_time_ms, 0)
-| EVAL model_weight = CASE(compute_time > 0, TO_DOUBLE(compute_time), TO_DOUBLE(inference_count))
-| EVAL ai_pool_cost = CASE(COALESCE(ai_ecu, 0.0) > 0.0, ai_ecu, COALESCE(query_ecu, 0.0)) * rate
+| EVAL compute_time = CASE(total_inference_time_ms IS NOT NULL, TO_DOUBLE(total_inference_time_ms), 0.0)
+| EVAL model_weight = CASE(compute_time > 0.0, compute_time, TO_DOUBLE(inference_count))
+| EVAL ai_ecu_val = CASE(ai_ecu IS NOT NULL, ai_ecu, 0.0), qry_ecu_val = CASE(query_ecu IS NOT NULL, query_ecu, 0.0)
+| EVAL ai_pool_cost = CASE(ai_ecu_val > 0.0, ai_ecu_val, qry_ecu_val) * rate
 | INLINE STATS day_proj_weight = SUM(model_weight) BY composite_key
 | EVAL day_model_cost = CASE(day_proj_weight > 0, (model_weight / day_proj_weight) * ai_pool_cost, 0.0)
 | EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "unknown")
@@ -4450,7 +4455,8 @@ def build_ai() -> dict:
         AI_BILLING_TABLE_TEMPLATE,
         f"""{COST_PRELUDE}
 | WHERE cost_type_label IN ("ml-vcu", "inference", "agent-builder") OR sku LIKE "*ml*" OR sku LIKE "*inference*" OR sku LIKE "*llm*" OR sku LIKE "*agent-builder*"
-| STATS qty = SUM(COALESCE(quantity_value, 0.0)), ecu = SUM(units), cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project, project_type_label, cost_type_label, sku
+| EVAL qty_val = CASE(quantity_value IS NOT NULL, quantity_value, 0.0)
+| STATS qty = SUM(qty_val), ecu = SUM(units), cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project, project_type_label, cost_type_label, sku
 | RENAME project_type_label AS project_type, cost_type_label AS cost_type
 | SORT cost DESC
 | LIMIT 100
@@ -4493,7 +4499,7 @@ def build_synthetics() -> dict:
 | EVAL pings_cost = CASE(is_pings, cost, 0.0)
 | EVAL exec_cost = CASE(is_exec, cost, 0.0)
 | EVAL synth_ecu = CASE(is_synth, units, 0.0)
-| EVAL raw_qty = CASE(is_synth, COALESCE(quantity_value, 0.0), 0.0)
+| EVAL raw_qty = CASE(is_synth AND quantity_value IS NOT NULL, quantity_value, 0.0)
 | EVAL norm_runs = CASE(is_pings AND raw_qty > 0.0 AND raw_qty < 100.0 AND units > raw_qty * 5.0, raw_qty * 1000.0, raw_qty)
 | EVAL synth_proj = CASE(is_synth AND cost > 0, project_id, null)
 | STATS synthetics_spend = SUM(synth_cost), pings_spend = SUM(pings_cost), exec_spend = SUM(exec_cost), total_org_spend = SUM(cost), synthetics_ecu = SUM(synth_ecu), synthetics_runs = SUM(norm_runs), project_count = COUNT_DISTINCT(synth_proj), currency_symbol = MAX(currency_symbol), unit = MAX(unit)
@@ -4517,9 +4523,9 @@ def build_synthetics() -> dict:
 | EVAL idx_share = CASE(is_synth_ds AND deployment_sum_indexing_time > 0, TO_DOUBLE(datastream_sum_indexing_time) / TO_DOUBLE(deployment_sum_indexing_time), 0.0)
 | EVAL qry_share = CASE(is_synth_ds AND deployment_sum_query_time > 0, TO_DOUBLE(datastream_sum_query_time) / TO_DOUBLE(deployment_sum_query_time), 0.0)
 | EVAL stg_share = CASE(is_synth_ds AND deployment_sum_data_set_store_size > 0, TO_DOUBLE(datastream_sum_data_set_store_size) / TO_DOUBLE(deployment_sum_data_set_store_size), 0.0)
-| EVAL idx_cost = COALESCE(indexing_ecu, 0.0) * rate * idx_share
-| EVAL qry_cost = COALESCE(query_ecu, 0.0) * rate * qry_share
-| EVAL stg_cost = COALESCE(storage_ecu, 0.0) * rate * stg_share
+| EVAL idx_cost = CASE(indexing_ecu IS NOT NULL, indexing_ecu, 0.0) * rate * idx_share
+| EVAL qry_cost = CASE(query_ecu IS NOT NULL, query_ecu, 0.0) * rate * qry_share
+| EVAL stg_cost = CASE(storage_ecu IS NOT NULL, storage_ecu, 0.0) * rate * stg_share
 | EVAL ds_cost = idx_cost + qry_cost + stg_cost
 | EVAL synth_ds_name = CASE(is_synth_ds, datastream, null)
 | STATS ds_spend = SUM(ds_cost), indexing_spend = SUM(idx_cost), query_spend = SUM(qry_cost), storage_spend = SUM(stg_cost), ds_count = COUNT_DISTINCT(synth_ds_name), currency_symbol = MAX(currency_symbol), unit = MAX(unit)
@@ -4633,7 +4639,7 @@ def build_synthetics() -> dict:
 {TIME_FILTER_ESQL}
 {SYNTHETICS_JOIN_BODY}
 {SYNTHETICS_MONITOR_COST_EVAL}
-| EVAL weighted_dur = TO_DOUBLE(COALESCE(average_duration_ms, 0.0)) * TO_DOUBLE(COALESCE(check_count, 0))
+| EVAL weighted_dur = CASE(average_duration_ms IS NOT NULL, average_duration_ms, 0.0) * chk
 | STATS monitor_name = MAX(monitor_name), monitor_namespace = MAX(monitor_namespace), locations = MAX(locations_count), checks = SUM(check_count), up_checks = SUM(up_count), sum_weighted_dur = SUM(weighted_dur), cost = SUM(day_monitor_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project, monitor_id, monitor_type
 | EVAL availability_pct = CASE(checks > 0, TO_DOUBLE(up_checks) * 100.0 / TO_DOUBLE(checks), 100.0)
 | EVAL avg_duration_ms = CASE(checks > 0, sum_weighted_dur / TO_DOUBLE(checks), 0.0)
@@ -4666,9 +4672,9 @@ def build_synthetics() -> dict:
 | EVAL idx_share = CASE(deployment_sum_indexing_time > 0, TO_DOUBLE(datastream_sum_indexing_time) / TO_DOUBLE(deployment_sum_indexing_time), 0.0)
 | EVAL qry_share = CASE(deployment_sum_query_time > 0, TO_DOUBLE(datastream_sum_query_time) / TO_DOUBLE(deployment_sum_query_time), 0.0)
 | EVAL stg_share = CASE(deployment_sum_data_set_store_size > 0, TO_DOUBLE(datastream_sum_data_set_store_size) / TO_DOUBLE(deployment_sum_data_set_store_size), 0.0)
-| EVAL idx_cost = COALESCE(indexing_ecu, 0.0) * rate * idx_share
-| EVAL qry_cost = COALESCE(query_ecu, 0.0) * rate * qry_share
-| EVAL stg_cost = COALESCE(storage_ecu, 0.0) * rate * stg_share
+| EVAL idx_cost = CASE(indexing_ecu IS NOT NULL, indexing_ecu, 0.0) * rate * idx_share
+| EVAL qry_cost = CASE(query_ecu IS NOT NULL, query_ecu, 0.0) * rate * qry_share
+| EVAL stg_cost = CASE(storage_ecu IS NOT NULL, storage_ecu, 0.0) * rate * stg_share
 | EVAL total_ds_cost = idx_cost + qry_cost + stg_cost
 | EVAL synth_type = COALESCE(ds_dataset, CASE(datastream LIKE "synthetics-browser.network-*", "browser.network", datastream LIKE "synthetics-browser.screenshot-*", "browser.screenshot", datastream LIKE "synthetics-browser-*", "browser", datastream LIKE "synthetics-http-*", "http", datastream LIKE "synthetics-icmp-*", "icmp", datastream LIKE "synthetics-tcp-*", "tcp", datastream LIKE "synthetics-dns-*", "dns", "http"))
 | EVAL synth_stream_label = CONCAT(synth_type, " (", COALESCE(ds_namespace, "default"), ")")
@@ -4689,7 +4695,8 @@ def build_synthetics() -> dict:
         SYNTHETICS_SKU_TABLE_TEMPLATE,
         f"""{COST_PRELUDE}
 | WHERE cost_type_label == "synthetics" OR allocation_driver == "synthetics" OR sku LIKE "*synthetic*"
-| STATS qty = SUM(COALESCE(quantity_value, 0.0)), ecu = SUM(units), cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project, project_type_label, sku
+| EVAL qty_val = CASE(quantity_value IS NOT NULL, quantity_value, 0.0)
+| STATS qty = SUM(qty_val), ecu = SUM(units), cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project, project_type_label, sku
 | RENAME project_type_label AS project_type
 | SORT cost DESC
 | LIMIT 100
@@ -4712,9 +4719,9 @@ def build_synthetics() -> dict:
 | EVAL idx_share = CASE(deployment_sum_indexing_time > 0, TO_DOUBLE(datastream_sum_indexing_time) / TO_DOUBLE(deployment_sum_indexing_time), 0.0)
 | EVAL qry_share = CASE(deployment_sum_query_time > 0, TO_DOUBLE(datastream_sum_query_time) / TO_DOUBLE(deployment_sum_query_time), 0.0)
 | EVAL stg_share = CASE(deployment_sum_data_set_store_size > 0, TO_DOUBLE(datastream_sum_data_set_store_size) / TO_DOUBLE(deployment_sum_data_set_store_size), 0.0)
-| EVAL day_idx_cost = COALESCE(indexing_ecu, 0.0) * rate * idx_share
-| EVAL day_qry_cost = COALESCE(query_ecu, 0.0) * rate * qry_share
-| EVAL day_stg_cost = COALESCE(storage_ecu, 0.0) * rate * stg_share
+| EVAL day_idx_cost = CASE(indexing_ecu IS NOT NULL, indexing_ecu, 0.0) * rate * idx_share
+| EVAL day_qry_cost = CASE(query_ecu IS NOT NULL, query_ecu, 0.0) * rate * qry_share
+| EVAL day_stg_cost = CASE(storage_ecu IS NOT NULL, storage_ecu, 0.0) * rate * stg_share
 | EVAL day_attr_cost = day_idx_cost + day_qry_cost + day_stg_cost
 | EVAL synth_type = COALESCE(ds_dataset, CASE(datastream LIKE "synthetics-browser.network-*", "browser.network", datastream LIKE "synthetics-browser.screenshot-*", "browser.screenshot", datastream LIKE "synthetics-browser-*", "browser", datastream LIKE "synthetics-http-*", "http", datastream LIKE "synthetics-icmp-*", "icmp", datastream LIKE "synthetics-tcp-*", "tcp", datastream LIKE "synthetics-dns-*", "dns", "http"))
 | STATS indexing_cost = SUM(day_idx_cost), query_cost = SUM(day_qry_cost), storage_cost = SUM(day_stg_cost), attributed_cost = SUM(day_attr_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project, project_type, synth_type, ds_namespace, datastream
@@ -4759,10 +4766,10 @@ def build_config() -> dict:
 | LOOKUP JOIN {PROJECT_CONTRIB} ON composite_key
 | EVAL @timestamp = ts
 | EVAL project_id = COALESCE(_ps_pid, _rp_pid, project_id)
-| EVAL conf_chargeable_unit_rate = COALESCE(_ps_rate, conf_chargeable_unit_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(_ps_unit, conf_chargeable_unit_rate_unit, "USD"), conf_currency_symbol = COALESCE(_ps_sym, conf_currency_symbol, "$")
+| EVAL conf_chargeable_unit_rate = CASE(_ps_rate IS NOT NULL, _ps_rate, conf_chargeable_unit_rate IS NOT NULL, conf_chargeable_unit_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(_ps_unit, conf_chargeable_unit_rate_unit, "USD"), conf_currency_symbol = COALESCE(_ps_sym, conf_currency_symbol, "$")
 {CURRENCY_RESOLVE_ESQL}
-| EVAL day_ecu = COALESCE(all_sku_ecu, total_ecu, 0.0)
-| EVAL day_cost = day_ecu * COALESCE(conf_chargeable_unit_rate, 1.0)
+| EVAL day_ecu = CASE(all_sku_ecu IS NOT NULL, all_sku_ecu, total_ecu IS NOT NULL, total_ecu, 0.0)
+| EVAL day_cost = day_ecu * conf_chargeable_unit_rate
 | EVAL billed_day = CASE(day_ecu > 0.0, ts, null)
 | STATS
     project_name = MAX(project_name),
@@ -4898,9 +4905,9 @@ def build_alerts() -> list[dict]:
 | WHERE @timestamp == latest_day
 {COST_PRELUDE_BODY}
 | WHERE COALESCE(sku, "none") != "none"
-| EVAL category = category_label
+| EVAL category = category_label, day = LEFT(TO_STRING(@timestamp), 10)
 | WHERE filter_category == "*" OR category == filter_category
-| STATS spend = ROUND(SUM(cost), 2), ecu = ROUND(SUM(units), 2), project_count = COUNT_DISTINCT(project_id), threshold = MAX(threshold_spend), sym = COALESCE(MAX(currency_symbol), "$"), unit = COALESCE(MAX(unit), "USD") BY day = LEFT(TO_STRING(@timestamp), 10), category
+| STATS spend = ROUND(SUM(cost), 2), ecu = ROUND(SUM(units), 2), project_count = COUNT_DISTINCT(project_id), threshold = MAX(threshold_spend), sym = COALESCE(MAX(currency_symbol), "$"), unit = COALESCE(MAX(unit), "USD") BY day, category
 | WHERE spend > threshold
 | SORT spend DESC
 | EVAL result = CONCAT("[", day, "] Cost category `", category, "` daily spend of ", sym, TO_STRING(spend), " ", unit, " (", TO_STRING(ecu), " ECU across ", TO_STRING(project_count), " projects) exceeded threshold of ", sym, TO_STRING(threshold), " ", unit, ".")
@@ -4928,7 +4935,8 @@ def build_alerts() -> list[dict]:
     "unallocatable"
   )
 | WHERE filter_driver == "*" OR workload_driver == filter_driver
-| STATS spend = ROUND(SUM(cost), 2), ecu = ROUND(SUM(units), 2), project_count = COUNT_DISTINCT(project_id), threshold = MAX(threshold_spend), sym = COALESCE(MAX(currency_symbol), "$"), unit = COALESCE(MAX(unit), "USD") BY day = LEFT(TO_STRING(@timestamp), 10), workload_driver
+| EVAL day = LEFT(TO_STRING(@timestamp), 10)
+| STATS spend = ROUND(SUM(cost), 2), ecu = ROUND(SUM(units), 2), project_count = COUNT_DISTINCT(project_id), threshold = MAX(threshold_spend), sym = COALESCE(MAX(currency_symbol), "$"), unit = COALESCE(MAX(unit), "USD") BY day, workload_driver
 | WHERE spend > threshold
 | SORT spend DESC
 | EVAL result = CONCAT("[", day, "] Workload driver `", workload_driver, "` daily spend of ", sym, TO_STRING(spend), " ", unit, " (", TO_STRING(ecu), " ECU across ", TO_STRING(project_count), " projects) exceeded threshold of ", sym, TO_STRING(threshold), " ", unit, ".")
@@ -4946,9 +4954,9 @@ def build_alerts() -> list[dict]:
 | INLINE STATS latest_day = MAX(@timestamp)
 | WHERE @timestamp == latest_day
 {COST_PRELUDE_BODY}
-| EVAL project_type = project_type_label
+| EVAL project_type = project_type_label, day = LEFT(TO_STRING(@timestamp), 10)
 | WHERE filter_project == "*" OR project == filter_project OR project_id == filter_project
-| STATS spend = ROUND(SUM(cost), 2), ecu = ROUND(SUM(units), 2), threshold = MAX(threshold_spend), sym = COALESCE(MAX(currency_symbol), "$"), unit = COALESCE(MAX(unit), "USD") BY day = LEFT(TO_STRING(@timestamp), 10), project, project_id, project_type
+| STATS spend = ROUND(SUM(cost), 2), ecu = ROUND(SUM(units), 2), threshold = MAX(threshold_spend), sym = COALESCE(MAX(currency_symbol), "$"), unit = COALESCE(MAX(unit), "USD") BY day, project, project_id, project_type
 | WHERE spend > threshold
 | SORT spend DESC
 | EVAL result = CONCAT("[", day, "] Project `", project, "` (", project_id, ", ", project_type, ") daily spend of ", sym, TO_STRING(spend), " ", unit, " (", TO_STRING(ecu), " ECU) exceeded threshold of ", sym, TO_STRING(threshold), " ", unit, ".")
@@ -4996,13 +5004,13 @@ def build_alerts() -> list[dict]:
 | EVAL idx_share = CASE(deployment_sum_indexing_time > 0, TO_DOUBLE(datastream_sum_indexing_time) / TO_DOUBLE(deployment_sum_indexing_time), 0.0)
 | EVAL qry_share = CASE(deployment_sum_query_time > 0, TO_DOUBLE(datastream_sum_query_time) / TO_DOUBLE(deployment_sum_query_time), 0.0)
 | EVAL stg_share = CASE(deployment_sum_data_set_store_size > 0, TO_DOUBLE(datastream_sum_data_set_store_size) / TO_DOUBLE(deployment_sum_data_set_store_size), 0.0)
-| EVAL idx_cost = COALESCE(indexing_ecu, 0.0) * rate * idx_share
-| EVAL qry_cost = COALESCE(query_ecu, 0.0) * rate * qry_share
-| EVAL stg_cost = COALESCE(storage_ecu, 0.0) * rate * stg_share
+| EVAL idx_cost = CASE(indexing_ecu IS NOT NULL, indexing_ecu, 0.0) * rate * idx_share
+| EVAL qry_cost = CASE(query_ecu IS NOT NULL, query_ecu, 0.0) * rate * qry_share
+| EVAL stg_cost = CASE(storage_ecu IS NOT NULL, storage_ecu, 0.0) * rate * stg_share
 | EVAL total_ds_cost = idx_cost + qry_cost + stg_cost
-| EVAL namespace = COALESCE(ds_namespace, "other")
+| EVAL namespace = COALESCE(ds_namespace, "other"), day = LEFT(TO_STRING(@timestamp), 10)
 | WHERE filter_namespace == "*" OR namespace == filter_namespace
-| STATS spend = ROUND(SUM(total_ds_cost), 2), indexing_spend = ROUND(SUM(idx_cost), 2), query_spend = ROUND(SUM(qry_cost), 2), storage_spend = ROUND(SUM(stg_cost), 2), datastream_count = COUNT_DISTINCT(datastream), project_count = COUNT_DISTINCT(project_id), threshold = MAX(threshold_spend), sym = COALESCE(MAX(currency_symbol), "$"), unit = COALESCE(MAX(unit), "USD") BY day = LEFT(TO_STRING(@timestamp), 10), namespace
+| STATS spend = ROUND(SUM(total_ds_cost), 2), indexing_spend = ROUND(SUM(idx_cost), 2), query_spend = ROUND(SUM(qry_cost), 2), storage_spend = ROUND(SUM(stg_cost), 2), datastream_count = COUNT_DISTINCT(datastream), project_count = COUNT_DISTINCT(project_id), threshold = MAX(threshold_spend), sym = COALESCE(MAX(currency_symbol), "$"), unit = COALESCE(MAX(unit), "USD") BY day, namespace
 | WHERE spend > threshold
 | SORT spend DESC
 | EVAL result = CONCAT("[", day, "] Namespace `", namespace, "` attributed daily spend of ", sym, TO_STRING(spend), " ", unit, " across ", TO_STRING(datastream_count), " data streams (", TO_STRING(project_count), " projects) exceeded threshold of ", sym, TO_STRING(threshold), " ", unit, ".")
@@ -5020,14 +5028,15 @@ def build_alerts() -> list[dict]:
 | INLINE STATS latest_day = MAX(@timestamp)
 | WHERE @timestamp == latest_day
 {AI_JOIN_BODY}
-| EVAL compute_time = COALESCE(total_inference_time_ms, 0)
-| EVAL model_weight = CASE(compute_time > 0, TO_DOUBLE(compute_time), TO_DOUBLE(inference_count))
-| EVAL ai_pool_cost = CASE(COALESCE(ai_ecu, 0.0) > 0.0, ai_ecu, COALESCE(query_ecu, 0.0)) * rate
+| EVAL compute_time = CASE(total_inference_time_ms IS NOT NULL, TO_DOUBLE(total_inference_time_ms), 0.0)
+| EVAL model_weight = CASE(compute_time > 0.0, compute_time, TO_DOUBLE(inference_count))
+| EVAL ai_ecu_val = CASE(ai_ecu IS NOT NULL, ai_ecu, 0.0), qry_ecu_val = CASE(query_ecu IS NOT NULL, query_ecu, 0.0)
+| EVAL ai_pool_cost = CASE(ai_ecu_val > 0.0, ai_ecu_val, qry_ecu_val) * rate
 | INLINE STATS day_proj_weight = SUM(model_weight) BY composite_key
 | EVAL day_model_cost = CASE(day_proj_weight > 0, (model_weight / day_proj_weight) * ai_pool_cost, 0.0)
-| EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "unknown")
+| EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "unknown"), day = LEFT(TO_STRING(@timestamp), 10)
 | WHERE filter_model == "*" OR model_id == filter_model
-| STATS spend = ROUND(SUM(day_model_cost), 2), inferences = SUM(inference_count), avg_latency_ms = ROUND(AVG(average_inference_time_ms), 1), threshold = MAX(threshold_spend), sym = COALESCE(MAX(currency_symbol), "$"), unit = COALESCE(MAX(unit), "USD") BY day = LEFT(TO_STRING(@timestamp), 10), model_id, task_type, project
+| STATS spend = ROUND(SUM(day_model_cost), 2), inferences = SUM(inference_count), avg_latency_ms = ROUND(AVG(average_inference_time_ms), 1), threshold = MAX(threshold_spend), sym = COALESCE(MAX(currency_symbol), "$"), unit = COALESCE(MAX(unit), "USD") BY day, model_id, task_type, project
 | WHERE spend > threshold
 | SORT spend DESC
 | EVAL result = CONCAT("[", day, "] AI model `", model_id, "` (", COALESCE(task_type, "inference"), ") in project `", project, "` attributed spend of ", sym, TO_STRING(spend), " ", unit, " (", TO_STRING(inferences), " inferences) exceeded threshold of ", sym, TO_STRING(threshold), " ", unit, ".")
@@ -5047,9 +5056,9 @@ def build_alerts() -> list[dict]:
 {SYNTHETICS_JOIN_BODY}
 {SYNTHETICS_MONITOR_COST_EVAL}
 | EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "unknown")
-| EVAL monitor_name = COALESCE(monitor_name, monitor_id, "unknown")
+| EVAL monitor_name = COALESCE(monitor_name, monitor_id, "unknown"), day = LEFT(TO_STRING(@timestamp), 10)
 | WHERE filter_monitor == "*" OR monitor_id == filter_monitor OR monitor_name == filter_monitor
-| STATS spend = ROUND(SUM(day_monitor_cost), 2), checks = SUM(chk), threshold = MAX(threshold_spend), sym = COALESCE(MAX(currency_symbol), "$"), unit = COALESCE(MAX(unit), "USD") BY day = LEFT(TO_STRING(@timestamp), 10), monitor_name, monitor_id, monitor_type, project
+| STATS spend = ROUND(SUM(day_monitor_cost), 2), checks = SUM(check_count), threshold = MAX(threshold_spend), sym = COALESCE(MAX(currency_symbol), "$"), unit = COALESCE(MAX(unit), "USD") BY day, monitor_name, monitor_id, monitor_type, project
 | WHERE spend > threshold
 | SORT spend DESC
 | EVAL result = CONCAT("[", day, "] Synthetics monitor `", monitor_name, "` (", monitor_type, ") in project `", project, "` attributed spend of ", sym, TO_STRING(spend), " ", unit, " (", TO_STRING(checks), " checks) exceeded threshold of ", sym, TO_STRING(threshold), " ", unit, ".")
@@ -5068,6 +5077,7 @@ def build_alerts() -> list[dict]:
 | WHERE @timestamp == latest_day
 {COST_PRELUDE_BODY}
 | EVAL unalloc_cost = CASE((COALESCE(is_allocatable, false) == false OR allocation_driver == "none") AND COALESCE(sku, "none") != "none", cost, 0.0)
+| EVAL is_stale_row = CASE(updated_at IS NULL OR updated_at < NOW() - 26 hours, 1, 0), day = LEFT(TO_STRING(@timestamp), 10)
 | INLINE STATS org_total_spend = SUM(cost)
 | STATS
     project = MAX(project),
@@ -5075,7 +5085,7 @@ def build_alerts() -> list[dict]:
     project_type = MAX(project_type_label),
     harvest_status = COALESCE(MAX(last_status), "missing"),
     updated_at_str = COALESCE(TO_STRING(MAX(updated_at)), "never"),
-    is_stale_time = MAX(CASE(updated_at IS NULL OR updated_at < NOW() - 26 hours, 1, 0)),
+    is_stale_time = MAX(is_stale_row),
     proj_spend = ROUND(SUM(cost), 2),
     proj_ecu = ROUND(SUM(units), 2),
     unallocated_spend = ROUND(SUM(unalloc_cost), 2),
@@ -5084,7 +5094,7 @@ def build_alerts() -> list[dict]:
     thresh_pct = MAX(threshold_unallocated_pct),
     sym = COALESCE(MAX(currency_symbol), "$"),
     unit = COALESCE(MAX(unit), "USD")
-  BY day = LEFT(TO_STRING(@timestamp), 10), project_id
+  BY day, project_id
 | EVAL has_harvest_issue = (harvest_status != "inactive" AND (harvest_status != "ok" OR is_stale_time == 1))
 | EVAL has_missing_name = (proj_ecu > 0.0 AND (raw_pname IS NULL OR raw_pname == "" OR raw_pname == project_id))
 | EVAL unallocated_pct = CASE(org_spend > 0.0, ROUND(unallocated_spend * 100.0 / org_spend, 1), 0.0)
