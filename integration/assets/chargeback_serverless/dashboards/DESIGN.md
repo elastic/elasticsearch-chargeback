@@ -16,6 +16,18 @@
 
 All five dashboards share a horizontal `links` navigation bar (`useCurrentDateRange: true`, `useCurrentFilters: true`) and default to `now-30d` to `now`.
 
+### Dashboard Controls & Filters
+
+| Dashboard | Controls (`controlGroupInput`) |
+| --- | --- |
+| **Billing Components Overview** | `project_type`, `project_name`, `cost_category`, `cost_type`, `allocation_driver` |
+| **Usage & Cost Allocation** | `project_type`, `project_name`, `allocation_driver` (Workload driver), `ds_namespace` (Namespace), `ds_type` (Data stream type) |
+| **AI & Machine Learning** | `project_type`, `project_name`, `model_id` (AI model), `task_type` (Task type) |
+| **Synthetics** | `project_type`, `project_name`, `monitor_type` (Monitor type), `ds_namespace` (Namespace) |
+| **Configuration** | `project_type`, `project_name` |
+
+All shared controls (`project_type`, `project_name`, `allocation_driver`, `ds_namespace`) use matching deterministic UUIDs across dashboards so selections persist automatically alongside `useCurrentFilters: true`.
+
 ## Lookup Indices & Data Sources
 
 | Lookup Index | Source | Natural Key (`group_by`) | Purpose |
