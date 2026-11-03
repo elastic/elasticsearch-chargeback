@@ -449,15 +449,22 @@ def main():
             src = h.get("_source") or {}
             h_pid = src.get("project_id")
             h_ts = src.get("@timestamp")
+            h_ing = (src.get("event") or {}).get("ingested") or ""
             if h_pid and h_pid not in agent_harvest_cache:
                 _, det_resp = http_post_bulk(search_url, search_hdrs, json.dumps({
                     "size": 2000,
                     "query": {"bool": {"filter": [{"term": {"project_id": h_pid}}, {"term": {"@timestamp": h_ts}}]}}
                 }), timeout=15)
-                det_hits = [dh.get("_source") or {} for dh in ((det_resp.get("hits") or {}).get("hits") or [])]
+                all_det = [dh.get("_source") or {} for dh in ((det_resp.get("hits") or {}).get("hits") or [])]
+                if "agent" in src:
+                    all_det = [d for d in all_det if "agent" in d]
+                if h_ing:
+                    same_batch = [d for d in all_det if ((d.get("event") or {}).get("ingested") or "")[:16] == h_ing[:16]]
+                    if same_batch:
+                        all_det = same_batch
                 agent_harvest_cache[h_pid] = {
                     "status_doc": src,
-                    "docs": det_hits,
+                    "docs": all_det,
                 }
     except Exception:
         pass
@@ -604,11 +611,13 @@ def main():
 
         # If local key was not in env/Keychain, check if Fleet Elastic Agent already harvested this project via Fleet UI secret
         harvested_idx_count = len(indices)
+        harvested_ds_count = 0
         if harvest_status != "ok" and pid in agent_harvest_cache:
             cached = agent_harvest_cache[pid]
             st_doc = cached["status_doc"]
             harvest_status = "ok"
             harvested_idx_count = int(st_doc.get("index_count") or 0)
+            harvested_ds_count = int(st_doc.get("datastream_count") or 0)
             for cdoc in cached["docs"]:
                 dtype = cdoc.get("doc_type")
                 if dtype == "datastream":
@@ -900,7 +909,7 @@ def main():
                 "api_key_type": key_type_val,
                 "synthetics_status": synth_stat_val,
                 "index_count": harvested_idx_count,
-                "datastream_count": len(ds_map),
+                "datastream_count": max(len(ds_map), harvested_ds_count),
                 "ai_model_count": len(ml_models),
                 "synthetics_monitor_count": len(day_monitors),
                 "updated_at": ts_now,

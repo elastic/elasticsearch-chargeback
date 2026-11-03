@@ -874,6 +874,8 @@ if [[ "$SKIP_COLLECTOR" -eq 0 ]]; then
     | jq -r '.transforms[]?.id // empty' 2>/dev/null || true)
   for tf_id in $ACTIVE_TF; do
     [[ -z "$tf_id" ]] && continue
+    es_curl -sS -X POST "${ES_URL%/}/_transform/${tf_id}/_stop?force=true&wait_for_completion=true" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
+    es_curl -sS -X POST "${ES_URL%/}/_transform/${tf_id}/_reset?force=true" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
     es_curl -sS -X POST "${ES_URL%/}/_transform/${tf_id}/_start" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
     es_curl -sS -X POST "${ES_URL%/}/_transform/${tf_id}/_schedule_now" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
   done
@@ -883,9 +885,14 @@ if [[ "$SKIP_COLLECTOR" -eq 0 ]]; then
   sleep 62
   for tf_id in $ACTIVE_TF; do
     [[ -z "$tf_id" ]] && continue
+    if [[ "$tf_id" == *"realized_pool"* || "$tf_id" == *"proj_contrib"* ]]; then
+      es_curl -sS -X POST "${ES_URL%/}/_transform/${tf_id}/_stop?force=true&wait_for_completion=true" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
+      es_curl -sS -X POST "${ES_URL%/}/_transform/${tf_id}/_reset?force=true" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
+      es_curl -sS -X POST "${ES_URL%/}/_transform/${tf_id}/_start" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
+    fi
     es_curl -sS -X POST "${ES_URL%/}/_transform/${tf_id}/_schedule_now" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
   done
-  sleep 6
+  sleep 10
   es_curl -sS -X POST "${ES_URL%/}/serverless_*_lookup/_refresh" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
 else
   echo ""
