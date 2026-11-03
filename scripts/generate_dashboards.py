@@ -655,32 +655,32 @@ BILLING_KPI_TEMPLATE = f"""\
 {liquid_money_block("unalloc", "fmt_unalloc", with_decimals=True)}
 <div class="cb-kpi-wrap">
   <div class="cb-kpis">
-    <div class="cb-kpi">
+    <div class="cb-kpi" title="Total Spend: Sum of all Serverless invoice line items (total_ecu × conf_chargeable_unit_rate) in serverless_billing_cost_lookup.">
       <div class="cb-kpi-label">Total Spend ({{{{ unit }}}})</div>
       <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_total }}}}</span></div>
       <div class="cb-kpi-sub">All Serverless line items</div>
     </div>
-    <div class="cb-kpi">
+    <div class="cb-kpi" title="Allocatable Pool: Workload-driven SKUs (is_allocatable: true: ingest, search, retained storage, AI/ML, Synthetics) attributed to workloads.">
       <div class="cb-kpi-label">Allocatable Pool ({{{{ unit }}}})</div>
       <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_alloc }}}}</span></div>
       <div class="cb-kpi-sub">{{{{ alloc_pct }}}}% of total spend</div>
     </div>
-    <div class="cb-kpi">
+    <div class="cb-kpi" title="Unallocatable Spend: Org-wide &amp; pass-through charges (is_allocatable: false: Support, Data Transfer, Snapshots, Platform SKUs) not tied to a single workload.">
       <div class="cb-kpi-label">Unallocatable Spend ({{{{ unit }}}})</div>
       <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_unalloc }}}}</span></div>
       <div class="cb-kpi-sub">{{{{ unalloc_pct }}}}% pass-through / org-wide</div>
     </div>
-    <div class="cb-kpi">
+    <div class="cb-kpi" title="Billed Projects: Distinct project_id count in window, split into active Control Plane projects vs. decommissioned (inactive) projects.">
       <div class="cb-kpi-label">Billed Projects</div>
       <div class="cb-kpi-value">{{{{ tot_proj }}}}</div>
       <div class="cb-kpi-sub">{{% if inact_proj > 0 %}}{{{{ act_proj }}}} active &middot; {{{{ inact_proj }}}} inactive in window{{% else %}}Active &amp; inactive in window{{% endif %}}</div>
     </div>
-    <div class="cb-kpi">
+    <div class="cb-kpi" title="Days of Data: Distinct UTC billing days (DATE_TRUNC(1 day, @timestamp)) in the selected time range.">
       <div class="cb-kpi-label">Days of Data</div>
       <div class="cb-kpi-value">{{{{ r["days_count"].value | default: 0 }}}}</div>
       <div class="cb-kpi-sub">In selected time range</div>
     </div>
-    <div class="cb-kpi">
+    <div class="cb-kpi" title="Latest Billed Day: Most recent closed UTC invoice snapshot.">
       <div class="cb-kpi-label">Latest Billed Day</div>
       <div class="cb-kpi-value">{{{{ l_day }}}}</div>
       <div class="cb-kpi-sub">UTC invoice snapshot</div>
@@ -735,27 +735,27 @@ USAGE_KPI_TEMPLATE = f"""\
 {liquid_money_block("ai_syn_s", "fmt_ai_syn_s", with_decimals=True)}
 <div class="cb-kpi-wrap">
   <div class="cb-kpis">
-    <div class="cb-kpi">
+    <div class="cb-kpi" title="Total Allocatable Pool: All workload-attributable spend (is_allocatable: true AND allocation_driver != 'none').">
       <div class="cb-kpi-label">Total Allocatable Pool ({{{{ unit }}}})</div>
       <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_pool }}}}</span></div>
       <div class="cb-kpi-sub">100% workload-attributable spend</div>
     </div>
-    <div class="cb-kpi">
+    <div class="cb-kpi" title="Indexing Pool: Spend from ingest-vcu &amp; ingest SKUs, attributed across data streams by indexing.index_time.">
       <div class="cb-kpi-label">Indexing Pool ({{{{ unit }}}})</div>
       <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_idx_s }}}}</span></div>
       <div class="cb-kpi-sub">{{{{ idx_pct }}}}% · ingest-vcu + ingest</div>
     </div>
-    <div class="cb-kpi">
+    <div class="cb-kpi" title="Search &amp; Query Pool: Spend from search-vcu &amp; search SKUs, attributed across data streams by search.query_time.">
       <div class="cb-kpi-label">Search &amp; Query Pool ({{{{ unit }}}})</div>
       <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_qry_s }}}}</span></div>
       <div class="cb-kpi-sub">{{{{ qry_pct }}}}% · search-vcu</div>
     </div>
-    <div class="cb-kpi">
+    <div class="cb-kpi" title="Storage Pool: Spend from retained storage SKUs, attributed across data streams by dataset.size.">
       <div class="cb-kpi-label">Storage Pool ({{{{ unit }}}})</div>
       <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_stg_s }}}}</span></div>
       <div class="cb-kpi-sub">{{{{ stg_pct }}}}% · retained storage</div>
     </div>
-    <div class="cb-kpi">
+    <div class="cb-kpi" title="AI &amp; Synthetics Pool: Spend from ml-vcu, inference, agent-builder, and synthetics SKUs.">
       <div class="cb-kpi-label">AI &amp; Synthetics Pool ({{{{ unit }}}})</div>
       <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_ai_syn_s }}}}</span></div>
       <div class="cb-kpi-sub">{{{{ ai_syn_pct }}}}% · AI, Agent Builder &amp; Synthetics</div>
@@ -940,7 +940,7 @@ AI_KPIS_TEMPLATE = f"""\
 
 <div class="cb-kpi-wrap">
   <div class="cb-kpis">
-    <div class="cb-kpi">
+    <div class="cb-kpi" title="AI &amp; ML Spend: Dedicated AI SKU spend (ml-vcu, inference, agent-builder); falls back to shared search-vcu pool when built-in models run without dedicated ML SKUs.">
       {{% if ded_spend <= 0.0 and ai_spend > 0.0 %}}
         <div class="cb-kpi-label">AI &amp; ML Pool (Shared Search, {{{{ unit }}}})</div>
         <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_ai_spend }}}}</span></div>
@@ -951,22 +951,22 @@ AI_KPIS_TEMPLATE = f"""\
         <div class="cb-kpi-sub"><span class="cb-ai-pill">ml-vcu + inference</span> · dedicated AI SKUs</div>
       {{% endif %}}
     </div>
-    <div class="cb-kpi">
+    <div class="cb-kpi" title="Inference Volume: Total model inference calls (SUM(inference_count)) harvested via GET /_ml/trained_models/_stats.">
       <div class="cb-kpi-label">Inference Volume</div>
       <div class="cb-kpi-value">{{{{ fmt_inf_count }}}}</div>
       <div class="cb-kpi-sub">Total model inference calls</div>
     </div>
-    <div class="cb-kpi">
+    <div class="cb-kpi" title="Active AI Models: Distinct model_id count with recorded inference activity in the selected window.">
       <div class="cb-kpi-label">Active AI Models</div>
       <div class="cb-kpi-value">{{{{ model_count }}}}</div>
       <div class="cb-kpi-sub">Trained models in window</div>
     </div>
-    <div class="cb-kpi">
+    <div class="cb-kpi" title="Avg Model Latency: Mean inference execution time (average_inference_time_ms) across active deployments.">
       <div class="cb-kpi-label">Avg Model Latency</div>
       <div class="cb-kpi-value">{{{{ avg_latency }}}} <span style="font-size: 0.9rem; font-weight: 500; margin-left: 4px; opacity: 0.85;">ms</span></div>
       <div class="cb-kpi-sub">Compute execution speed</div>
     </div>
-    <div class="cb-kpi">
+    <div class="cb-kpi" title="Unit Cost (1k Inferences): Effective cost per 1,000 inference calls (ai_spend × 1000 / total_inferences).">
       <div class="cb-kpi-label">Unit Cost (1k Inferences)</div>
       <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_cost_per_k }}}}</span></div>
       <div class="cb-kpi-sub">Effective unit economics</div>
@@ -1197,32 +1197,32 @@ SYNTHETICS_KPI_TEMPLATE = f"""\
 {liquid_money_block("cost_per_k", "fmt_cost_per_k", with_decimals=True)}
 <div class="cb-kpi-wrap">
   <div class="cb-kpis">
-    <div class="cb-kpi">
+    <div class="cb-kpi" title="Direct Synthetics Spend: Sum of all Synthetics SKU charges (cost_type == 'synthetics') in serverless_billing_cost_lookup.">
       <div class="cb-kpi-label">Direct Synthetics Spend ({{{{ unit }}}})</div>
       <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_synth_spend }}}}</span></div>
       <div class="cb-kpi-sub">{{{{ synth_pct }}}}% of org spend · pings + browser</div>
     </div>
-    <div class="cb-kpi">
+    <div class="cb-kpi" title="Lightweight Ping Spend: Spend on observability-synthetic-pings SKUs covering http, icmp, tcp, and dns monitors.">
       <div class="cb-kpi-label">Lightweight Ping Spend ({{{{ unit }}}})</div>
       <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_pings_spend }}}}</span></div>
       <div class="cb-kpi-sub">{{{{ pings_pct }}}}% · http, icmp, tcp &amp; dns</div>
     </div>
-    <div class="cb-kpi">
+    <div class="cb-kpi" title="Browser Execution Spend: Spend on observability-synthetic-executions SKUs covering Playwright browser journeys.">
       <div class="cb-kpi-label">Browser Execution Spend ({{{{ unit }}}})</div>
       <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_exec_spend }}}}</span></div>
       <div class="cb-kpi-sub">{{{{ exec_pct }}}}% · Playwright browser journeys</div>
     </div>
-    <div class="cb-kpi">
+    <div class="cb-kpi" title="Total Check Executions: Billed check runs across lightweight pings and Playwright browser executions.">
       <div class="cb-kpi-label">Total Check Executions</div>
       <div class="cb-kpi-value">{{{{ fmt_synth_runs }}}}</div>
       <div class="cb-kpi-sub">Lightweight pings + browser runs</div>
     </div>
-    <div class="cb-kpi">
+    <div class="cb-kpi" title="Unit Cost (1k Checks): Blended cost per 1,000 check executions (synthetics_spend × 1000 / synthetics_runs).">
       <div class="cb-kpi-label">Unit Cost (1k Checks)</div>
       <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_cost_per_k }}}}</span></div>
       <div class="cb-kpi-sub">Blended check unit economics</div>
     </div>
-    <div class="cb-kpi">
+    <div class="cb-kpi" title="Billed Synthetics Projects: Distinct Serverless projects incurring direct Synthetics SKU charges in the selected window.">
       <div class="cb-kpi-label">Billed Synthetics Projects</div>
       <div class="cb-kpi-value">{{{{ proj_cnt }}}}</div>
       <div class="cb-kpi-sub">Projects with synthetics SKU spend</div>
@@ -1269,22 +1269,22 @@ SYNTHETICS_DS_KPI_TEMPLATE = f"""\
 {liquid_money_block("stg_s", "fmt_stg_s", with_decimals=True)}
 <div class="cb-kpi-wrap">
   <div class="cb-kpis">
-    <div class="cb-kpi">
+    <div class="cb-kpi" title="Attributed Data-Tier Spend: Total Elasticsearch data-tier spend (Indexing + Search + Storage) attributed to synthetics-* data streams.">
       <div class="cb-kpi-label">Attributed Data-Tier Spend ({{{{ unit }}}})</div>
       <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_ds_spend }}}}</span></div>
       <div class="cb-kpi-sub">Ingest + Search + Storage for synthetics-*</div>
     </div>
-    <div class="cb-kpi">
+    <div class="cb-kpi" title="Synthetics Indexing Spend: Portion of project ingest-vcu &amp; ingest pools consumed by indexing synthetic check results and browser traces.">
       <div class="cb-kpi-label">Synthetics Indexing Spend ({{{{ unit }}}})</div>
       <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_idx_s }}}}</span></div>
       <div class="cb-kpi-sub">Attributed ingest-vcu + ingest</div>
     </div>
-    <div class="cb-kpi">
+    <div class="cb-kpi" title="Synthetics Storage Spend: Portion of project retained storage pool consumed by storing synthetics-* backing indices.">
       <div class="cb-kpi-label">Synthetics Storage Spend ({{{{ unit }}}})</div>
       <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_stg_s }}}}</span></div>
       <div class="cb-kpi-sub">Attributed retained storage</div>
     </div>
-    <div class="cb-kpi">
+    <div class="cb-kpi" title="Synthetics Data Streams: Count of active synthetics-* data streams harvested via _cat/indices.">
       <div class="cb-kpi-label">Synthetics Data Streams</div>
       <div class="cb-kpi-value">{{{{ ds_cnt }}}}</div>
       <div class="cb-kpi-sub">Monitored synthetics-* streams</div>
@@ -3487,7 +3487,14 @@ def build_billing() -> dict:
         2,
         48,
         6,
-        description="Organization-wide Serverless invoice totals, allocatable vs. unallocatable spend pools, billed project counts, and active billing window.",
+        description=(
+            "Organization-wide Serverless invoice totals and spend pools:\n\n"
+            "• Total Spend: Sum of all Serverless invoice line items (total_ecu × conf_chargeable_unit_rate) in serverless_billing_cost_lookup.\n"
+            "• Allocatable Pool: Workload-driven SKUs (is_allocatable: true: ingest, search, retained storage, AI/ML, Synthetics) attributed to workloads.\n"
+            "• Unallocatable Spend: Org-wide & pass-through charges (is_allocatable: false: Support contracts, Network Egress & Data Transfer, Snapshots, Platform SKUs) not tied to a single workload.\n"
+            "• Billed Projects: Distinct project_id count in window, split into active Control Plane projects vs. decommissioned (inactive) projects.\n"
+            "• Days of Data & Latest Day: Distinct UTC billing days (DATE_TRUNC 1 day) and most recent closed invoice snapshot."
+        ),
     )
     panels.append(p)
 
@@ -3592,7 +3599,12 @@ def build_billing() -> dict:
         33,
         24,
         18,
-        description="Multi-stage Sankey cost flow tracing billed spend from high-level Cloud Billing category through individual cost types into project types.",
+        description=(
+            "Multi-stage Sankey cost flow tracing billed spend from high-level Cloud Billing category through individual cost types into project types:\n\n"
+            "• Category (cost_category): High-level bucket (data_tier, platform, support, transfer, snapshot).\n"
+            "• Cost Type (cost_type): Normalized SKU family (ingest-vcu, search-vcu, retained, synthetics, inference, support).\n"
+            "• Project Type (project_type): Serverless solution type (elasticsearch, observability, security, organization)."
+        ),
     )
     panels.append(p)
 
@@ -3614,7 +3626,13 @@ def build_billing() -> dict:
         33,
         24,
         18,
-        description="Line items classified with is_allocatable: false and allocation_driver: 'none' (support contracts, network egress, snapshots).",
+        description=(
+            "Unallocatable & Pass-Through Charges (is_allocatable: false · driver: none):\n\n"
+            "Line items classified with is_allocatable: false and allocation_driver: 'none' during billing ingestion:\n"
+            "• Support Tiers (*support*): Organization-wide support contracts (e.g. serverless.support-tier4).\n"
+            "• Network Egress & Data Transfer (*egress*, *data-transfer*): Infrastructure pass-through charges not tied to a single data stream or model.\n"
+            "• Unclassified SKUs: Any non-workload administrative or account-level adjustment."
+        ),
     )
     panels.append(p)
 
@@ -3697,7 +3715,14 @@ def build_usage() -> dict:
         48,
         6,
         section_id=sec_workload_id,
-        description="Attributed workload spend pools across Indexing (ingest VCUs), Search & Query (search VCUs), Retained Storage, and AI/Synthetics compute.",
+        description=(
+            "Attributed workload spend pools across primary compute drivers:\n\n"
+            "• Total Allocatable Pool: All workload-attributable spend (is_allocatable: true AND allocation_driver != 'none').\n"
+            "• Indexing Pool: Spend from ingest-vcu & ingest SKUs, attributed across data streams by indexing.index_time.\n"
+            "• Search & Query Pool: Spend from search-vcu & search SKUs, attributed across data streams by search.query_time.\n"
+            "• Storage Pool: Spend from retained storage SKUs, attributed across data streams by dataset.size.\n"
+            "• AI & Synthetics Pool: Spend from ml-vcu, inference, agent-builder, and synthetics SKUs."
+        ),
     )
     panels.append(p)
 
@@ -3905,7 +3930,14 @@ def build_ai() -> dict:
         2,
         48,
         6,
-        description="Total attributed AI compute spend, dedicated AI invoice SKUs, active inference models, and compute time across deployed models.",
+        description=(
+            "AI & Machine Learning compute attribution and unit economics:\n\n"
+            "• AI & ML Spend: Dedicated AI SKU spend (ml-vcu, inference, agent-builder); falls back to shared search-vcu pool when built-in models run without dedicated ML SKUs.\n"
+            "• Inference Volume: Total model inference calls (SUM(inference_count)) harvested via GET /_ml/trained_models/_stats.\n"
+            "• Active AI Models: Distinct model_id count with recorded inference activity in the selected window.\n"
+            "• Avg Model Latency: Mean inference execution time (average_inference_time_ms) across active deployments.\n"
+            "• Unit Cost (1k Inferences): Effective cost per 1,000 inference calls (ai_spend × 1000 / total_inferences)."
+        ),
     )
     panels.append(p)
 
@@ -3995,7 +4027,11 @@ def build_ai() -> dict:
         20,
         48,
         14,
-        description="Per-model inference statistics harvested via GET /_ml/trained_models/_stats: call counts, compute duration, and attributed spend.",
+        description=(
+            "Attributes project AI/ML spend across individual trained models harvested from GET /_ml/trained_models/_stats:\n\n"
+            "• Compute Allocation Share: Model's share of total inference compute time (total_inference_time_ms = inference_count × average_inference_time_ms, falling back to inference_count).\n"
+            "• Attributed Cost: Daily project AI pool (ai_ecu × rate, or query_ecu × rate fallback) weighted by the model's daily compute share."
+        ),
     )
     panels.append(p)
 
@@ -4060,7 +4096,15 @@ def build_synthetics() -> dict:
         2,
         48,
         6,
-        description="Direct Synthetics SKU spend for lightweight pings and Playwright browser executions, total check runs, and unit cost per 1k checks.",
+        description=(
+            "Direct Synthetics SKU spend and execution unit economics:\n\n"
+            "• Direct Synthetics Spend: Sum of all Synthetics SKU charges (cost_type == 'synthetics') in serverless_billing_cost_lookup.\n"
+            "• Lightweight Ping Spend: Spend on observability-synthetic-pings SKUs covering http, icmp, tcp, and dns monitors.\n"
+            "• Browser Execution Spend: Spend on observability-synthetic-executions SKUs covering Playwright browser journeys.\n"
+            "• Total Check Executions: Billed check runs across lightweight pings and Playwright browser executions.\n"
+            "• Unit Cost (1k Checks): Blended cost per 1,000 check executions (synthetics_spend × 1000 / synthetics_runs).\n"
+            "• Billed Synthetics Projects: Distinct Serverless projects incurring direct Synthetics SKU charges in the selected window."
+        ),
     )
     panels.append(p)
 
@@ -4086,7 +4130,13 @@ def build_synthetics() -> dict:
         8,
         48,
         6,
-        description="Secondary Elasticsearch data-tier costs (Indexing, Search, and Storage) incurred by storing synthetics-* check results and traces.",
+        description=(
+            "Secondary Elasticsearch data-tier attribution for Synthetics telemetry:\n\n"
+            "• Attributed Data-Tier Spend: Total Elasticsearch data-tier spend (Indexing + Search + Storage) attributed to synthetics-* data streams.\n"
+            "• Synthetics Indexing Spend: Portion of project ingest-vcu & ingest pools consumed by indexing synthetic check results and browser traces.\n"
+            "• Synthetics Storage Spend: Portion of project retained storage pool consumed by storing synthetics-* backing indices.\n"
+            "• Synthetics Data Streams: Count of active synthetics-* data streams harvested via _cat/indices."
+        ),
     )
     panels.append(p)
 
