@@ -10,6 +10,66 @@
                 "ignoreValidations": false
             },
             "panelsJSON": {
+                "0370f84e-4e23-53ac-a65a-cbc843dc96ec": {
+                    "explicitInput": {
+                        "dataViewId": "chargeback_serverless-billing",
+                        "exclude": false,
+                        "existsSelected": false,
+                        "fieldName": "ds_type",
+                        "id": "0370f84e-4e23-53ac-a65a-cbc843dc96ec",
+                        "searchTechnique": "prefix",
+                        "selectedOptions": [],
+                        "sort": {
+                            "by": "_count",
+                            "direction": "desc"
+                        },
+                        "title": "Data stream type"
+                    },
+                    "grow": false,
+                    "order": 4,
+                    "type": "optionsListControl",
+                    "width": "medium"
+                },
+                "08100c1c-e7a5-5d92-a2a2-c8fbcbce84b1": {
+                    "explicitInput": {
+                        "dataViewId": "chargeback_serverless-billing",
+                        "exclude": false,
+                        "existsSelected": false,
+                        "fieldName": "allocation_driver",
+                        "id": "08100c1c-e7a5-5d92-a2a2-c8fbcbce84b1",
+                        "searchTechnique": "prefix",
+                        "selectedOptions": [],
+                        "sort": {
+                            "by": "_count",
+                            "direction": "desc"
+                        },
+                        "title": "Workload driver"
+                    },
+                    "grow": false,
+                    "order": 2,
+                    "type": "optionsListControl",
+                    "width": "medium"
+                },
+                "7e7d3b50-7ebe-5208-9615-7811435323b1": {
+                    "explicitInput": {
+                        "dataViewId": "chargeback_serverless-billing",
+                        "exclude": false,
+                        "existsSelected": false,
+                        "fieldName": "ds_namespace",
+                        "id": "7e7d3b50-7ebe-5208-9615-7811435323b1",
+                        "searchTechnique": "prefix",
+                        "selectedOptions": [],
+                        "sort": {
+                            "by": "_count",
+                            "direction": "desc"
+                        },
+                        "title": "Namespace"
+                    },
+                    "grow": false,
+                    "order": 3,
+                    "type": "optionsListControl",
+                    "width": "medium"
+                },
                 "83964b3f-39bf-54ad-b576-041fc22a74f1": {
                     "explicitInput": {
                         "dataViewId": "chargeback_serverless-billing",
@@ -363,6 +423,21 @@
         {
             "id": "chargeback_serverless-billing",
             "name": "controlGroup_83964b3f-39bf-54ad-b576-041fc22a74f1:optionsListDataView",
+            "type": "index-pattern"
+        },
+        {
+            "id": "chargeback_serverless-billing",
+            "name": "controlGroup_08100c1c-e7a5-5d92-a2a2-c8fbcbce84b1:optionsListDataView",
+            "type": "index-pattern"
+        },
+        {
+            "id": "chargeback_serverless-billing",
+            "name": "controlGroup_7e7d3b50-7ebe-5208-9615-7811435323b1:optionsListDataView",
+            "type": "index-pattern"
+        },
+        {
+            "id": "chargeback_serverless-billing",
+            "name": "controlGroup_0370f84e-4e23-53ac-a65a-cbc843dc96ec:optionsListDataView",
             "type": "index-pattern"
         }
     ],

@@ -10,6 +10,26 @@
                 "ignoreValidations": false
             },
             "panelsJSON": {
+                "15a73fa3-e56c-5415-8114-92e607280b0c": {
+                    "explicitInput": {
+                        "dataViewId": "chargeback_serverless-billing",
+                        "exclude": false,
+                        "existsSelected": false,
+                        "fieldName": "model_id",
+                        "id": "15a73fa3-e56c-5415-8114-92e607280b0c",
+                        "searchTechnique": "prefix",
+                        "selectedOptions": [],
+                        "sort": {
+                            "by": "_count",
+                            "direction": "desc"
+                        },
+                        "title": "AI model"
+                    },
+                    "grow": false,
+                    "order": 2,
+                    "type": "optionsListControl",
+                    "width": "medium"
+                },
                 "83964b3f-39bf-54ad-b576-041fc22a74f1": {
                     "explicitInput": {
                         "dataViewId": "chargeback_serverless-billing",
@@ -47,6 +67,26 @@
                     },
                     "grow": false,
                     "order": 0,
+                    "type": "optionsListControl",
+                    "width": "medium"
+                },
+                "ecd772f4-72b0-5fe9-a103-385bd5ec3689": {
+                    "explicitInput": {
+                        "dataViewId": "chargeback_serverless-billing",
+                        "exclude": false,
+                        "existsSelected": false,
+                        "fieldName": "task_type",
+                        "id": "ecd772f4-72b0-5fe9-a103-385bd5ec3689",
+                        "searchTechnique": "prefix",
+                        "selectedOptions": [],
+                        "sort": {
+                            "by": "_count",
+                            "direction": "desc"
+                        },
+                        "title": "Task type"
+                    },
+                    "grow": false,
+                    "order": 3,
                     "type": "optionsListControl",
                     "width": "medium"
                 }
@@ -296,6 +336,16 @@
         {
             "id": "chargeback_serverless-billing",
             "name": "controlGroup_83964b3f-39bf-54ad-b576-041fc22a74f1:optionsListDataView",
+            "type": "index-pattern"
+        },
+        {
+            "id": "chargeback_serverless-billing",
+            "name": "controlGroup_15a73fa3-e56c-5415-8114-92e607280b0c:optionsListDataView",
+            "type": "index-pattern"
+        },
+        {
+            "id": "chargeback_serverless-billing",
+            "name": "controlGroup_ecd772f4-72b0-5fe9-a103-385bd5ec3689:optionsListDataView",
             "type": "index-pattern"
         }
     ],

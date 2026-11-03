@@ -10,6 +10,46 @@
                 "ignoreValidations": false
             },
             "panelsJSON": {
+                "49ffc2e6-1014-515e-9957-980455c82399": {
+                    "explicitInput": {
+                        "dataViewId": "chargeback_serverless-billing",
+                        "exclude": false,
+                        "existsSelected": false,
+                        "fieldName": "monitor_type",
+                        "id": "49ffc2e6-1014-515e-9957-980455c82399",
+                        "searchTechnique": "prefix",
+                        "selectedOptions": [],
+                        "sort": {
+                            "by": "_count",
+                            "direction": "desc"
+                        },
+                        "title": "Monitor type"
+                    },
+                    "grow": false,
+                    "order": 2,
+                    "type": "optionsListControl",
+                    "width": "medium"
+                },
+                "7e7d3b50-7ebe-5208-9615-7811435323b1": {
+                    "explicitInput": {
+                        "dataViewId": "chargeback_serverless-billing",
+                        "exclude": false,
+                        "existsSelected": false,
+                        "fieldName": "ds_namespace",
+                        "id": "7e7d3b50-7ebe-5208-9615-7811435323b1",
+                        "searchTechnique": "prefix",
+                        "selectedOptions": [],
+                        "sort": {
+                            "by": "_count",
+                            "direction": "desc"
+                        },
+                        "title": "Namespace"
+                    },
+                    "grow": false,
+                    "order": 3,
+                    "type": "optionsListControl",
+                    "width": "medium"
+                },
                 "83964b3f-39bf-54ad-b576-041fc22a74f1": {
                     "explicitInput": {
                         "dataViewId": "chargeback_serverless-billing",
@@ -401,6 +441,16 @@
         {
             "id": "chargeback_serverless-billing",
             "name": "controlGroup_83964b3f-39bf-54ad-b576-041fc22a74f1:optionsListDataView",
+            "type": "index-pattern"
+        },
+        {
+            "id": "chargeback_serverless-billing",
+            "name": "controlGroup_49ffc2e6-1014-515e-9957-980455c82399:optionsListDataView",
+            "type": "index-pattern"
+        },
+        {
+            "id": "chargeback_serverless-billing",
+            "name": "controlGroup_7e7d3b50-7ebe-5208-9615-7811435323b1:optionsListDataView",
             "type": "index-pattern"
         }
     ],
