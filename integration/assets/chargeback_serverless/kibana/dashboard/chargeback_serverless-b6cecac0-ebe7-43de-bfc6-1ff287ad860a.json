@@ -143,7 +143,7 @@
                             "options": {
                                 "openInNewTab": false,
                                 "useCurrentDateRange": true,
-                                "useCurrentFilters": false
+                                "useCurrentFilters": true
                             },
                             "order": 0,
                             "type": "dashboardLink"
@@ -155,7 +155,7 @@
                             "options": {
                                 "openInNewTab": false,
                                 "useCurrentDateRange": true,
-                                "useCurrentFilters": false
+                                "useCurrentFilters": true
                             },
                             "order": 1,
                             "type": "dashboardLink"
@@ -167,7 +167,7 @@
                             "options": {
                                 "openInNewTab": false,
                                 "useCurrentDateRange": true,
-                                "useCurrentFilters": false
+                                "useCurrentFilters": true
                             },
                             "order": 2,
                             "type": "dashboardLink"
@@ -179,7 +179,7 @@
                             "options": {
                                 "openInNewTab": false,
                                 "useCurrentDateRange": true,
-                                "useCurrentFilters": false
+                                "useCurrentFilters": true
                             },
                             "order": 3,
                             "type": "dashboardLink"
@@ -191,7 +191,7 @@
                             "options": {
                                 "openInNewTab": false,
                                 "useCurrentDateRange": true,
-                                "useCurrentFilters": false
+                                "useCurrentFilters": true
                             },
                             "order": 4,
                             "type": "dashboardLink"

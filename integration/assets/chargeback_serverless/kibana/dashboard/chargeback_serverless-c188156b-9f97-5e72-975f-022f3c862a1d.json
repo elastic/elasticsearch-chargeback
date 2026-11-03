@@ -10,13 +10,13 @@
                 "ignoreValidations": false
             },
             "panelsJSON": {
-                "9126b253-5fa7-5589-95ce-ecaf1e6194ae": {
+                "83964b3f-39bf-54ad-b576-041fc22a74f1": {
                     "explicitInput": {
                         "dataViewId": "chargeback_serverless-billing",
                         "exclude": false,
                         "existsSelected": false,
                         "fieldName": "project_name",
-                        "id": "9126b253-5fa7-5589-95ce-ecaf1e6194ae",
+                        "id": "83964b3f-39bf-54ad-b576-041fc22a74f1",
                         "searchTechnique": "prefix",
                         "selectedOptions": [],
                         "sort": {
@@ -30,13 +30,13 @@
                     "type": "optionsListControl",
                     "width": "medium"
                 },
-                "9a214b89-627b-597e-abc2-3eb7cf69bc6f": {
+                "d5af3850-9c5d-5af4-a129-6333630b85ac": {
                     "explicitInput": {
                         "dataViewId": "chargeback_serverless-billing",
                         "exclude": false,
                         "existsSelected": false,
                         "fieldName": "project_type",
-                        "id": "9a214b89-627b-597e-abc2-3eb7cf69bc6f",
+                        "id": "d5af3850-9c5d-5af4-a129-6333630b85ac",
                         "searchTechnique": "prefix",
                         "selectedOptions": [],
                         "sort": {
@@ -83,7 +83,7 @@
                             "options": {
                                 "openInNewTab": false,
                                 "useCurrentDateRange": true,
-                                "useCurrentFilters": false
+                                "useCurrentFilters": true
                             },
                             "order": 0,
                             "type": "dashboardLink"
@@ -95,7 +95,7 @@
                             "options": {
                                 "openInNewTab": false,
                                 "useCurrentDateRange": true,
-                                "useCurrentFilters": false
+                                "useCurrentFilters": true
                             },
                             "order": 1,
                             "type": "dashboardLink"
@@ -107,7 +107,7 @@
                             "options": {
                                 "openInNewTab": false,
                                 "useCurrentDateRange": true,
-                                "useCurrentFilters": false
+                                "useCurrentFilters": true
                             },
                             "order": 2,
                             "type": "dashboardLink"
@@ -119,7 +119,7 @@
                             "options": {
                                 "openInNewTab": false,
                                 "useCurrentDateRange": true,
-                                "useCurrentFilters": false
+                                "useCurrentFilters": true
                             },
                             "order": 3,
                             "type": "dashboardLink"
@@ -131,7 +131,7 @@
                             "options": {
                                 "openInNewTab": false,
                                 "useCurrentDateRange": true,
-                                "useCurrentFilters": false
+                                "useCurrentFilters": true
                             },
                             "order": 4,
                             "type": "dashboardLink"
@@ -395,12 +395,12 @@
         },
         {
             "id": "chargeback_serverless-billing",
-            "name": "controlGroup_9a214b89-627b-597e-abc2-3eb7cf69bc6f:optionsListDataView",
+            "name": "controlGroup_d5af3850-9c5d-5af4-a129-6333630b85ac:optionsListDataView",
             "type": "index-pattern"
         },
         {
             "id": "chargeback_serverless-billing",
-            "name": "controlGroup_9126b253-5fa7-5589-95ce-ecaf1e6194ae:optionsListDataView",
+            "name": "controlGroup_83964b3f-39bf-54ad-b576-041fc22a74f1:optionsListDataView",
             "type": "index-pattern"
         }
     ],

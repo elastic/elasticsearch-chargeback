@@ -200,7 +200,7 @@ def links_panel(panel_id: str, current: str) -> tuple[dict, list]:
                 "options": {
                     "openInNewTab": False,
                     "useCurrentDateRange": True,
-                    "useCurrentFilters": False,
+                    "useCurrentFilters": True,
                 },
                 "order": order,
                 "type": "dashboardLink",
@@ -3341,8 +3341,8 @@ ALLOC_TABLE_TEMPLATE = f"""\
 def control_group(mode: str = "billing") -> dict:
     if mode == "usage":
         controls = [
-            (stable_uuid("ctrl-usage-project-type"), "project_type", "Project type", 0),
-            (stable_uuid("ctrl-usage-project-name"), "project_name", "Project name", 1),
+            (stable_uuid("ctrl-project-type"), "project_type", "Project type", 0),
+            (stable_uuid("ctrl-project-name"), "project_name", "Project name", 1),
         ]
     else:
         controls = [
@@ -4426,7 +4426,8 @@ def build_config() -> dict:
         "Fleet Integration Policy configuration guide, active currency settings, discovered Serverless projects, and daily usage harvest status.",
         panels,
         refs,
-        with_controls=False,
+        with_controls=True,
+        controls_mode="usage",
         hide_panel_titles=True,
     )
 

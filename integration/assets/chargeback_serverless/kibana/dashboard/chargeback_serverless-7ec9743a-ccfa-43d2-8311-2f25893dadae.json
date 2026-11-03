@@ -1,5 +1,58 @@
 {
     "attributes": {
+        "controlGroupInput": {
+            "chainingSystem": "HIERARCHICAL",
+            "controlStyle": "oneLine",
+            "ignoreParentSettingsJSON": {
+                "ignoreFilters": false,
+                "ignoreQuery": false,
+                "ignoreTimerange": false,
+                "ignoreValidations": false
+            },
+            "panelsJSON": {
+                "83964b3f-39bf-54ad-b576-041fc22a74f1": {
+                    "explicitInput": {
+                        "dataViewId": "chargeback_serverless-billing",
+                        "exclude": false,
+                        "existsSelected": false,
+                        "fieldName": "project_name",
+                        "id": "83964b3f-39bf-54ad-b576-041fc22a74f1",
+                        "searchTechnique": "prefix",
+                        "selectedOptions": [],
+                        "sort": {
+                            "by": "_count",
+                            "direction": "desc"
+                        },
+                        "title": "Project name"
+                    },
+                    "grow": false,
+                    "order": 1,
+                    "type": "optionsListControl",
+                    "width": "medium"
+                },
+                "d5af3850-9c5d-5af4-a129-6333630b85ac": {
+                    "explicitInput": {
+                        "dataViewId": "chargeback_serverless-billing",
+                        "exclude": false,
+                        "existsSelected": false,
+                        "fieldName": "project_type",
+                        "id": "d5af3850-9c5d-5af4-a129-6333630b85ac",
+                        "searchTechnique": "prefix",
+                        "selectedOptions": [],
+                        "sort": {
+                            "by": "_count",
+                            "direction": "desc"
+                        },
+                        "title": "Project type"
+                    },
+                    "grow": false,
+                    "order": 0,
+                    "type": "optionsListControl",
+                    "width": "medium"
+                }
+            },
+            "showApplySelections": false
+        },
         "description": "Fleet Integration Policy configuration guide, active currency settings, discovered Serverless projects, and daily usage harvest status.",
         "kibanaSavedObjectMeta": {
             "searchSourceJSON": {
@@ -30,7 +83,7 @@
                             "options": {
                                 "openInNewTab": false,
                                 "useCurrentDateRange": true,
-                                "useCurrentFilters": false
+                                "useCurrentFilters": true
                             },
                             "order": 0,
                             "type": "dashboardLink"
@@ -42,7 +95,7 @@
                             "options": {
                                 "openInNewTab": false,
                                 "useCurrentDateRange": true,
-                                "useCurrentFilters": false
+                                "useCurrentFilters": true
                             },
                             "order": 1,
                             "type": "dashboardLink"
@@ -54,7 +107,7 @@
                             "options": {
                                 "openInNewTab": false,
                                 "useCurrentDateRange": true,
-                                "useCurrentFilters": false
+                                "useCurrentFilters": true
                             },
                             "order": 2,
                             "type": "dashboardLink"
@@ -66,7 +119,7 @@
                             "options": {
                                 "openInNewTab": false,
                                 "useCurrentDateRange": true,
-                                "useCurrentFilters": false
+                                "useCurrentFilters": true
                             },
                             "order": 3,
                             "type": "dashboardLink"
@@ -78,7 +131,7 @@
                             "options": {
                                 "openInNewTab": false,
                                 "useCurrentDateRange": true,
-                                "useCurrentFilters": false
+                                "useCurrentFilters": true
                             },
                             "order": 4,
                             "type": "dashboardLink"
@@ -150,6 +203,16 @@
             "id": "chargeback_serverless-7ec9743a-ccfa-43d2-8311-2f25893dadae",
             "name": "565c2f52-2e63-51a7-97df-124f284efe7d:link_58b6b0d2-667a-52f1-8a55-4a35b426d41a_dashboard",
             "type": "dashboard"
+        },
+        {
+            "id": "chargeback_serverless-billing",
+            "name": "controlGroup_d5af3850-9c5d-5af4-a129-6333630b85ac:optionsListDataView",
+            "type": "index-pattern"
+        },
+        {
+            "id": "chargeback_serverless-billing",
+            "name": "controlGroup_83964b3f-39bf-54ad-b576-041fc22a74f1:optionsListDataView",
+            "type": "index-pattern"
         }
     ],
     "type": "dashboard",

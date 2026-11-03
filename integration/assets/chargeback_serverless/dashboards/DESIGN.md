@@ -14,7 +14,7 @@
 | **[Chargeback Serverless] Synthetics** | `chargeback_serverless-c188156b-9f97-5e72-975f-022f3c862a1d` | Synthetics FinOps KPIs (direct Synthetics SKU spend, billed check quantity, ECU, unit cost per 1k checks), Synthetics data stream attribution KPIs (`synthetics-*` indexing, search, storage), daily Synthetics SKU cost by project, Synthetics data stream cost by namespace, SKU line items, and Synthetics data stream attribution table |
 | **[Chargeback Serverless] Configuration** | `chargeback_serverless-7ec9743a-ccfa-43d2-8311-2f25893dadae` | Unified Fleet Configuration, Policy Settings & Serverless Project Registry panel (status banner, 5 KPIs, 3-step setup guide, and paginated project harvest registry) |
 
-All five dashboards share a horizontal `links` navigation bar (`useCurrentDateRange: true`, `useCurrentFilters: false`) and default to `now-30d` to `now`.
+All five dashboards share a horizontal `links` navigation bar (`useCurrentDateRange: true`, `useCurrentFilters: true`) and default to `now-30d` to `now`.
 
 ## Lookup Indices & Data Sources
 
