@@ -14,6 +14,7 @@ import os
 import re
 import ssl
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -74,7 +75,7 @@ def create_ssl_context(target_url=""):
         return ctx
     return None
 
-def http_get(url, headers=None, timeout=30, retries=3):
+def http_get(url, headers=None, timeout=30, retries=5):
     last_err = None
     for attempt in range(retries):
         try:
@@ -82,11 +83,14 @@ def http_get(url, headers=None, timeout=30, retries=3):
             ctx = create_ssl_context(url)
             with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
                 return resp.getcode(), json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            raise e
         except Exception as e:
             last_err = e
+            time.sleep(1.0)
     raise last_err
 
-def http_post_bulk(url, headers, bulk_body_str, timeout=60, retries=3):
+def http_post_bulk(url, headers, bulk_body_str, timeout=60, retries=5):
     last_err = None
     for attempt in range(retries):
         try:
@@ -94,8 +98,11 @@ def http_post_bulk(url, headers, bulk_body_str, timeout=60, retries=3):
             ctx = create_ssl_context(url)
             with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
                 return resp.getcode(), json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            raise e
         except Exception as e:
             last_err = e
+            time.sleep(1.0)
     raise last_err
 
 def classify_sku(sku, kind, item_type):
@@ -427,6 +434,34 @@ def main():
             "total_ecu": idx_e + qry_e + stg_e + ai_e
         }
 
+    # Pre-fetch any existing Fleet Elastic Agent 'ok' harvests from metrics-chargeback_serverless.usage-*
+    # so keys configured in Fleet UI are preserved across the historical backfill window.
+    agent_harvest_cache = {}
+    try:
+        search_url = f"{ES_URL.rstrip('/')}/metrics-chargeback_serverless.usage-*/_search"
+        search_hdrs = {"Authorization": f"ApiKey {ES_API_KEY}", "Content-Type": "application/json"}
+        _, ps_resp = http_post_bulk(search_url, search_hdrs, json.dumps({
+            "size": 100,
+            "sort": [{"updated_at": {"order": "desc", "unmapped_type": "date"}}, {"@timestamp": {"order": "desc"}}],
+            "query": {"bool": {"filter": [{"term": {"doc_type": "project_status"}}, {"term": {"last_status": "ok"}}]}}
+        }), timeout=15)
+        for h in (ps_resp.get("hits") or {}).get("hits") or []:
+            src = h.get("_source") or {}
+            h_pid = src.get("project_id")
+            h_ts = src.get("@timestamp")
+            if h_pid and h_pid not in agent_harvest_cache:
+                _, det_resp = http_post_bulk(search_url, search_hdrs, json.dumps({
+                    "size": 2000,
+                    "query": {"bool": {"filter": [{"term": {"project_id": h_pid}}, {"term": {"@timestamp": h_ts}}]}}
+                }), timeout=15)
+                det_hits = [dh.get("_source") or {} for dh in ((det_resp.get("hits") or {}).get("hits") or [])]
+                agent_harvest_cache[h_pid] = {
+                    "status_doc": src,
+                    "docs": det_hits,
+                }
+    except Exception:
+        pass
+
     usage_docs = []
     for p in projects:
         pid = p.get("id")
@@ -566,6 +601,60 @@ def main():
             ds_map[ds_name]["size"] += size_b
             ds_map[ds_name]["idx_time"] += idx_time
             ds_map[ds_name]["qry_time"] += qry_time
+
+        # If local key was not in env/Keychain, check if Fleet Elastic Agent already harvested this project via Fleet UI secret
+        harvested_idx_count = len(indices)
+        if harvest_status != "ok" and pid in agent_harvest_cache:
+            cached = agent_harvest_cache[pid]
+            st_doc = cached["status_doc"]
+            harvest_status = "ok"
+            harvested_idx_count = int(st_doc.get("index_count") or 0)
+            for cdoc in cached["docs"]:
+                dtype = cdoc.get("doc_type")
+                if dtype == "datastream":
+                    raw_ds = cdoc.get("datastream", "")
+                    m_ds = DS_INDEX_RE.match(raw_ds)
+                    ds_name = m_ds.group(1) if m_ds else raw_ds
+                    if not ds_name:
+                        continue
+                    ds_parts = ds_name.split("-")
+                    ds_type = cdoc.get("ds_type") or (ds_parts[0] if len(ds_parts) > 1 else "other")
+                    ds_dataset = cdoc.get("ds_dataset") or ("-".join(ds_parts[1:-1]) if len(ds_parts) >= 3 else (ds_parts[0] if len(ds_parts) == 2 else ds_name))
+                    ds_namespace = cdoc.get("ds_namespace") or (ds_parts[-1] if len(ds_parts) > 1 else "other")
+                    if ds_name not in ds_map:
+                        ds_map[ds_name] = {
+                            "ds": ds_name,
+                            "ds_type": ds_type,
+                            "ds_dataset": ds_dataset,
+                            "ds_namespace": ds_namespace,
+                            "size": 0,
+                            "idx_time": 0,
+                            "qry_time": 0,
+                        }
+                    ds_map[ds_name]["size"] += int(cdoc.get("datastream_sum_data_set_store_size") or 0)
+                    ds_map[ds_name]["idx_time"] += int(cdoc.get("datastream_sum_indexing_time") or 0)
+                    ds_map[ds_name]["qry_time"] += int(cdoc.get("datastream_sum_query_time") or 0)
+                elif dtype == "ai_model":
+                    ml_models.append({
+                        "model_id": cdoc.get("model_id", "unknown"),
+                        "pipeline_count": 1 if cdoc.get("task_type") == "ingest_inference" else 0,
+                        "inference_stats": {"inference_count": int(cdoc.get("inference_count") or 0)},
+                        "deployment_stats": {"nodes": [{"average_inference_time_ms": float(cdoc.get("average_inference_time_ms") or 0.0)}]},
+                    })
+                elif dtype == "synthetics_monitor":
+                    synth_monitors.append({
+                        "monitor_id": cdoc.get("monitor_id", "unknown"),
+                        "monitor_name": cdoc.get("monitor_name", cdoc.get("monitor_id", "unknown")),
+                        "monitor_type": cdoc.get("monitor_type", "http"),
+                        "monitor_namespace": cdoc.get("monitor_namespace", "default"),
+                        "check_count": int(cdoc.get("check_count") or 0),
+                        "up_count": int(cdoc.get("up_count") or 0),
+                        "down_count": int(cdoc.get("down_count") or 0),
+                        "locations_count": int(cdoc.get("locations_count") or 1),
+                        "average_duration_ms": float(cdoc.get("average_duration_ms") or 0.0),
+                    })
+            if not harvested_idx_count:
+                harvested_idx_count = len(ds_map)
 
         # Index daily synthetics billing per day for this project to support monitor/type attribution when remote data-plane key is absent
         proj_day_synth = {}
@@ -810,7 +899,7 @@ def main():
                 "last_status": harvest_status,
                 "api_key_type": key_type_val,
                 "synthetics_status": synth_stat_val,
-                "index_count": len(indices),
+                "index_count": harvested_idx_count,
                 "datastream_count": len(ds_map),
                 "ai_model_count": len(ml_models),
                 "synthetics_monitor_count": len(day_monitors),

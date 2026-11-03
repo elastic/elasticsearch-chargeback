@@ -544,6 +544,20 @@ def fields_to_mappings(fields_list):
 
 with zipfile.ZipFile(zip_path, "r") as z:
     names = z.namelist()
+    # Ensure lookup ingest pipelines in ES match the package zip even on same-version re-uploads
+    pipe_map = {
+        "billing.yml": f"logs-chargeback_serverless.lookup-{version}-billing",
+        "realized_pool.yml": f"logs-chargeback_serverless.lookup-{version}-realized_pool",
+        "usage.yml": f"logs-chargeback_serverless.lookup-{version}-usage",
+    }
+    for n in names:
+        if "/data_stream/lookup/elasticsearch/ingest_pipeline/" in n and n.endswith(".yml"):
+            fname = n.rsplit("/", 1)[-1]
+            pipe_id = pipe_map.get(fname)
+            if pipe_id:
+                pipe_cfg = yaml.safe_load(z.read(n).decode("utf-8"))
+                es_req("PUT", f"/_ingest/pipeline/{pipe_id}", pipe_cfg)
+
     tf_files = [n for n in names if "/elasticsearch/transform/" in n and n.endswith("/transform.yml")]
     # Install primary transforms before dependent ones (realized_pool, proj_contrib)
     tf_files.sort(key=lambda x: (1 if ("realized_pool" in x or "proj_contrib" in x) else 0, x))
@@ -714,13 +728,22 @@ if existing_pkg_id and os.path.exists(existing_json_file):
                 if isinstance(old_inputs, list):
                     for inp in old_inputs:
                         old_vars = inp.get("vars", {})
+                        old_cloud = old_vars.get("cloud_api_key", {}).get("value")
+                        if isinstance(old_cloud, dict) and old_cloud.get("isSecretRef") and not os.environ.get("FORCE_CLOUD_KEY"):
+                            cloud_secret_val = { "value": old_cloud, "type": "password" }
+                        old_hub = old_vars.get("hub_es_api_key", {}).get("value")
+                        if isinstance(old_hub, dict) and old_hub.get("isSecretRef") and not os.environ.get("FORCE_HUB_KEY"):
+                            hub_secret_val = { "value": old_hub, "type": "password" }
                         old_keys = old_vars.get("project_api_keys", {}).get("value")
-                        if old_keys and not proj_keys:
+                        if old_keys and not os.environ.get("FORCE_PROJECT_KEYS"):
                             if isinstance(old_keys, dict) and old_keys.get("isSecretRef"):
                                 proj_secret_val = { "value": old_keys, "type": "password" }
                             else:
-                                proj_keys = old_keys if isinstance(old_keys, list) else [old_keys]
-                                proj_secret_val = { "value": proj_keys, "type": "password" }
+                                merged_keys = list(old_keys) if isinstance(old_keys, list) else [old_keys]
+                                for pk in proj_keys:
+                                    if pk not in merged_keys:
+                                        merged_keys.append(pk)
+                                proj_secret_val = { "value": merged_keys, "type": "password" }
                         if not os.environ.get("CONF_RATE_UNIT"):
                             old_unit = old_vars.get("currency_unit", {}).get("value")
                             if old_unit:
@@ -823,6 +846,9 @@ print(json.dumps(payload))
     exit 1
   fi
   echo "  ✓ Fleet package policy active. Elastic Agent CEL streams scheduled."
+  echo "  • Waiting 15s for enrolled Fleet Elastic Agent to execute CEL usage harvest..."
+  sleep 15
+  es_curl -sS -X POST "${ES_URL%/}/metrics-chargeback_serverless.*/_refresh" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
 else
   echo ""
   echo ">>> Step 5: Skipped policy configuration (--skip-policy)"
