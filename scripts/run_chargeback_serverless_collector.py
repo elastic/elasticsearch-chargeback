@@ -115,21 +115,21 @@ def classify_sku(sku, kind, item_type):
     if "agent-builder" in s:
         return ("agent-builder", "platform", True, "ai")
 
-    if s.startswith("observability.") or s.startswith("security."):
-        if any(x in s for x in ["retained", "storage", "retention"]):
-            return ("retained", "data_tier", True, "storage")
-        if any(x in s for x in ["ingest", "logs", "metrics", "traces", "apm", "siem"]):
-            return ("ingest", "data_tier", True, "indexing")
-
-    if s.startswith("elasticsearch.") or s.startswith("vector.") or s.startswith("elasticsearch-vector."):
-        if "-ingest-vcu_" in s or "ingest-vcu" in s:
-            return ("ingest-vcu", "data_tier", True, "indexing")
-        if "-search-vcu_" in s or "search-vcu" in s:
-            return ("search-vcu", "data_tier", True, "query")
-        if s.startswith("elasticsearch.retained_") or "retained_" in s or "storage" in s:
-            return ("retained", "data_tier", True, "storage")
-        if "-ml-vcu_" in s or "ml-vcu" in s:
-            return ("ml-vcu", "platform", True, "ai")
+    # Ingest / indexing VCU (any project type, current or future)
+    if any(x in s for x in ["-ingest-vcu_", "ingest-vcu", "-ingest-vcu"]):
+        return ("ingest-vcu", "data_tier", True, "indexing")
+    # Search / query VCU (any project type, current or future)
+    if any(x in s for x in ["-search-vcu_", "search-vcu", "-search-vcu"]):
+        return ("search-vcu", "data_tier", True, "query")
+    # ML / AI VCU (any project type, current or future)
+    if any(x in s for x in ["-ml-vcu_", "ml-vcu", "-ml-vcu"]):
+        return ("ml-vcu", "platform", True, "ai")
+    # Retained storage (any project type, current or future)
+    if any(x in s for x in ["retained", "storage", "retention"]):
+        return ("retained", "data_tier", True, "storage")
+    # Solution-specific ingest/data tier
+    if any(x in s for x in ["ingest", "logs", "metrics", "traces", "apm", "siem"]):
+        return ("ingest", "data_tier", True, "indexing")
 
     if s.startswith("serverless.support-"):
         return ("serverless_premium_support", "support", False, "none")
@@ -193,7 +193,29 @@ def main():
     # 1. Discover Serverless Projects
     print("\n>>> Step 1: Discovering Serverless projects from Control Plane...")
     projects = []
-    project_types = ["elasticsearch", "observability", "security"]
+    seen_project_ids = set()
+    custom_types = [t.strip() for t in get_env("PROJECT_TYPES", "").split(",") if t.strip()]
+    project_types = list(dict.fromkeys(["elasticsearch", "observability", "security", "search"] + custom_types))
+
+    # Also try generic /api/v1/serverless/projects if supported by the control plane
+    try:
+        generic_url = f"{CLOUD_API_BASE}/api/v1/serverless/projects"
+        status, data = http_get(generic_url, cloud_headers)
+        items = data.get("items", [])
+        for item in items:
+            ptype = item.get("type") or item.get("project_type") or "serverless"
+            item["project_type"] = ptype
+            pid = item.get("id")
+            if pid and pid not in seen_project_ids:
+                seen_project_ids.add(pid)
+                projects.append(item)
+            if ptype not in project_types:
+                project_types.append(ptype)
+        if items:
+            print(f"  • Discovered {len(items)} project(s) via generic endpoint")
+    except Exception:
+        pass
+
     for ptype in project_types:
         url = f"{CLOUD_API_BASE}/api/v1/serverless/projects/{ptype}"
         try:
@@ -201,10 +223,14 @@ def main():
             items = data.get("items", [])
             for item in items:
                 item["project_type"] = ptype
-                projects.append(item)
+                pid = item.get("id")
+                if pid and pid not in seen_project_ids:
+                    seen_project_ids.add(pid)
+                    projects.append(item)
             print(f"  • Discovered {len(items)} {ptype} project(s)")
         except Exception as e:
-            print(f"  ⚠ Failed to query {ptype} projects: {e}")
+            # Endpoint may return 404 for project types not active on the cluster, which is normal
+            pass
 
     project_map = {p["id"]: p for p in projects}
     print(f"  Total projects discovered across org: {len(projects)}")
@@ -249,9 +275,14 @@ def main():
         try:
             status, bdata = http_get(billing_url, cloud_headers)
             raw_instances = bdata.get("instances", [])
+            # Include any project instance across ANY project type (exclude only classic ESS auxiliary components)
             day_instances = [
                 inst for inst in raw_instances
-                if inst.get("type") in ["elasticsearch", "observability", "security"]
+                if inst.get("id") in project_map or (
+                    inst.get("type") not in [
+                        "kibana", "enterprise_search", "integrations_server", "appsearch", "fleet_server", "apm"
+                    ] and inst.get("type") is not None
+                )
             ]
             if day_instances:
                 latest_billing_instances = day_instances
@@ -262,18 +293,27 @@ def main():
                 if not inst_id:
                     continue
                 inst_name = inst.get("name", inst_id)
-                inst_type = inst.get("type", "elasticsearch")
+                inst_type = inst.get("type", "serverless")
 
                 proj = project_map.get(inst_id, {})
                 proj_name = proj.get("name")
                 pname = proj_name if (proj_name and proj_name != inst_id) else (inst_name or proj_name or inst_id)
-                ptype = proj.get("project_type", inst_type) or inst_type
+                ptype = proj.get("project_type") or inst.get("type") or "serverless"
 
                 existing_known = all_known_projects.get(inst_id)
                 if not existing_known:
                     all_known_projects[inst_id] = {"id": inst_id, "name": pname, "project_type": ptype}
+                    if inst_id not in project_map:
+                        projects.append({
+                            "id": inst_id,
+                            "name": pname,
+                            "project_type": ptype,
+                            "endpoints": {}
+                        })
+                        project_map[inst_id] = projects[-1]
                 elif pname and pname != inst_id and existing_known.get("name") == inst_id:
                     existing_known["name"] = pname
+                    existing_known["project_type"] = ptype
 
                 line_items = inst.get("product_line_items", [])
                 for li in line_items:

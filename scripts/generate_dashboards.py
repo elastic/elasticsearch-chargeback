@@ -2948,7 +2948,7 @@ CONFIG_UNIFIED_TEMPLATE = f"""\
             <div class="cb-prof-text">Elastic Cloud API Key</div>
           </td>
           <td>
-            <span class="cb-endpoint-text" title="GET https://api.elastic-cloud.com/api/v1/serverless/projects/{{elasticsearch,observability,security}}">GET /api/v1/serverless/projects/{{es,obs,security}}</span>
+            <span class="cb-endpoint-text" title="GET https://api.elastic-cloud.com/api/v1/serverless/projects/{{all project types}}">GET /api/v1/serverless/projects/{{all project types}}</span>
             <div class="cb-prof-text">+ Historical Billing API project reconciliation</div>
           </td>
           <td>
@@ -3551,7 +3551,7 @@ def build_billing() -> dict:
         f"""{COST_PRELUDE}
 | STATS cost = SUM(cost), is_inactive = MAX(CASE(COALESCE(last_status, "") == "inactive", 1, 0)), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project
 | SORT cost DESC, project ASC
-| LIMIT 25
+| LIMIT 200
 | KEEP project, cost, is_inactive, currency_symbol, unit""",
         0,
         19,
@@ -3574,7 +3574,7 @@ def build_billing() -> dict:
 | STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY category_label
 | RENAME category_label AS category
 | SORT cost DESC
-| LIMIT 25
+| LIMIT 50
 | KEEP category, cost, currency_symbol, unit""",
         24,
         19,
@@ -3592,7 +3592,7 @@ def build_billing() -> dict:
 | WHERE COALESCE(sku, "none") != "none"
 | STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY category_label, cost_type_label, project_type_label
 | SORT cost DESC
-| LIMIT 25
+| LIMIT 100
 | RENAME category_label AS category, cost_type_label AS cost_type, project_type_label AS project_type
 | KEEP category, cost_type, project_type, cost, currency_symbol, unit""",
         0,
@@ -3603,7 +3603,7 @@ def build_billing() -> dict:
             "Multi-stage Sankey cost flow tracing billed spend from high-level Cloud Billing category through individual cost types into project types:\n\n"
             "• Category (cost_category): High-level bucket (data_tier, platform, support, transfer, snapshot).\n"
             "• Cost Type (cost_type): Normalized SKU family (ingest-vcu, search-vcu, retained, synthetics, inference, support).\n"
-            "• Project Type (project_type): Serverless solution type (elasticsearch, observability, security, organization)."
+            "• Project Type (project_type): Serverless solution type (elasticsearch, observability, security, search, or custom project type)."
         ),
     )
     panels.append(p)
@@ -3620,7 +3620,7 @@ def build_billing() -> dict:
 | STATS cost = SUM(cost), ecu = SUM(units), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY category_label, cost_type_label, sku, project
 | RENAME category_label AS category, cost_type_label AS cost_type
 | SORT cost DESC, ecu DESC, project ASC
-| LIMIT 50
+| LIMIT 200
 | KEEP category, cost_type, sku, project, ecu, cost, currency_symbol, unit""",
         24,
         33,
@@ -3649,7 +3649,7 @@ def build_billing() -> dict:
 | STATS qty = SUM(qty_val), ecu = SUM(units), cost = SUM(cost), is_inactive = MAX(CASE(COALESCE(last_status, "") == "inactive", 1, 0)), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project, project_type_label, category_label, cost_type_label, sku, allocation_driver
 | RENAME project_type_label AS project_type, category_label AS category, cost_type_label AS cost_type, allocation_driver AS driver
 | SORT cost DESC, ecu DESC, qty DESC, project ASC
-| LIMIT 200
+| LIMIT 1000
 | KEEP project, project_type, category, cost_type, sku, driver, qty, ecu, cost, is_inactive, currency_symbol, unit""",
         0,
         51,
