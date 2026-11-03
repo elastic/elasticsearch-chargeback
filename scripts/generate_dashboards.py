@@ -3481,7 +3481,7 @@ def build_billing() -> dict:
 | EVAL alloc_cost = CASE(COALESCE(is_allocatable, false) == true AND allocation_driver != "none", cost, 0.0)
 | EVAL unalloc_cost = CASE(COALESCE(is_allocatable, false) == false OR allocation_driver == "none", cost, 0.0)
 | EVAL day = DATE_TRUNC(1 day, ts)
-| EVAL active_pid = CASE(cost > 0 AND COALESCE(last_status, "") != "inactive", project_id, null)
+| EVAL active_pid = CASE(cost > 0 AND COALESCE(last_status, "") != "inactive" AND COALESCE(optimized_for, "") != "decommissioned", project_id, null)
 | STATS total_spend = SUM(cost), allocatable_spend = SUM(alloc_cost), unallocatable_spend = SUM(unalloc_cost), project_count = COUNT_DISTINCT(project_id), active_project_count = COUNT_DISTINCT(active_pid), days_count = COUNT_DISTINCT(day), billed_days = COUNT_DISTINCT(day), latest_day = TO_STRING(MAX(ts)), currency_symbol = MAX(currency_symbol), unit = MAX(unit)""",
         0,
         2,
@@ -3549,7 +3549,7 @@ def build_billing() -> dict:
             prefix="bill_proj",
         ),
         f"""{COST_PRELUDE}
-| STATS cost = SUM(cost), is_inactive = MAX(CASE(COALESCE(last_status, "") == "inactive", 1, 0)), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project
+| STATS cost = SUM(cost), is_inactive = MAX(CASE(COALESCE(last_status, "") == "inactive" OR COALESCE(optimized_for, "") == "decommissioned", 1, 0)), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project
 | SORT cost DESC, project ASC
 | LIMIT 200
 | KEEP project, cost, is_inactive, currency_symbol, unit""",
@@ -3646,7 +3646,7 @@ def build_billing() -> dict:
 | INLINE STATS proj_real_skus = SUM(real_sku_cnt) BY project_id
 | WHERE NOT is_placeholder OR proj_real_skus == 0
 | EVAL qty_val = CASE(quantity_value IS NOT NULL, quantity_value, 0.0)
-| STATS qty = SUM(qty_val), ecu = SUM(units), cost = SUM(cost), is_inactive = MAX(CASE(COALESCE(last_status, "") == "inactive", 1, 0)), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project, project_type_label, category_label, cost_type_label, sku, allocation_driver
+| STATS qty = SUM(qty_val), ecu = SUM(units), cost = SUM(cost), is_inactive = MAX(CASE(COALESCE(last_status, "") == "inactive" OR COALESCE(optimized_for, "") == "decommissioned", 1, 0)), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project, project_type_label, category_label, cost_type_label, sku, allocation_driver
 | RENAME project_type_label AS project_type, category_label AS category, cost_type_label AS cost_type, allocation_driver AS driver
 | SORT cost DESC, ecu DESC, qty DESC, project ASC
 | LIMIT 1000

@@ -233,6 +233,8 @@ def main():
             pass
 
     project_map = {p["id"]: p for p in projects}
+    active_project_ids = set(project_map.keys())
+    active_project_map = project_map
     print(f"  Total projects discovered across org: {len(projects)}")
 
     # 2. Collect Historical Billing Metrics (Day-by-Day, single figure per day per project+sku)
@@ -276,14 +278,23 @@ def main():
             status, bdata = http_get(billing_url, cloud_headers)
             raw_instances = bdata.get("instances", [])
             # Include any project instance across ANY project type (exclude only classic ESS auxiliary components)
-            day_instances = [
-                inst for inst in raw_instances
-                if inst.get("id") in project_map or (
-                    inst.get("type") not in [
-                        "kibana", "enterprise_search", "integrations_server", "appsearch", "fleet_server", "apm"
-                    ] and inst.get("type") is not None
-                )
-            ]
+            day_instances = []
+            for inst in raw_instances:
+                inst_id = inst.get("id")
+                if not inst_id:
+                    continue
+                if inst_id in active_project_ids:
+                    day_instances.append(inst)
+                    continue
+                itype = (inst.get("type") or "").lower()
+                # Exclude classic ESS auxiliary sub-components
+                if itype in [
+                    "kibana", "enterprise_search", "integrations_server", "appsearch", "fleet_server", "apm"
+                ]:
+                    continue
+                # Include any project instance with line items or valid ID regardless of whether type is null
+                day_instances.append(inst)
+
             if day_instances:
                 latest_billing_instances = day_instances
 
@@ -293,24 +304,29 @@ def main():
                 if not inst_id:
                     continue
                 inst_name = inst.get("name", inst_id)
-                inst_type = inst.get("type", "serverless")
 
-                proj = project_map.get(inst_id, {})
+                proj = active_project_map.get(inst_id, {})
                 proj_name = proj.get("name")
                 pname = proj_name if (proj_name and proj_name != inst_id) else (inst_name or proj_name or inst_id)
-                ptype = proj.get("project_type") or inst.get("type") or "serverless"
+
+                # Infer project_type from active project, instance type, or product line item SKUs
+                ptype = proj.get("project_type") or inst.get("type")
+                if not ptype or ptype in ["serverless", "deployment"]:
+                    skus = " ".join((li.get("sku") or "").lower() for li in inst.get("product_line_items", []))
+                    if "observability." in skus:
+                        ptype = "observability"
+                    elif "security." in skus:
+                        ptype = "security"
+                    elif "search." in skus:
+                        ptype = "search"
+                    elif "elasticsearch." in skus or "-vcu" in skus:
+                        ptype = "elasticsearch"
+                    else:
+                        ptype = ptype or "elasticsearch"
 
                 existing_known = all_known_projects.get(inst_id)
                 if not existing_known:
                     all_known_projects[inst_id] = {"id": inst_id, "name": pname, "project_type": ptype}
-                    if inst_id not in project_map:
-                        projects.append({
-                            "id": inst_id,
-                            "name": pname,
-                            "project_type": ptype,
-                            "endpoints": {}
-                        })
-                        project_map[inst_id] = projects[-1]
                 elif pname and pname != inst_id and existing_known.get("name") == inst_id:
                     existing_known["name"] = pname
                     existing_known["project_type"] = ptype
@@ -431,9 +447,29 @@ def main():
                 err_items = [item for item in bulk_resp.get("items", []) if "error" in item.get("create", {})]
                 print(f"  ⚠ Bulk index reported {len(err_items)} errors: {err_items[:1]}")
             else:
-                print(f"  ✓ Successfully indexed {len(billing_docs)} daily billing records.")
+                print(f"  ✓ Successfully indexed {len(billing_docs)} daily billing records into metrics stream.")
         except Exception as e:
             print(f"  ⚠ Failed to bulk index billing metrics: {e}")
+
+        # Also direct dual-write to serverless_billing_cost_lookup so the Billing Overview dashboard is instantly populated
+        print(f"  • Ingesting {len(billing_docs)} daily billing records directly into serverless_billing_cost_lookup...")
+        lk_bulk_lines = []
+        for d in billing_docs:
+            doc_id = f"{d['composite_key']}_{d['sku']}"
+            lk_bulk_lines.append(json.dumps({"index": {"_id": doc_id}}))
+            lk_bulk_lines.append(json.dumps(d))
+        lk_bulk_payload = "\n".join(lk_bulk_lines) + "\n"
+        target_lk_bulk = f"{ES_URL.rstrip('/')}/serverless_billing_cost_lookup/_bulk"
+        try:
+            status, bulk_resp = http_post_bulk(target_lk_bulk, es_headers, lk_bulk_payload)
+            errors = bulk_resp.get("errors", False)
+            if errors:
+                err_items = [item for item in bulk_resp.get("items", []) if "error" in item.get("index", {})]
+                print(f"  ⚠ Bulk index to serverless_billing_cost_lookup reported {len(err_items)} errors: {err_items[:1]}")
+            else:
+                print(f"  ✓ Successfully indexed {len(billing_docs)} daily billing records into serverless_billing_cost_lookup.")
+        except Exception as e:
+            print(f"  ⚠ Failed to direct-index into serverless_billing_cost_lookup: {e}")
     else:
         print("  Notice: No Serverless billing line items found for the given window.")
 
@@ -965,7 +1001,7 @@ def main():
     # Emit project_status records for inactive / decommissioned projects seen in billing history
     ts_now_inactive = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     for pid, pinfo in all_known_projects.items():
-        if pid in project_map:
+        if pid in active_project_ids:
             continue
         pname = pinfo.get("name") or pid
         ptype = pinfo.get("project_type") or "elasticsearch"
@@ -1030,9 +1066,38 @@ def main():
         except Exception as e:
             print(f"  ⚠ Failed to bulk index usage metrics: {e}")
 
-    # Refresh data streams
+        # Direct dual-write of project_status into serverless_project_status_lookup so lookup joins succeed immediately
+        status_docs = [d for d in usage_docs if d.get("doc_type") == "project_status"]
+        if status_docs:
+            print(f"  • Ingesting {len(status_docs)} project status records directly into serverless_project_status_lookup...")
+            ps_bulk_lines = []
+            for d in status_docs:
+                doc_id = d["composite_key"]
+                ps_bulk_lines.append(json.dumps({"index": {"_id": doc_id}}))
+                ps_bulk_lines.append(json.dumps(d))
+            ps_bulk_payload = "\n".join(ps_bulk_lines) + "\n"
+            target_ps_bulk = f"{ES_URL.rstrip('/')}/serverless_project_status_lookup/_bulk"
+            try:
+                status, bulk_resp = http_post_bulk(target_ps_bulk, es_headers, ps_bulk_payload)
+                errors = bulk_resp.get("errors", False)
+                if errors:
+                    err_items = [item for item in bulk_resp.get("items", []) if "error" in item.get("index", {})]
+                    print(f"  ⚠ Bulk index to serverless_project_status_lookup reported {len(err_items)} errors: {err_items[:1]}")
+                else:
+                    print(f"  ✓ Successfully indexed {len(status_docs)} status records into serverless_project_status_lookup.")
+            except Exception as e:
+                print(f"  ⚠ Failed to direct-index into serverless_project_status_lookup: {e}")
+
+    # Refresh data streams and lookups
     try:
         http_get(f"{ES_URL.rstrip('/')}/metrics-chargeback_serverless.*/_refresh", {"Authorization": f"ApiKey {ES_API_KEY}"})
+        http_get(f"{ES_URL.rstrip('/')}/serverless_*_lookup/_refresh", {"Authorization": f"ApiKey {ES_API_KEY}"})
+    except Exception:
+        pass
+
+    # Attempt to start transforms if not already running
+    try:
+        http_post_bulk(f"{ES_URL.rstrip('/')}/_transform/logs-chargeback_serverless.*-default-*/_start", es_headers, "{}")
     except Exception:
         pass
 
