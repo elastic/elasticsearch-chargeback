@@ -468,7 +468,7 @@ if [[ "${#ALIAS_LOOKUPS[@]}" -gt 0 ]]; then
 fi
 
 UPLOAD_HTTP=$(kbn_curl -o /tmp/cbs-upload.json -w '%{http_code}' \
-  -X POST "${KIBANA_URL%/}/api/fleet/epm/packages?force=true" \
+  -X POST "${KIBANA_URL%/}/api/fleet/epm/packages" \
   -H "Authorization: ApiKey ${KIBANA_API_KEY}" \
   -H "kbn-xsrf: true" \
   -H "elastic-api-version: 2023-10-31" \
@@ -488,7 +488,7 @@ with zipfile.ZipFile(src, "r") as zin, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEF
 ' "$TARGET_ZIP" "/tmp/cbs-epm-notf.zip"
 
   UPLOAD_HTTP=$(kbn_curl -o /tmp/cbs-upload.json -w '%{http_code}' \
-    -X POST "${KIBANA_URL%/}/api/fleet/epm/packages?force=true" \
+    -X POST "${KIBANA_URL%/}/api/fleet/epm/packages" \
     -H "Authorization: ApiKey ${KIBANA_API_KEY}" \
     -H "kbn-xsrf: true" \
     -H "elastic-api-version: 2023-10-31" \
@@ -578,6 +578,16 @@ with zipfile.ZipFile(zip_path, "r") as z:
             if pipe_id:
                 pipe_cfg = yaml.safe_load(z.read(n).decode("utf-8"))
                 es_req("PUT", f"/_ingest/pipeline/{pipe_id}", pipe_cfg)
+        elif n.endswith("/data_stream/billing/elasticsearch/ingest_pipeline/default.yml"):
+            pipe_cfg = yaml.safe_load(z.read(n).decode("utf-8"))
+            procs = pipe_cfg.setdefault("processors", [])
+            procs.extend([
+                {"pipeline": {"name": "global@custom", "ignore_missing_pipeline": True}},
+                {"pipeline": {"name": "metrics@custom", "ignore_missing_pipeline": True}},
+                {"pipeline": {"name": "metrics-chargeback_serverless.integration@custom", "ignore_missing_pipeline": True}},
+                {"pipeline": {"name": "metrics-chargeback_serverless.billing@custom", "ignore_missing_pipeline": True}},
+            ])
+            es_req("PUT", f"/_ingest/pipeline/metrics-chargeback_serverless.billing-{version}", pipe_cfg)
 
     tf_files = [n for n in names if "/elasticsearch/transform/" in n and n.endswith("/transform.yml")]
     # Install primary transforms before dependent ones (realized_pool, proj_contrib)
