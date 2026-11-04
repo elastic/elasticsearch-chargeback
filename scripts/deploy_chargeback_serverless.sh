@@ -58,6 +58,7 @@ Environment variables (loaded from macOS Keychain, or .env if present):
   PROJECT_ID            (Optional) Remote project ID to register in project_api_keys
   SL_API_KEY            (Optional) Least-privileged remote project API key
   LOOKBEHIND            (Optional) Historical billing lookbehind days (default: 60)
+  DATA_RETENTION        (Optional) Data stream & lookup transform retention period (default: 365d)
   CONF_RATE             (Optional) Chargeable unit rate (default: 1.0)
   CONF_RATE_UNIT        (Optional) Currency/unit code (default: USD)
   CONF_CURRENCY_SYMBOL  (Optional) Currency symbol (e.g. $, R, €, £)
@@ -137,6 +138,7 @@ BILLING_API_KEY="${BILLING_API_KEY:-$CLOUD_API_KEY}"
 PROJECT_ID="${PROJECT_ID:-${project_id:-}}"
 SL_API_KEY="${SL_API_KEY:-${sl_api_key:-}}"
 LOOKBEHIND="${LOOKBEHIND:-60}"
+DATA_RETENTION="${DATA_RETENTION:-365d}"
 
 CONF_RATE="${CONF_RATE:-}"
 CONF_RATE_UNIT="${CONF_RATE_UNIT:-}"
@@ -183,7 +185,7 @@ prompt_var "ORGANIZATION_ID" "Enter Elastic Cloud Organization ID"
 prompt_var "CLOUD_API_KEY" "Enter Elastic Cloud API Key (Billing & Project read access)" 1
 
 export ES_URL KIBANA_URL ES_API_KEY KIBANA_API_KEY HUB_ES_API_KEY
-export ORGANIZATION_ID CLOUD_API_KEY BILLING_API_KEY PROJECT_ID SL_API_KEY LOOKBEHIND
+export ORGANIZATION_ID CLOUD_API_KEY BILLING_API_KEY PROJECT_ID SL_API_KEY LOOKBEHIND DATA_RETENTION
 export CONF_RATE CONF_RATE_UNIT CONF_CURRENCY_SYMBOL
 
 url_hostname() {
@@ -256,22 +258,23 @@ echo "  ✓ Connected to Kibana API (status: available)"
 # ------------------------------------------------------------------------------
 run_verification() {
   echo ""
-  echo ">>> Verifying Chargeback Serverless data streams..."
+  echo ">>> Verifying Chargeback Serverless data streams & lifecycle retention..."
   local streams=(
     "metrics-chargeback_serverless.billing-default"
     "metrics-chargeback_serverless.usage-default"
   )
 
-  printf "\n%-50s | %-12s\n" "Data Stream" "Doc Count"
-  printf "%-50s-+-%-12s\n" "--------------------------------------------------" "------------"
+  printf "\n%-50s | %-12s | %-20s\n" "Data Stream" "Doc Count" "Effective Retention"
+  printf "%-50s-+-%-12s-+-%-20s\n" "--------------------------------------------------" "------------" "--------------------"
   for ds in "${streams[@]}"; do
-    local cnt
+    local cnt ret
     cnt=$(es_curl -sS "${ES_URL%/}/${ds}/_count" -H "Authorization: ApiKey ${ES_API_KEY}" | jq -r '._shards.successful as $s | if $s > 0 then .count else "error" end' 2>/dev/null || echo "not yet created")
-    printf "%-50s | %-12s\n" "$ds" "$cnt"
+    ret=$(es_curl -sS "${ES_URL%/}/_data_stream/${ds}/_lifecycle" -H "Authorization: ApiKey ${ES_API_KEY}" | jq -r '.data_streams[0].lifecycle | if . then ((.effective_retention // .data_retention // "infinite") + " (" + (.retention_determined_by // "default") + ")") else "n/a" end' 2>/dev/null || echo "n/a")
+    printf "%-50s | %-12s | %-20s\n" "$ds" "$cnt" "$ret"
   done
 
   echo ""
-  echo ">>> Verifying Chargeback Serverless lookup indices..."
+  echo ">>> Verifying Chargeback Serverless lookup indices & transform retention..."
   local lookups=(
     "serverless_billing_cost_lookup"
     "serverless_billing_realized_pool_lookup"
@@ -281,12 +284,29 @@ run_verification() {
     "serverless_synthetics_monitor_contribution_lookup"
     "serverless_project_status_lookup"
   )
-  printf "\n%-50s | %-12s\n" "Lookup Index" "Doc Count"
-  printf "%-50s-+-%-12s\n" "--------------------------------------------------" "------------"
+  local tf_json
+  tf_json=$(es_curl -sS "${ES_URL%/}/_transform/logs-chargeback_serverless.*" -H "Authorization: ApiKey ${ES_API_KEY}" 2>/dev/null || echo "{}")
+  local ds_lk_cnt proj_lk_cnt proj_tf_id
+  ds_lk_cnt=$(es_curl -sS "${ES_URL%/}/serverless_datastream_contribution_lookup/_count" -H "Authorization: ApiKey ${ES_API_KEY}" | jq -r '.count // 0' 2>/dev/null || echo "0")
+  proj_lk_cnt=$(es_curl -sS "${ES_URL%/}/serverless_project_contribution_lookup/_count" -H "Authorization: ApiKey ${ES_API_KEY}" | jq -r '.count // 0' 2>/dev/null || echo "0")
+  if [[ "${ds_lk_cnt:-0}" -gt 50 && "${proj_lk_cnt:-0}" -lt 10 ]]; then
+    proj_tf_id=$(echo "$tf_json" | jq -r '(.transforms // []) | map(select(.dest.index == "serverless_project_contribution_lookup")) | .[0].id // empty' 2>/dev/null || true)
+    if [[ -n "$proj_tf_id" ]]; then
+      es_curl -sS -X POST "${ES_URL%/}/_transform/${proj_tf_id}/_stop?force=true&wait_for_completion=true" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
+      es_curl -sS -X POST "${ES_URL%/}/_transform/${proj_tf_id}/_reset?force=true" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
+      es_curl -sS -X POST "${ES_URL%/}/_transform/${proj_tf_id}/_start" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
+      es_curl -sS -X POST "${ES_URL%/}/_transform/${proj_tf_id}/_schedule_now" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
+      sleep 5
+      es_curl -sS -X POST "${ES_URL%/}/serverless_project_contribution_lookup/_refresh" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
+    fi
+  fi
+  printf "\n%-50s | %-12s | %-20s\n" "Lookup Index" "Doc Count" "Transform Retention"
+  printf "%-50s-+-%-12s-+-%-20s\n" "--------------------------------------------------" "------------" "--------------------"
   for lk in "${lookups[@]}"; do
-    local cnt
+    local cnt tf_ret
     cnt=$(es_curl -sS "${ES_URL%/}/${lk}/_count" -H "Authorization: ApiKey ${ES_API_KEY}" | jq -r '._shards.successful as $s | if $s > 0 then .count else "error" end' 2>/dev/null || echo "not yet created")
-    printf "%-50s | %-12s\n" "$lk" "$cnt"
+    tf_ret=$(echo "$tf_json" | jq -r --arg idx "$lk" '(.transforms // []) | map(select(.dest.index == $idx)) | .[0].retention_policy.time | if . then (.max_age + " (" + .field + ")") else "none" end' 2>/dev/null || echo "none")
+    printf "%-50s | %-12s | %-20s\n" "$lk" "$cnt" "$tf_ret"
   done
   echo ""
 
@@ -485,8 +505,8 @@ if [[ "$UPLOAD_HTTP" != "200" && "$UPLOAD_HTTP" != "201" ]]; then
 fi
 echo "  ✓ Fleet package $ZIP_NAME uploaded and activated successfully."
 
-# Ensure all 6 lookup indices and transforms from the package zip exist and are started in ES
-export TARGET_ZIP VERSION
+# Ensure all 7 lookup indices and transforms from the package zip exist and are started in ES
+export TARGET_ZIP VERSION DATA_RETENTION
 python3 -c '
 import json, os, ssl, urllib.request, zipfile
 try:
@@ -498,6 +518,7 @@ es_url = os.environ["ES_URL"].rstrip("/")
 api_key = os.environ["ES_API_KEY"]
 version = os.environ["VERSION"]
 zip_path = os.environ["TARGET_ZIP"]
+data_retention = os.environ.get("DATA_RETENTION", "365d").strip() or "365d"
 insecure = os.environ.get("CURL_INSECURE", "0") == "1"
 
 ctx = None
@@ -565,6 +586,13 @@ with zipfile.ZipFile(zip_path, "r") as z:
         base_dir = tf_file.rsplit("/", 1)[0]
         tf_name = base_dir.rsplit("/", 1)[1]
         tf_cfg = yaml.safe_load(z.read(tf_file).decode("utf-8"))
+        if data_retention:
+            tf_cfg["retention_policy"] = {
+                "time": {
+                    "field": "@timestamp",
+                    "max_age": data_retention,
+                }
+            }
         fields_file = f"{base_dir}/fields/fields.yml"
         dest_idx = tf_cfg.get("dest", {}).get("index")
         if dest_idx and fields_file in names:
@@ -597,15 +625,35 @@ with zipfile.ZipFile(zip_path, "r") as z:
             es_req("PUT", f"/_transform/{tf_id}", tf_cfg)
         else:
             cur_doc = (existing_tf.get("transforms") or [{}])[0]
-            if cur_doc.get("source", {}) != tf_cfg.get("source", {}) or cur_doc.get("pivot", {}) != tf_cfg.get("pivot", {}):
+            if (
+                cur_doc.get("source", {}) != tf_cfg.get("source", {})
+                or cur_doc.get("pivot", {}) != tf_cfg.get("pivot", {})
+                or cur_doc.get("retention_policy") != tf_cfg.get("retention_policy")
+            ):
                 es_req("POST", f"/_transform/{tf_id}/_stop?force=true&wait_for_completion=true")
                 es_req("DELETE", f"/_transform/{tf_id}?force=true")
                 es_req("PUT", f"/_transform/{tf_id}", tf_cfg)
             else:
-                es_req("POST", f"/_transform/{tf_id}/_update", {k: tf_cfg[k] for k in ("source", "dest", "frequency", "description", "_meta") if k in tf_cfg})
+                es_req("POST", f"/_transform/{tf_id}/_update", {k: tf_cfg[k] for k in ("source", "dest", "frequency", "description", "retention_policy", "_meta") if k in tf_cfg})
         es_req("POST", f"/_transform/{tf_id}/_start")
 ' || true
-echo "  ✓ Verified lookup index mappings and started 6 Fleet transforms ($VERSION)."
+echo "  ✓ Verified lookup index mappings and started 7 Fleet transforms ($VERSION, retention: $DATA_RETENTION)."
+
+apply_datastream_lifecycle() {
+  local retention="${DATA_RETENTION:-365d}"
+  for ds_pattern in "metrics-chargeback_serverless.billing-*" "metrics-chargeback_serverless.usage-*"; do
+    es_curl -sS -X PUT "${ES_URL%/}/_data_stream/${ds_pattern}/_lifecycle" \
+      -H "Authorization: ApiKey ${ES_API_KEY}" \
+      -H "Content-Type: application/json" \
+      -d "{\"data_retention\": \"${retention}\"}" >/dev/null 2>&1 || true
+  done
+  for ct_name in "metrics-chargeback_serverless.billing@custom" "metrics-chargeback_serverless.usage@custom"; do
+    es_curl -sS -X PUT "${ES_URL%/}/_component_template/${ct_name}" \
+      -H "Authorization: ApiKey ${ES_API_KEY}" \
+      -H "Content-Type: application/json" \
+      -d "{\"template\": {\"lifecycle\": {\"data_retention\": \"${retention}\"}}}" >/dev/null 2>&1 || true
+  done
+}
 
 # Clean up any pre-0.3.8 data stream backing indices that still have legacy 'type: alias' mappings
 for ds_name in "metrics-chargeback_serverless.billing-default" "metrics-chargeback_serverless.usage-default"; do
@@ -621,6 +669,9 @@ for ds_name in "metrics-chargeback_serverless.billing-default" "metrics-chargeba
     fi
   fi
 done
+
+apply_datastream_lifecycle
+echo "  ✓ Applied Data Stream Lifecycle retention ($DATA_RETENTION) to Chargeback Serverless data streams."
 
 python3 "$REPO_ROOT/scripts/generate_dashboards.py" "$ASSETS_DIR/kibana" "/tmp/cbs_dashboards.ndjson" >/dev/null 2>&1 || true
 
@@ -879,10 +930,10 @@ if [[ "$SKIP_COLLECTOR" -eq 0 ]]; then
     es_curl -sS -X POST "${ES_URL%/}/_transform/${tf_id}/_start" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
     es_curl -sS -X POST "${ES_URL%/}/_transform/${tf_id}/_schedule_now" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
   done
-  sleep 10
+  sleep 18
   es_curl -sS -X POST "${ES_URL%/}/serverless_*_lookup/_refresh" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
-  echo "  • Waiting 62s for downstream transform sync window (realized_pool & proj_contrib)..."
-  sleep 62
+  echo "  • Waiting 65s for downstream transform sync window (realized_pool & proj_contrib)..."
+  sleep 65
   for tf_id in $ACTIVE_TF; do
     [[ -z "$tf_id" ]] && continue
     if [[ "$tf_id" == *"realized_pool"* || "$tf_id" == *"proj_contrib"* ]]; then
@@ -902,6 +953,7 @@ fi
 # ------------------------------------------------------------------------------
 # 7. Post-deployment Verification & Summary
 # ------------------------------------------------------------------------------
+apply_datastream_lifecycle
 run_verification
 
 echo "================================================================="

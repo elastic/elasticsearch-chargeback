@@ -7,7 +7,7 @@ Install on an **Elastic Cloud Serverless hub** (Observability Complete recommend
 ## Prerequisites
 
 - Serverless hub project with Fleet Integrations enabled.
-- Fleet package `chargeback_serverless` **0.3.11+**.
+- Fleet package `chargeback_serverless` **0.3.15+**.
 - Elastic Cloud Organization ID (from Elastic Cloud Console → Organization).
 - Elastic Cloud API key with billing read access and Serverless project read access.
 - See [CONFIG.md](CONFIG.md) for detailed configuration options.
@@ -31,7 +31,7 @@ The deployment script automates package building, dashboard compilation, Fleet p
 ```
 
 The script will:
-1. Generate dashboards, import them to Kibana, export them with `elastic-package export dashboards`, and package `chargeback_serverless-0.3.11.zip` using `elastic-package`.
+1. Generate dashboards, import them to Kibana, export them with `elastic-package export dashboards`, and package `chargeback_serverless-0.3.15.zip` using `elastic-package`.
 2. Upload and activate the package in Kibana Fleet EPM (`/api/fleet/epm/packages`).
 3. Automatically create or update the Fleet package policy with your credentials and settings.
 4. Verify data stream health and print dashboard URLs.
@@ -48,7 +48,7 @@ The script will:
      -H "kbn-xsrf: true" \
      -H "elastic-api-version: 2023-10-31" \
      -H "Content-Type: application/zip" \
-     --data-binary @dist/chargeback_serverless-0.3.11.zip
+     --data-binary @dist/chargeback_serverless-0.3.15.zip
    ```
 
 2. **Add Integration in Fleet:**
@@ -154,11 +154,13 @@ To customize a rule in **Stack Management → Rules**:
 
 ## Verification
 
-Check document counts in the native metrics data streams:
+Check document counts and Data Stream Lifecycle retention in the native metrics data streams:
 
 ```json
 GET metrics-chargeback_serverless.billing-*/_count
 GET metrics-chargeback_serverless.usage-*/_count
+GET /_data_stream/metrics-chargeback_serverless.*/_lifecycle
+GET /metrics-chargeback_serverless.*/_lifecycle/explain
 ```
 
 Inspect recent ingestion with ES|QL:

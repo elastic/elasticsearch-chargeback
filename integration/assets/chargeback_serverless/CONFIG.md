@@ -119,13 +119,56 @@ To display all billing and usage metrics in your local accounting currency:
 
 ## Data Streams & Retention
 
-Chargeback Serverless produces two native metrics data streams:
+Chargeback Serverless manages data retention automatically across both raw metrics data streams and transform destination lookup indices (default: **`365d`**):
+
+### 1. Native Metrics Data Streams (Data Stream Lifecycle / DLM)
+
+Both data streams ship with `lifecycle.yml` (`data_retention: "365d"`), which configures Elasticsearch Serverless Data Stream Lifecycle (`metrics-chargeback_serverless.*@package` component templates and stream lifecycles):
 
 1. `metrics-chargeback_serverless.billing-default`:
    - Daily billing events per project and SKU.
    - Run interval: Polling check every 1 hour (advancing once per completed UTC day, with automatic initial backfill up to `lookbehind` days).
+   - Default retention: `365d` (`effective_retention: "365d"`).
 2. `metrics-chargeback_serverless.usage-default`:
-   - Daily usage events per project, data stream, and AI model.
+   - Daily usage events per project, data stream, AI model, and Synthetics monitor.
    - Run interval: Polling check every 1 hour (harvesting once per completed UTC day).
+   - Default retention: `365d` (`effective_retention: "365d"`).
 
-No manual index management jobs or manual mapping templates are required. Fleet automatically creates and manages index templates, component templates, transforms, and lookup indices.
+### 2. Transform Lookup Indices (`retention_policy`)
+
+Because the 7 destination lookup indices (`serverless_*_lookup`) are regular indices (`index.mode: lookup`) rather than data streams, each of the 7 continuous transforms (`logs-chargeback_serverless.*`) enforces a native transform `retention_policy`:
+
+```yaml
+retention_policy:
+  time:
+    field: "@timestamp"
+    max_age: 365d
+```
+
+On every transform checkpoint, daily lookup documents with `@timestamp` older than `max_age` (`365d`) are automatically deleted from:
+- `serverless_billing_cost_lookup`
+- `serverless_billing_realized_pool_lookup`
+- `serverless_datastream_contribution_lookup`
+- `serverless_project_contribution_lookup`
+- `serverless_ai_model_contribution_lookup`
+- `serverless_synthetics_monitor_contribution_lookup`
+- `serverless_project_status_lookup`
+
+### 3. Customizing Retention
+
+You can override the default `365d` retention period during deployment or configuration via `DATA_RETENTION`:
+
+```bash
+DATA_RETENTION="180d" ./scripts/configure_chargeback_serverless.sh
+# or during full E2E deployment:
+DATA_RETENTION="180d" ./scripts/deploy_chargeback_serverless.sh
+```
+
+Or directly via Elasticsearch Dev Tools:
+
+```json
+PUT /_data_stream/metrics-chargeback_serverless.billing-*,metrics-chargeback_serverless.usage-*/_lifecycle
+{
+  "data_retention": "180d"
+}
+```

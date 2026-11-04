@@ -14,6 +14,7 @@
 #   CONF_RATE               (Optional) Chargeable unit rate (default: 1)
 #   CONF_RATE_UNIT          (Optional) Rate unit name (default: ECU)
 #   CONF_CURRENCY_SYMBOL    (Optional) Currency symbol (e.g. $, R, €, £)
+#   DATA_RETENTION          (Optional) Data stream & transform retention period (default: 365d)
 #   BILLING_API_BASE        (Optional) default: https://billing.elastic-cloud.com
 #   CLOUD_API_BASE          (Optional) default: https://api.elastic-cloud.com
 #   CURL_INSECURE           (Optional) 1 = skip TLS verification
@@ -39,6 +40,7 @@ CLOUD_API_BASE="${CLOUD_API_BASE:-https://api.elastic-cloud.com}"
 CONF_RATE="${CONF_RATE:-}"
 CONF_RATE_UNIT="${CONF_RATE_UNIT:-}"
 CONF_CURRENCY_SYMBOL="${CONF_CURRENCY_SYMBOL:-}"
+DATA_RETENTION="${DATA_RETENTION:-}"
 
 PROJECT_ID="${PROJECT_ID:-${project_id:-}}"
 SL_API_KEY="${SL_API_KEY:-${sl_api_key:-}}"
@@ -193,6 +195,33 @@ print(json.dumps(clean_payload))
     echo "  Notice: No existing 'chargeback_serverless' package policy found in Fleet."
     echo "  Run ./scripts/deploy_chargeback_serverless.sh to install the package and initialize the policy."
   fi
+fi
+
+# 2. Apply Data Stream Lifecycle & Transform retention if DATA_RETENTION is specified
+if [[ -n "$DATA_RETENTION" ]]; then
+  echo "Applying Data Stream Lifecycle and Transform retention ($DATA_RETENTION)..."
+  for ds_pattern in "metrics-chargeback_serverless.billing-*" "metrics-chargeback_serverless.usage-*"; do
+    es_curl -sS -X PUT "${ES_URL%/}/_data_stream/${ds_pattern}/_lifecycle" \
+      -H "Authorization: ApiKey ${ES_API_KEY}" \
+      -H "Content-Type: application/json" \
+      -d "{\"data_retention\": \"${DATA_RETENTION}\"}" >/dev/null 2>&1 || true
+  done
+  for ct_name in "metrics-chargeback_serverless.billing@custom" "metrics-chargeback_serverless.usage@custom"; do
+    es_curl -sS -X PUT "${ES_URL%/}/_component_template/${ct_name}" \
+      -H "Authorization: ApiKey ${ES_API_KEY}" \
+      -H "Content-Type: application/json" \
+      -d "{\"template\": {\"lifecycle\": {\"data_retention\": \"${DATA_RETENTION}\"}}}" >/dev/null 2>&1 || true
+  done
+  ACTIVE_TF=$(es_curl -sS "${ES_URL%/}/_transform/logs-chargeback_serverless.*" -H "Authorization: ApiKey ${ES_API_KEY}" 2>/dev/null \
+    | jq -r '.transforms[]?.id // empty' 2>/dev/null || true)
+  for tf_id in $ACTIVE_TF; do
+    [[ -z "$tf_id" ]] && continue
+    es_curl -sS -X POST "${ES_URL%/}/_transform/${tf_id}/_update" \
+      -H "Authorization: ApiKey ${ES_API_KEY}" \
+      -H "Content-Type: application/json" \
+      -d "{\"retention_policy\": {\"time\": {\"field\": \"@timestamp\", \"max_age\": \"${DATA_RETENTION}\"}}}" >/dev/null 2>&1 || true
+  done
+  echo "  ✓ Updated data stream lifecycle and transform retention policies to $DATA_RETENTION."
 fi
 
 echo "Configuration completed successfully (all settings managed in Fleet package policy)."

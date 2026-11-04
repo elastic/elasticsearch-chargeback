@@ -2836,6 +2836,9 @@ CONFIG_UNIFIED_TEMPLATE = f"""\
           <span class="cb-dot cb-dot-warn"></span> <span>Awaiting First Discovery</span>
         {{% endif %}}
       </div>
+      <div class="cb-cfg-banner-pill">
+        <span class="cb-dot cb-dot-ok"></span> <span>Retention: 365d (DLM &amp; Transforms)</span>
+      </div>
     </div>
   </div>
 
@@ -2890,7 +2893,7 @@ CONFIG_UNIFIED_TEMPLATE = f"""\
     <div class="cb-cfg-sec-title">
       <span>🔑</span> API Keys, Data Streams &amp; Lookup Pipeline Status
     </div>
-    <span class="cb-cfg-sec-badge">5 Collection Streams &middot; 7 Lookup Indices</span>
+    <span class="cb-cfg-sec-badge">5 Collection Streams &middot; 7 Lookup Indices &middot; 365d Retention</span>
   </div>
 
   <div class="cb-stream-wrap">
