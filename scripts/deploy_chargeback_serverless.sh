@@ -468,7 +468,7 @@ if [[ "${#ALIAS_LOOKUPS[@]}" -gt 0 ]]; then
 fi
 
 UPLOAD_HTTP=$(kbn_curl -o /tmp/cbs-upload.json -w '%{http_code}' \
-  -X POST "${KIBANA_URL%/}/api/fleet/epm/packages" \
+  -X POST "${KIBANA_URL%/}/api/fleet/epm/packages?force=true" \
   -H "Authorization: ApiKey ${KIBANA_API_KEY}" \
   -H "kbn-xsrf: true" \
   -H "elastic-api-version: 2023-10-31" \
@@ -488,7 +488,7 @@ with zipfile.ZipFile(src, "r") as zin, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEF
 ' "$TARGET_ZIP" "/tmp/cbs-epm-notf.zip"
 
   UPLOAD_HTTP=$(kbn_curl -o /tmp/cbs-upload.json -w '%{http_code}' \
-    -X POST "${KIBANA_URL%/}/api/fleet/epm/packages" \
+    -X POST "${KIBANA_URL%/}/api/fleet/epm/packages?force=true" \
     -H "Authorization: ApiKey ${KIBANA_API_KEY}" \
     -H "kbn-xsrf: true" \
     -H "elastic-api-version: 2023-10-31" \
@@ -628,6 +628,7 @@ with zipfile.ZipFile(zip_path, "r") as z:
             if (
                 cur_doc.get("source", {}) != tf_cfg.get("source", {})
                 or cur_doc.get("pivot", {}) != tf_cfg.get("pivot", {})
+                or cur_doc.get("sync", {}) != tf_cfg.get("sync", {})
                 or cur_doc.get("retention_policy") != tf_cfg.get("retention_policy")
             ):
                 es_req("POST", f"/_transform/{tf_id}/_stop?force=true&wait_for_completion=true")
@@ -744,7 +745,7 @@ import json, os, sys
 agent_policy_id = os.environ.get("AGENT_POLICY_ID", "")
 version = os.environ.get("VERSION", "0.2.0")
 org_id = os.environ.get("ORGANIZATION_ID", "")
-cloud_api_key = os.environ.get("CLOUD_API_KEY", "") or os.environ.get("BILLING_API_KEY", "")
+cloud_api_key = os.environ.get("CLOUD_API_KEY", "") or os.environ.get("USAGE_API_KEY", "") or os.environ.get("BILLING_API_KEY", "")
 hub_es_api_key = os.environ.get("HUB_ES_API_KEY", "") or os.environ.get("ES_API_KEY", "")
 lookbehind = int(os.environ.get("LOOKBEHIND", "60") or 60)
 currency_unit = os.environ.get("CONF_RATE_UNIT", "") or ""
@@ -780,10 +781,10 @@ if existing_pkg_id and os.path.exists(existing_json_file):
                     for inp in old_inputs:
                         old_vars = inp.get("vars", {})
                         old_cloud = old_vars.get("cloud_api_key", {}).get("value")
-                        if isinstance(old_cloud, dict) and old_cloud.get("isSecretRef") and not os.environ.get("FORCE_CLOUD_KEY"):
+                        if isinstance(old_cloud, dict) and old_cloud.get("isSecretRef") and (not cloud_api_key or os.environ.get("KEEP_CLOUD_SECRET_REF")):
                             cloud_secret_val = { "value": old_cloud, "type": "password" }
                         old_hub = old_vars.get("hub_es_api_key", {}).get("value")
-                        if isinstance(old_hub, dict) and old_hub.get("isSecretRef") and not os.environ.get("FORCE_HUB_KEY"):
+                        if isinstance(old_hub, dict) and old_hub.get("isSecretRef") and (not hub_es_api_key or os.environ.get("KEEP_HUB_SECRET_REF")):
                             hub_secret_val = { "value": old_hub, "type": "password" }
                         old_keys = old_vars.get("project_api_keys", {}).get("value")
                         if old_keys and not os.environ.get("FORCE_PROJECT_KEYS"):
@@ -902,7 +903,26 @@ print(json.dumps(payload))
   es_curl -sS -X POST "${ES_URL%/}/metrics-chargeback_serverless.*/_refresh" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
 else
   echo ""
-  echo ">>> Step 5: Skipped policy configuration (--skip-policy)"
+  echo ">>> Step 5: Skipped policy reconfiguration (--skip-policy); ensuring existing Fleet policy is upgraded to v${VERSION}..."
+  kbn_curl -o /tmp/cbs-pkg-policies.json -w '%{http_code}' \
+    -X GET "${KIBANA_URL%/}/api/fleet/package_policies?perPage=100" \
+    -H "Authorization: ApiKey ${KIBANA_API_KEY}" \
+    -H "kbn-xsrf: true" >/dev/null 2>&1 || true
+  EXISTING_PKG_ID=$(jq -r --arg pkg "chargeback_serverless" '
+    (.items // .results // .)
+    | if type=="array" then . else [] end
+    | map(select(.package.name == $pkg or .name == $pkg) | .id)
+    | .[0] // empty
+  ' /tmp/cbs-pkg-policies.json 2>/dev/null || true)
+  if [[ -n "$EXISTING_PKG_ID" ]]; then
+    kbn_curl -o /tmp/cbs-pkg-upgrade.json -w '%{http_code}' \
+      -X POST "${KIBANA_URL%/}/api/fleet/package_policies/upgrade" \
+      -H "Authorization: ApiKey ${KIBANA_API_KEY}" \
+      -H "kbn-xsrf: true" \
+      -H "Content-Type: application/json" \
+      -d "{\"packagePolicies\":[{\"id\":\"${EXISTING_PKG_ID}\",\"packageVersion\":\"${VERSION}\"}]}" >/dev/null 2>&1 || true
+    echo "  ✓ Upgraded existing Fleet policy ($EXISTING_PKG_ID) to package version ${VERSION}."
+  fi
 fi
 
 # ------------------------------------------------------------------------------
@@ -932,8 +952,8 @@ if [[ "$SKIP_COLLECTOR" -eq 0 ]]; then
   done
   sleep 18
   es_curl -sS -X POST "${ES_URL%/}/serverless_*_lookup/_refresh" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
-  echo "  • Waiting 65s for downstream transform sync window (realized_pool & proj_contrib)..."
-  sleep 65
+  echo "  • Waiting 10s for downstream transform sync window (realized_pool & proj_contrib)..."
+  sleep 10
   for tf_id in $ACTIVE_TF; do
     [[ -z "$tf_id" ]] && continue
     if [[ "$tf_id" == *"realized_pool"* || "$tf_id" == *"proj_contrib"* ]]; then
