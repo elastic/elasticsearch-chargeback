@@ -6,7 +6,7 @@
 - Local currency via Fleet policy settings (unit_rate, currency_unit, currency_symbol) on every visual
 - Native metrics data streams: metrics-chargeback_serverless.billing-* and metrics-chargeback_serverless.usage-*
 - Configuration dashboard displays Fleet Integration Policy guide, discovered projects registry, and hourly harvest health
-- Matches `elastic-package export dashboards` structure (typeMigrationVersion 10.3.0, expanded JSON attributes, no tag files)
+- Matches `elastic-package export dashboards` structure (typeMigrationVersion 10.3.0, expanded JSON attributes, tag files in kibana/tag/)
 """
 
 from __future__ import annotations
@@ -54,6 +54,51 @@ ALERT_SYNTHETICS_MONITOR_SPEND = "chargeback_serverless-alert-synthetics-monitor
 ALERT_DATA_TRUST_HEALTH = "chargeback_serverless-alert-data-trust-health"
 
 INDEX_PATTERN_ID = "chargeback_serverless-billing"
+
+TAG_PKG_ID = "chargeback_serverless-fleet-pkg-chargeback_serverless-default"
+TAG_CHARGEBACK_ID = "chargeback_serverless-tag-chargeback"
+
+TAG_REFS = [
+    {
+        "id": TAG_CHARGEBACK_ID,
+        "name": f"tag-ref-{TAG_CHARGEBACK_ID}",
+        "type": "tag",
+    },
+    {
+        "id": TAG_PKG_ID,
+        "name": f"tag-ref-{TAG_PKG_ID}",
+        "type": "tag",
+    },
+]
+
+
+def build_tags() -> list[dict]:
+    return [
+        {
+            "id": TAG_CHARGEBACK_ID,
+            "type": "tag",
+            "attributes": {
+                "name": "Chargeback",
+                "description": "Elasticsearch Chargeback & FinOps Solutions",
+                "color": "#FEC514",
+            },
+            "coreMigrationVersion": "8.8.0",
+            "references": [],
+            "migrationVersion": {"tag": "8.0.0"},
+        },
+        {
+            "id": TAG_PKG_ID,
+            "type": "tag",
+            "attributes": {
+                "name": "Chargeback Serverless",
+                "description": "Elastic Cloud Serverless Chargeback integration dashboards",
+                "color": "#0B64DD",
+            },
+            "coreMigrationVersion": "8.8.0",
+            "references": [],
+            "migrationVersion": {"tag": "8.0.0"},
+        },
+    ]
 
 # Currency settings resolved directly from the agent policy configuration.
 CURRENCY_RESOLVE_ESQL = """\
@@ -3433,6 +3478,7 @@ def dashboard_doc(
     if sections:
         attrs["sections"] = sections
     refs = list(references)
+    refs.extend(TAG_REFS)
     if with_controls:
         cg = control_group(controls_mode)
         attrs["controlGroupInput"] = cg["controlGroupInput"]
@@ -4789,8 +4835,7 @@ def main() -> None:
         d = KIBANA / sub
         if d.exists():
             shutil.rmtree(d)
-        if sub != "tag":
-            d.mkdir(parents=True)
+        d.mkdir(parents=True)
 
     dashboards = (
         build_billing(),
@@ -4802,6 +4847,10 @@ def main() -> None:
     for doc in dashboards:
         write_json(KIBANA / "dashboard" / f"{doc['id']}.json", doc)
 
+    tags = build_tags()
+    for tag in tags:
+        write_json(KIBANA / "tag" / f"{tag['id']}.json", tag)
+
     for alert in build_alerts():
         write_json(KIBANA / "alerting_rule_template" / f"{alert['id']}.json", alert)
 
@@ -4811,6 +4860,8 @@ def main() -> None:
     if len(sys.argv) > 2:
         ndjson_path = Path(sys.argv[2]).resolve()
         lines = [json.dumps(ip)]
+        for tag in tags:
+            lines.append(json.dumps(tag))
         for doc in dashboards:
             lines.append(json.dumps(to_kibana_import_doc(doc)))
         ndjson_path.write_text("\n".join(lines) + "\n")
