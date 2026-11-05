@@ -60,4 +60,4 @@ fi
 : "${KIBANA_API_KEY:?Set KIBANA_API_KEY (or ELASTIC_PASSWORD for local stacks)}"
 
 export KIBANA_URL KIBANA_API_KEY
-exec python3 "$ROOT/integration/assets/agent/install.py" "$@"
+exec python3 "$ROOT/agents/companion-agent/install.py" "$@"

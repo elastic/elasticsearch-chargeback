@@ -6,7 +6,7 @@
 #   INTEGRATIONS_REPO=/path/to/integrations ./scripts/sync_chargeback_from_integrations.sh
 #   ./scripts/sync_chargeback_from_integrations.sh --skip-build   # copy existing build artifact only
 #
-# Output: integration/assets/<version>/chargeback-<version>.zip (+ SHA-256 on stdout)
+# Output: integrations/chargeback/assets/dist/<version>/chargeback-<version>.zip (+ SHA-256 on stdout)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -49,7 +49,7 @@ fi
 
 ZIP_NAME="chargeback-${VERSION}.zip"
 BUILD_ZIP="$INTEGRATIONS_REPO/build/packages/$ZIP_NAME"
-DEST_DIR="$CHARGEBACK_REPO/integration/assets/$VERSION"
+DEST_DIR="$CHARGEBACK_REPO/integrations/chargeback/assets/dist/$VERSION"
 DEST_ZIP="$DEST_DIR/$ZIP_NAME"
 
 echo "=== Sync chargeback package ==="

@@ -19,7 +19,7 @@ import uuid
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_KIBANA = REPO_ROOT / "integration" / "assets" / "chargeback_serverless" / "kibana"
+DEFAULT_KIBANA = REPO_ROOT / "integrations" / "chargeback-serverless" / "assets" / "kibana"
 KIBANA = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else DEFAULT_KIBANA
 
 DASH_BILLING = "chargeback_serverless-b6cecac0-ebe7-43de-bfc6-1ff287ad860a"
@@ -55,35 +55,10 @@ ALERT_DATA_TRUST_HEALTH = "chargeback_serverless-alert-data-trust-health"
 
 INDEX_PATTERN_ID = "chargeback_serverless-billing"
 
-# Dynamic currency resolution: if user customizes unit (e.g. EUR) but leaves symbol as default $,
-# or if symbol is empty, map to standard symbol for that currency unit.
+# Currency settings resolved directly from the agent policy configuration.
 CURRENCY_RESOLVE_ESQL = """\
 | EVAL unit = TO_UPPER(COALESCE(conf_chargeable_unit_rate_unit, "USD"))
-| EVAL currency_symbol = CASE(
-    conf_currency_symbol IS NOT NULL AND conf_currency_symbol != "" AND (conf_currency_symbol != "$" OR conf_chargeable_unit_rate_unit IS NULL OR conf_chargeable_unit_rate_unit IN ("USD", "usd")), conf_currency_symbol,
-    unit == "EUR", "€",
-    unit == "GBP", "£",
-    unit == "ZAR", "R",
-    unit == "JPY", "¥",
-    unit == "CNY", "¥",
-    unit == "INR", "₹",
-    unit == "CAD", "CA$",
-    unit == "AUD", "A$",
-    unit == "CHF", "CHF",
-    unit == "BRL", "R$",
-    unit == "SEK", "kr",
-    unit == "NOK", "kr",
-    unit == "DKK", "kr",
-    unit == "PLN", "zł",
-    unit == "NZD", "NZ$",
-    unit == "SGD", "S$",
-    unit == "HKD", "HK$",
-    unit == "ILS", "₪",
-    unit == "KRW", "₩",
-    conf_currency_symbol IS NOT NULL AND conf_currency_symbol != "", conf_currency_symbol,
-    unit != "", unit,
-    "$"
-  )"""
+| EVAL currency_symbol = CASE(conf_currency_symbol IS NOT NULL AND conf_currency_symbol != "", conf_currency_symbol, "$")"""
 
 # Shared ES|QL time filter: respects Kibana dashboard time picker (?_tstart / ?_tend).
 TIME_FILTER_ESQL = "| WHERE @timestamp >= ?_tstart AND @timestamp <= ?_tend"

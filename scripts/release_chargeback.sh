@@ -89,7 +89,7 @@ if [[ -f "$E2E_LOG" ]]; then
     echo "Run: REPLACE_CHARGEBACK_DASHBOARD=1 ./scripts/release_chargeback.sh"
     echo ""
     sed -n '/--- 12\. Issue #99 proof/,/Issue #99 proof: PASS/p' "$E2E_LOG"
-    ZIP="$(ls -1 "$CHARGEBACK_REPO"/integration/assets/*/chargeback-*.zip 2>/dev/null | tail -1)"
+    ZIP="$(ls -1 "$CHARGEBACK_REPO"/integrations/chargeback/assets/dist/*/chargeback-*.zip 2>/dev/null | tail -1)"
     if [[ -f "$ZIP" ]]; then
       echo ""
       if command -v shasum >/dev/null 2>&1; then
@@ -100,7 +100,7 @@ if [[ -f "$E2E_LOG" ]]; then
   echo "E2E proof excerpt (local only, not for git): $PROOF_LOG"
 fi
 echo "Companion PR (elasticsearch-chargeback): commit zip + doc/script changes; paste E2E output into the PR comment."
-echo "  git add integration/assets/ integration/docs/ README.md CHANGELOG.md integration/README.md integration/Instructions.md scripts/"
+echo "  git add integrations/chargeback/ README.md CHANGELOG.md scripts/"
 echo "  git commit -m \"chargeback 0.3.2: zip and E2E proof for ES|QL alias fix (#99)\""
 echo "Integrations PR should be merged first (or same day); zip is built from that branch head."
 echo "After merge to main, GitHub Actions creates tag integration-<version> and a GitHub Release."

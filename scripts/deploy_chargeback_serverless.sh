@@ -26,7 +26,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 INTEGRATIONS_REPO="${INTEGRATIONS_REPO:-$REPO_ROOT/../integrations}"
-ASSETS_DIR="$REPO_ROOT/integration/assets/chargeback_serverless"
+ASSETS_DIR="$REPO_ROOT/integrations/chargeback-serverless/assets"
 DIST_DIR="$ASSETS_DIR/dist"
 
 SKIP_BUILD=0

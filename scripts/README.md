@@ -66,7 +66,7 @@ After editing `packages/chargeback` in **elastic/integrations**:
 ./scripts/release_chargeback.sh --cleanup-first --replace-dashboard
 ```
 
-This runs: **build** (`elastic-package build`) → **copy zip** to `integration/assets/<version>/` → **E2E** (including step 12 proof for [issue #99](https://github.com/elastic/elasticsearch-chargeback/issues/99)).
+This runs: **build** (`elastic-package build`) → **copy zip** to `integrations/chargeback/assets/dist/<version>/` → **E2E** (including step 12 proof for [issue #99](https://github.com/elastic/elasticsearch-chargeback/issues/99)).
 
 After that PR merges to `main`, GitHub Actions creates the `integration-<version>` tag and a GitHub Release (zip attached, pre-release). To backfill versions that already have a zip but no release:
 
@@ -85,7 +85,7 @@ From the **elasticsearch-chargeback** repo root, with the stack already running:
 
 ```bash
 ./scripts/run_e2e_tests.sh
-# Install the committed zip under integration/assets/<version>/ instead of building packages/chargeback:
+# Install the committed zip under integrations/chargeback/assets/dist/<version>/ instead of building packages/chargeback:
 ./scripts/run_e2e_tests.sh --from-zip
 # Or: CHARGEBACK_INSTALL_FROM=zip CHARGEBACK_VERSION=0.5.0 ./scripts/run_e2e_tests.sh
 ```
@@ -165,7 +165,7 @@ Use when you already have a monitoring cluster or can’t use the script. **Orde
 
 1. **Install Elasticsearch integration** (version from integrations repo), then start the transform `logs-elasticsearch.index_pivot-default-*` in **Stack Management → Transforms**.
 2. **Install On-Prem Billing** or **ESS Billing**; run post-install steps; ensure billing data in `metrics-ess_billing.billing-*`.
-3. **Install Chargeback** (e.g. **Integrations → Create new integration → Upload it as a .zip**). Use the built zip from the integrations repo (`cd packages/chargeback && elastic-package build`) or a zip from this repo’s `integration/assets/<version>/chargeback-<version>.zip` (use the version you built or the one under `integration/assets/`).
+3. **Install Chargeback** (e.g. **Integrations → Create new integration → Upload it as a .zip**). Use the built zip from the integrations repo (`cd packages/chargeback && elastic-package build`) or a zip from this repo’s `integrations/chargeback/assets/dist/<version>/chargeback-<version>.zip` (use the version you built or the one under `integrations/chargeback/assets/dist/`).
 
 Chargeback will create `chargeback_conf_lookup` and start its transforms. Verify in **Stack Management → Transforms** (filter `chargeback`).
 
