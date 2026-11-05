@@ -2746,7 +2746,7 @@ CONFIG_UNIFIED_TEMPLATE = f"""\
   {{% endif %}}
 
   {{% assign kt = r["api_key_type"].value | default: "" %}}
-  {{% if kt == "hub_key" %}}
+  {{% if kt == "cloud_key" or kt == "hub_key" %}}
     {{% assign _hub_key_projects = _hub_key_projects | plus: 1 %}}
   {{% elsif kt == "remote_key" %}}
     {{% assign _remote_key_projects = _remote_key_projects | plus: 1 %}}
@@ -2863,9 +2863,9 @@ CONFIG_UNIFIED_TEMPLATE = f"""\
       </div>
       <div class="cb-cfg-kpi-sub">
         {{% if _needs_key_projects > 0 %}}
-          <strong style="color: var(--cc-color-danger);">{{{{ _needs_key_projects }}}} need remote key</strong> ({{{{ _hub_key_projects }}}} hub, {{{{ _remote_key_projects }}}} remote)
+          <strong style="color: var(--cc-color-danger);">{{{{ _needs_key_projects }}}} need access</strong> ({{{{ _hub_key_projects }}}} cloud/hub, {{{{ _remote_key_projects }}}} project)
         {{% else %}}
-          {{{{ _hub_key_projects }}}} hub key &middot; {{{{ _remote_key_projects }}}} remote key(s)
+          {{{{ _hub_key_projects }}}} cloud key &middot; {{{{ _remote_key_projects }}}} project key(s)
         {{% endif %}}
       </div>
     </div>
@@ -2987,8 +2987,8 @@ CONFIG_UNIFIED_TEMPLATE = f"""\
             </div>
           </td>
           <td>
-            <span class="cb-key-code">hub_es_api_key</span> <span class="cb-key-code">project_api_keys</span>
-            <div class="cb-prof-text">{{{{ _hub_key_projects }}}} Hub key &middot; {{{{ _remote_key_projects }}}} Remote key &middot; {{{{ _needs_key_projects }}}} Missing</div>
+            <span class="cb-key-code">cloud_api_key</span>
+            <div class="cb-prof-text">{{{{ _hub_key_projects }}}} Cloud key &middot; {{{{ _remote_key_projects }}}} Project key &middot; {{{{ _needs_key_projects }}}} Missing</div>
           </td>
           <td>
             <span class="cb-endpoint-text" title="GET /_cat/indices?h=index,dataset.size,indexing.index_time,search.query_time&format=json">GET /_cat/indices?h=index,dataset.size,indexing...,search...</span>
@@ -3019,8 +3019,8 @@ CONFIG_UNIFIED_TEMPLATE = f"""\
             </div>
           </td>
           <td>
-            <span class="cb-key-code">hub_es_api_key</span> <span class="cb-key-code">project_api_keys</span>
-            <div class="cb-prof-text">Cluster monitor privilege on target projects</div>
+            <span class="cb-key-code">cloud_api_key</span>
+            <div class="cb-prof-text">Cloud resource access (Cloud, ES, and Kibana API)</div>
           </td>
           <td>
             <span class="cb-endpoint-text" title="GET /_ml/trained_models/_stats">GET /_ml/trained_models/_stats</span>
@@ -3051,7 +3051,7 @@ CONFIG_UNIFIED_TEMPLATE = f"""\
             </div>
           </td>
           <td>
-            <span class="cb-key-code">project_api_keys</span> <span class="cb-key-code">cloud_api_key</span>
+            <span class="cb-key-code">cloud_api_key</span>
             <div class="cb-prof-text">Index monitor on synthetics-* or Billing SKU fallback</div>
           </td>
           <td>
@@ -3133,17 +3133,17 @@ CONFIG_UNIFIED_TEMPLATE = f"""\
         </td>
         <td>
           {{% if kt == "remote_key" %}}
-            <span class="cb-badge cb-badge-ok"><span class="cb-dot cb-dot-ok"></span>Remote Project Key</span>
-            <div class="cb-sub-meta"><code>project_api_keys</code> authenticated</div>
-          {{% elsif kt == "hub_key" or h == "ok" %}}
-            <span class="cb-badge cb-badge-ok"><span class="cb-dot cb-dot-ok"></span>Hub ES API Key</span>
-            <div class="cb-sub-meta"><code>hub_es_api_key</code> authenticated</div>
+            <span class="cb-badge cb-badge-ok"><span class="cb-dot cb-dot-ok"></span>Project ES Key</span>
+            <div class="cb-sub-meta"><code>project_api_keys</code> override</div>
+          {{% elsif kt == "cloud_key" or kt == "hub_key" or h == "ok" %}}
+            <span class="cb-badge cb-badge-ok"><span class="cb-dot cb-dot-ok"></span>Unified Cloud Key</span>
+            <div class="cb-sub-meta"><code>cloud_api_key</code> authenticated</div>
           {{% elsif h == "inactive" or kt == "cloud_billing_only" %}}
-            <span class="cb-badge cb-badge-warn"><span class="cb-dot cb-dot-warn"></span>Cloud Key Only</span>
+            <span class="cb-badge cb-badge-warn"><span class="cb-dot cb-dot-warn"></span>Billing History Only</span>
             <div class="cb-sub-meta">Project decommissioned in Control Plane</div>
           {{% else %}}
-            <span class="cb-badge cb-badge-err"><span class="cb-dot cb-dot-err"></span>Needs Remote API Key</span>
-            <div class="cb-sub-meta">Add <code>&lt;id&gt;:&lt;key&gt;</code> to <code>project_api_keys</code></div>
+            <span class="cb-badge cb-badge-err"><span class="cb-dot cb-dot-err"></span>Needs Resource Access</span>
+            <div class="cb-sub-meta">Enable <code>Cloud, ES, and Kibana API</code> on <code>cloud_api_key</code></div>
           {{% endif %}}
         </td>
         <td>
@@ -3164,7 +3164,7 @@ CONFIG_UNIFIED_TEMPLATE = f"""\
             <div class="cb-sub-meta">Decommissioned project</div>
           {{% else %}}
             <span class="cb-badge cb-badge-err"><span class="cb-dot cb-dot-err"></span>Unauthorized</span>
-            <div class="cb-sub-meta">{{% if p_ds > 0 %}}{{{{ p_ds }}}} streams via SKU fallback{{% else %}}Needs Remote Project API Key{{% endif %}}</div>
+            <div class="cb-sub-meta">{{% if p_ds > 0 %}}{{{{ p_ds }}}} streams via SKU fallback{{% else %}}Needs Cloud resource access{{% endif %}}</div>
           {{% endif %}}
         </td>
         <td>
@@ -3176,7 +3176,7 @@ CONFIG_UNIFIED_TEMPLATE = f"""\
             <div class="cb-sub-meta">Decommissioned project</div>
           {{% else %}}
             <span class="cb-badge cb-badge-err"><span class="cb-dot cb-dot-err"></span>Unauthorized</span>
-            <div class="cb-sub-meta">Needs Remote Project API Key</div>
+            <div class="cb-sub-meta">Needs Cloud resource access</div>
           {{% endif %}}
         </td>
         <td>
@@ -3191,7 +3191,7 @@ CONFIG_UNIFIED_TEMPLATE = f"""\
             <div class="cb-sub-meta">Decommissioned project</div>
           {{% else %}}
             <span class="cb-badge cb-badge-err"><span class="cb-dot cb-dot-err"></span>Unauthorized</span>
-            <div class="cb-sub-meta">Needs Remote Project API Key</div>
+            <div class="cb-sub-meta">Needs Cloud resource access</div>
           {{% endif %}}
         </td>
         <td style="text-align: right;" class="cb-time-col">
@@ -3207,9 +3207,9 @@ CONFIG_UNIFIED_TEMPLATE = f"""\
   <!-- Section 3: Setup Guide -->
   <div class="cb-cfg-sec-bar">
     <div class="cb-cfg-sec-title">
-      <span>📖</span> Fleet Integration &amp; API Key Deployment Guide
+      <span>📖</span> Fleet Integration &amp; Unified API Key Deployment Guide
     </div>
-    <span class="cb-cfg-sec-badge">3 Steps to Full Coverage</span>
+    <span class="cb-cfg-sec-badge">Single Unified API Key Setup</span>
   </div>
 
   <div class="cb-cfg-guide-grid">
@@ -3217,12 +3217,32 @@ CONFIG_UNIFIED_TEMPLATE = f"""\
     <div class="cb-cfg-card">
       <div class="cb-cfg-card-head">
         <span class="cb-cfg-step-pill">Step 1</span>
-        <span class="cb-cfg-card-title">Cloud API Key &amp; Currency Settings</span>
+        <span class="cb-cfg-card-title">Create Unified Elastic Cloud API Key</span>
       </div>
-      <p class="cb-cfg-card-desc">Powers <code>chargeback_serverless.billing</code> and Control Plane project discovery.</p>
+      <p class="cb-cfg-card-desc">In <strong>Cloud Console &rarr; Organization &rarr; API keys</strong>, create a single key with both roles enabled:</p>
+      <pre class="cb-cfg-code"># Assign Roles in Cloud Console:
+1. Billing admin:          ON (✓)
+   (Required to see deleted projects &amp; deployments)
+
+2. Cloud resource access:  ON (✓)
+   Resources: All projects
+   Access:    Cloud, Elasticsearch, and Kibana API</pre>
+      <div class="cb-cfg-card-foot">
+        <span>🔑 One key unlocks Billing, Control Plane, and ES Data Plane</span>
+      </div>
+    </div>
+
+    <!-- Step 2 -->
+    <div class="cb-cfg-card">
+      <div class="cb-cfg-card-head">
+        <span class="cb-cfg-step-pill">Step 2</span>
+        <span class="cb-cfg-card-title">Configure Fleet Integration Policy</span>
+      </div>
+      <p class="cb-cfg-card-desc">Enter your Organization ID, unified Cloud API Key, and currency settings in Kibana Fleet.</p>
       <pre class="cb-cfg-code"># Configured in Kibana Fleet UI:
 Organization ID:  &lt;YOUR_ORG_ID&gt;
 Cloud API Key:    ••••••••••••••••
+Lookbehind Days:  60
 Currency Unit:    {{{{ _active_unit }}}} (e.g. USD, EUR, ZAR)
 Currency Symbol:  {{{{ _active_sym }}}} (e.g. $, €, R, £)
 Unit Rate:        {{{{ _active_rate }}}}</pre>
@@ -3231,47 +3251,20 @@ Unit Rate:        {{{{ _active_rate }}}}</pre>
       </div>
     </div>
 
-    <!-- Step 2 -->
-    <div class="cb-cfg-card">
-      <div class="cb-cfg-card-head">
-        <span class="cb-cfg-step-pill">Step 2</span>
-        <span class="cb-cfg-card-title">Remote Least-Privilege ES API Key</span>
-      </div>
-      <p class="cb-cfg-card-desc">Generate on each remote project (Dev Tools or API) to unlock <code>_cat/indices</code>, <code>_ml</code>, and <code>synthetics-*</code> harvesting.</p>
-      <pre class="cb-cfg-code cb-cfg-code-select" title="Click to select full Dev Tools snippet">POST _security/api_key
-{{
-  "name": "chargeback-usage-harvesting",
-  "role_descriptors": {{
-    "chargeback_usage": {{
-      "cluster": ["monitor"],
-      "indices": [
-        {{
-          "names": ["*"],
-          "privileges": ["monitor"]
-        }}
-      ]
-    }}
-  }}
-}}</pre>
-      <div class="cb-cfg-card-foot">
-        <span>🛡️ Read-only cluster &amp; index monitor (click snippet to select)</span>
-      </div>
-    </div>
-
     <!-- Step 3 -->
     <div class="cb-cfg-card">
       <div class="cb-cfg-card-head">
         <span class="cb-cfg-step-pill">Step 3</span>
-        <span class="cb-cfg-card-title">Register Keys in Integration Policy</span>
+        <span class="cb-cfg-card-title">Automatic Multi-Project Harvesting</span>
       </div>
-      <p class="cb-cfg-card-desc">Add under Remote Project API Keys in Fleet Settings (<code>&lt;project_id&gt;:&lt;encoded_key&gt;</code>).</p>
-      <pre class="cb-cfg-code"># In Integration Settings:
-Hub ES API Key:   •••••••••••••••• (local hub project)
-Remote Project API Keys:
-  - &lt;PROJECT_ID&gt;:&lt;ENCODED_KEY&gt;
-
-Fleet masks and encrypts all keys.
-Zero secrets are stored in indices.</pre>
+      <p class="cb-cfg-card-desc">Your single Cloud API key automatically harvests all active and deleted projects across the organization.</p>
+      <pre class="cb-cfg-code"># Automatically collected every day:
+• Billing API:     All active + deleted projects/SKUs
+• Control Plane:   All Serverless project endpoints
+• Data Streams:    _cat/indices across all projects
+• AI &amp; ML Models:  _ml/trained_models/_stats
+• Synthetics:      synthetics-*/_search + SKU fallback
+• Security:        Encrypted in Fleet Policy Secrets</pre>
       <div class="cb-cfg-card-foot">
         <span>🔒 Masked &amp; encrypted at rest in Fleet agent policy</span>
       </div>

@@ -1,174 +1,126 @@
-# Chargeback Serverless — Configuration Guide
+# Chargeback Serverless configuration reference
 
-## Principle
+Use this reference to configure the **Chargeback Serverless (`chargeback_serverless` `0.3.15`)** Fleet integration policy, create the required Elastic Cloud API key, manage currency conversion rates in `serverless_chargeback_conf_lookup`, and tune FinOps alerting thresholds.
 
-All configuration for Chargeback Serverless is managed **100% within the Fleet Integration Policy** (matching the native `ess_billing` architecture).
+## Single unified Elastic Cloud API key
 
-- **Zero secrets in indices**: API keys are securely encrypted by Fleet and never written to plaintext Elasticsearch indices.
-- **Zero workflows**: Scheduled collection runs automatically via native Elastic Agent CEL streams (`billing` and `usage` polling every 1h, advancing once daily after 02:00 UTC for completed UTC days up to yesterday `D-1`, with an initial backfill up to 60 days).
-- **Single pane of glass**: Configure organization credentials, remote project keys, backfill windows, and currency rates directly in **Fleet → Agent Policies → Chargeback Serverless** or via `./scripts/deploy_chargeback_serverless.sh`.
+Chargeback Serverless requires **one** Elastic Cloud API key (`cloud_api_key`) to collect organization billing records (including deleted projects and deployments), discover active Serverless projects, and harvest per-project usage telemetry.
 
----
+### Create the API key in Elastic Cloud Console
 
-## Policy Configuration Settings
-
-Set these parameters in **Kibana → Management → Fleet → Integrations → Chargeback Serverless**:
-
-| Variable | Type | Secret | Default | Description |
-|---|---|---|---|---|
-| `organization_id` | Text | No | *(required)* | Elastic Cloud organization ID (from Cloud Console → Organization). |
-| `cloud_api_key` | Password | **Yes** | *(required)* | Cloud API key with billing read and Serverless project read access. |
-| `hub_es_api_key` | Password | **Yes** | *(optional)* | Elasticsearch API key for the local Hub project (if harvesting local data streams). |
-| `project_api_keys` | Password (Multi) | **Yes** | `[]` | List of remote project harvesting keys in `<project_id>:<encoded_api_key>` format. |
-| `lookbehind` | Integer | No | `60` | Number of historical days of billing data to backfill on initial install. |
-| `currency_unit` | Text | No | `USD` | Target display currency unit code (e.g. `USD`, `EUR`, `ZAR`, `GBP`, `ECU`). |
-| `currency_symbol` | Text | No | `$` | Target display currency symbol (e.g. `$`, `€`, `R`, `£`). |
-| `unit_rate` | Text | No | `1.0` | Currency conversion rate per ECU (e.g. `1.0` for 1:1, or `18.5` for local currency). |
-| `billing_api_base` | Text | No | `https://billing.elastic-cloud.com` | Base URL of Elastic Cloud Billing API. |
-| `cloud_api_base` | Text | No | `https://api.elastic-cloud.com` | Base URL of Elastic Cloud Control Plane API. |
+1. Sign in to the [Elastic Cloud Console API keys page](https://cloud.elastic.co/deployment-features/keys) and click **Create API key**.
+2. Enter a descriptive name (for example, `chargeback-serverless-collector`) and select an expiration period.
+3. Under **Assign roles**, turn on both of the following toggles:
+   - **Billing admin**: Grants access to organization invoices, hourly SKU costs, and `/api/v1/billing/organization/{organization_id}/history` so the collector captures costs from both active and deleted deployments and Serverless projects.
+   - **Cloud resource access**: Select **All resources** (or the specific Serverless projects you want to monitor) and choose **`Cloud, Elasticsearch, and Kibana API`** so the same key can list Serverless projects and read `_resolve/index/*`, `_cat/indices`, `.inference`, and `.synthetics-monitors-*` across projects.
+4. Click **Create API key** and copy the key value.
 
 ---
 
-## Harvesting Remote Projects: Least-Privileged API Keys
+## Fleet integration policy parameters
 
-In Elastic Cloud Serverless, a Cloud Organization API key can discover projects via the Control Plane (`api.elastic-cloud.com`), but **cannot** authenticate against the Elasticsearch Data Plane (`https://<project-id>.es.<region>.<csp>.elastic.cloud/`) of remote projects across regions or separate clusters.
+Configure these fields in Kibana under **Management → Integrations → Chargeback Serverless → Configure integration** (or automate them with [`scripts/configure_chargeback_serverless.sh`](../../../scripts/configure_chargeback_serverless.sh)):
 
-* **Billing data** (spend per project, SKU breakdown) works with **zero** remote project keys.
-* **Granular data stream & index allocation** on remote projects requires an Elasticsearch API key with strictly least-privileged permissions.
+| Policy parameter | Variable name | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| **Elastic Cloud Organization ID** | `organization_id` | Yes | — | Your numeric Elastic Cloud organization identifier (found in the [Elastic Cloud Console](https://cloud.elastic.co) URL or **Organization → Settings**). |
+| **Elastic Cloud API Key** | `cloud_api_key` | Yes | — | Unified Elastic Cloud API key (`secret: true`) with **Billing admin** and **Cloud resource access** (`Cloud, Elasticsearch, and Kibana API`). |
+| **Elastic Cloud API Base URL** | `api_url` | No | `https://api.elastic-cloud.com` | Base URL for the Elastic Cloud Billing and Serverless Control Plane APIs. |
+| **Collection Interval** | `collection_interval` | No | `24h` | Poll frequency for the `billing` and `usage` Custom Enterprise Language (CEL) streams. Completed calendar days up to yesterday (`D-1` UTC) are finalized after `02:00 UTC`. |
+| **Initial Billing Lookbehind Days** | `initial_lookbehind_days` | No | `60` | Number of historical UTC days (`1`–`90`) to backfill on the first billing collection run. |
 
-### 1. Principle of Least Privilege
+> [!NOTE]
+> Advanced override fields (`hub_es_api_key` and `project_api_keys`) are hidden by default (`show_user: false` in `manifest.yml`) because `cloud_api_key` handles both organization billing and per-project usage harvesting when created with **Billing admin** and **Cloud resource access** (`Cloud, Elasticsearch, and Kibana API`).
 
-The key created on remote projects requires **only cluster and index metadata permissions**. It has **no access to documents, indices data, or search**:
+---
 
-* **Cluster:** `monitor` (allows reading `_cat/indices` metrics: shard sizes, indexing time, query time, and ML stats)
-* **Indices:** `monitor` on `*`
-* **Data:** *None* (cannot search, query, read, write, or delete documents)
+## Currency conversion rates (`serverless_chargeback_conf_lookup`)
 
-### 2. Generate the Key on Remote Project(s)
+Dashboards and alerting rules join daily Elastic Consumption Unit (ECU) metrics with the `serverless_chargeback_conf_lookup` index (`index.mode: lookup`) to calculate monetary spend in your local currency across contract periods.
 
-In the Kibana Dev Tools of each remote project (e.g., `telco-analytics`):
+### Schema and default values
+
+| Field | Type | Default value | Description |
+| --- | --- | --- | --- |
+| `conf_key` | `keyword` | `"1"` | Constant join key (`"1"`) matched by dashboard ES|QL `LOOKUP JOIN` queries. |
+| `conf_chargeable_unit_rate` | `double` | `0.85` | Monetary value of `1.0` ECU in your contract currency. |
+| `conf_chargeable_unit_rate_unit` | `keyword` | `"EUR"` | Three-letter currency code displayed across dashboards and alerts (for example, `"USD"`, `"EUR"`, `"GBP"`). |
+| `conf_start_date` | `date` | `"2010-01-01T00:00:00.000Z"` | Start timestamp (inclusive) for this conversion rate window. |
+| `conf_end_date` | `date` | `"2046-12-31T23:59:59.999Z"` | End timestamp (inclusive) for this conversion rate window. |
+
+### Update the default currency rate in Dev Tools
+
+Open **Management → Dev Tools** in Kibana and run:
 
 ```json
-POST _security/api_key
+PUT serverless_chargeback_conf_lookup/_doc/config_default
 {
-  "name": "chargeback-usage-harvesting",
-  "role_descriptors": {
-    "chargeback_usage": {
-      "cluster": ["monitor"],
-      "indices": [
-        {
-          "names": ["*"],
-          "privileges": ["monitor"]
-        }
-      ]
-    }
-  }
+  "conf_key": "1",
+  "conf_chargeable_unit_rate": 1.00,
+  "conf_chargeable_unit_rate_unit": "USD",
+  "conf_start_date": "2010-01-01T00:00:00.000Z",
+  "conf_end_date": "2046-12-31T23:59:59.999Z"
 }
 ```
 
-Copy the resulting `encoded` API key string.
+### Configure multiple contract rate windows
 
-### 3. Register the Keys in Fleet Integration Policy
-
-In **Kibana Fleet UI**:
-1. Navigate to **Fleet → Agent Policies → your policy → Chargeback Serverless**.
-2. Locate **Remote Project Elasticsearch API Keys**:
-   - **Adding for the first time:** Paste `<remote_project_id>:<encoded_api_key>` in the input field.
-   - **Adding multiple remote projects:** Click **Add item** (or **+**) to create an additional row for each remote project:
-     ```text
-     <remote_project_id_1>:<encoded_api_key_1>
-     <remote_project_id_2>:<encoded_api_key_2>
-     ```
-     *Example:*
-     ```text
-     bf694be853c246c0b5304648ec385fb4:VjFSa0Jad0J4...
-     e3b0c44298fc1c149afbf4c8996fb924:YmFzZTY0a2V5...
-     ```
-   - **Adding more keys later (Policy Secrets):**  
-     Because this field is stored as an encrypted Fleet Policy Secret (`type: password`), saved values are masked with:
-     > *"The saved remote project elasticsearch api keys is hidden. You can only replace the remote project elasticsearch api keys."*  
-     
-     Click **↺ Replace remote project elasticsearch api keys** to open editable rows.  
-     > [!IMPORTANT]
-     > Fleet Policy Secrets are write-only for security and cannot be read back by Kibana. Clicking **Replace** overwrites the stored secret list. When adding a new key to an existing deployment, you must enter **all** keys you want to retain (both existing and new) before saving.
-3. Click **Save integration**. Fleet encrypts the keys and pushes the configuration immediately to the agent collector.
-
-Alternatively, register via CLI:
-```bash
-PROJECT_ID="bf694be853c246c0b5304648ec385fb4" \
-SL_API_KEY="VjFSa0Jad0J4..." \
-./scripts/configure_chargeback_serverless.sh
-```
-
----
-
-## Currency & Rate Multipliers
-
-To display all billing and usage metrics in your local accounting currency:
-1. In the integration policy settings, set:
-   - **Currency Unit:** e.g., `ZAR`, `EUR`, `GBP`
-   - **Currency Symbol:** e.g., `R`, `€`, `£`
-   - **Chargeable Unit Rate:** e.g., `18.5` (1 ECU = 18.50 ZAR)
-2. All dashboard calculations compute spend as:
-   ```
-   cost = total_chargeable_units * unit_rate
-   ```
-   with the appropriate currency symbol prepended.
-
----
-
-## Data Streams & Retention
-
-Chargeback Serverless manages data retention automatically across both raw metrics data streams and transform destination lookup indices (default: **`365d`**):
-
-### 1. Native Metrics Data Streams (Data Stream Lifecycle / DLM)
-
-Both data streams ship with `lifecycle.yml` (`data_retention: "365d"`), which configures Elasticsearch Serverless Data Stream Lifecycle (`metrics-chargeback_serverless.*@package` component templates and stream lifecycles):
-
-1. `metrics-chargeback_serverless.billing-default`:
-   - Daily billing events per project and SKU.
-   - Run interval: Polling check every 1 hour (advancing once per completed UTC day, with automatic initial backfill up to `lookbehind` days).
-   - Default retention: `365d` (`effective_retention: "365d"`).
-2. `metrics-chargeback_serverless.usage-default`:
-   - Daily usage events per project, data stream, AI model, and Synthetics monitor.
-   - Run interval: Polling check every 1 hour (harvesting once per completed UTC day).
-   - Default retention: `365d` (`effective_retention: "365d"`).
-
-### 2. Transform Lookup Indices (`retention_policy`)
-
-Because the 7 destination lookup indices (`serverless_*_lookup`) are regular indices (`index.mode: lookup`) rather than data streams, each of the 7 continuous transforms (`logs-chargeback_serverless.*`) enforces a native transform `retention_policy`:
-
-```yaml
-retention_policy:
-  time:
-    field: "@timestamp"
-    max_age: 365d
-```
-
-On every transform checkpoint, daily lookup documents with `@timestamp` older than `max_age` (`365d`) are automatically deleted from:
-- `serverless_billing_cost_lookup`
-- `serverless_billing_realized_pool_lookup`
-- `serverless_datastream_contribution_lookup`
-- `serverless_project_contribution_lookup`
-- `serverless_ai_model_contribution_lookup`
-- `serverless_synthetics_monitor_contribution_lookup`
-- `serverless_project_status_lookup`
-
-### 3. Customizing Retention
-
-You can override the default `365d` retention period during deployment or configuration via `DATA_RETENTION`:
-
-```bash
-DATA_RETENTION="180d" ./scripts/configure_chargeback_serverless.sh
-# or during full E2E deployment:
-DATA_RETENTION="180d" ./scripts/deploy_chargeback_serverless.sh
-```
-
-Or directly via Elasticsearch Dev Tools:
+If your ECU contract price changes over time, insert separate documents with non-overlapping `conf_start_date` and `conf_end_date` ranges:
 
 ```json
-PUT /_data_stream/metrics-chargeback_serverless.billing-*,metrics-chargeback_serverless.usage-*/_lifecycle
+PUT serverless_chargeback_conf_lookup/_doc/config_2025
 {
-  "data_retention": "180d"
+  "conf_key": "1",
+  "conf_chargeable_unit_rate": 0.85,
+  "conf_chargeable_unit_rate_unit": "EUR",
+  "conf_start_date": "2025-01-01T00:00:00.000Z",
+  "conf_end_date": "2025-12-31T23:59:59.999Z"
+}
+
+PUT serverless_chargeback_conf_lookup/_doc/config_2026
+{
+  "conf_key": "1",
+  "conf_chargeable_unit_rate": 0.92,
+  "conf_chargeable_unit_rate_unit": "EUR",
+  "conf_start_date": "2026-01-01T00:00:00.000Z",
+  "conf_end_date": "2046-12-31T23:59:59.999Z"
 }
 ```
+
+---
+
+## Data retention settings
+
+Chargeback Serverless enforces a **365-day** retention policy across all raw data streams and lookup indices:
+
+| Resource type | Pattern or index names | Retention setting |
+| --- | --- | --- |
+| **Raw metrics data streams** | `metrics-chargeback_serverless.billing-*`<br/>`metrics-chargeback_serverless.usage-*` | Data Stream Lifecycle (DLM) `data_retention: "365d"` |
+| **Transform lookup indices** | `serverless_billing_cost_lookup`<br/>`serverless_billing_realized_pool_lookup`<br/>`serverless_project_contribution_lookup`<br/>`serverless_datastream_contribution_lookup`<br/>`serverless_ai_model_contribution_lookup`<br/>`serverless_synthetics_monitor_contribution_lookup`<br/>`serverless_project_status_lookup` | Transform `retention_policy.time.max_age: "365d"` on `@timestamp` |
+
+To override the retention period when running the automated deployment script, set `DATA_RETENTION` (for example, `DATA_RETENTION=730d ./scripts/deploy_chargeback_serverless.sh`).
+
+---
+
+## FinOps alerting rule thresholds
+
+Each of the 10 prebuilt ES|QL alerting rule templates in [`kibana/alerting_rule_template/`](kibana/alerting_rule_template/) (**Stack Management → Rules**) defines its threshold and optional entity filter on **line 2** of the ES|QL query using an `EVAL` statement so you can adjust thresholds without rewriting the query logic:
+
+| Alert rule title | Line-2 `EVAL` parameters | Default values |
+| --- | --- | --- |
+| **`[Chargeback Serverless] Total daily spend threshold exceeded`** | `EVAL threshold_spend = 1000.0` | `1000.0` |
+| **`[Chargeback Serverless] Rolling 30-day total spend budget exceeded`** | `EVAL threshold_budget = 25000.0` | `25000.0` |
+| **`[Chargeback Serverless] Cost category daily spend threshold exceeded`** | `EVAL threshold_spend = 300.0, filter_category = "*"` | `300.0`, all categories |
+| **`[Chargeback Serverless] Workload driver daily spend threshold exceeded`** | `EVAL threshold_spend = 250.0, filter_driver = "*"` | `250.0`, all drivers |
+| **`[Chargeback Serverless] Project daily spend threshold exceeded`** | `EVAL threshold_spend = 200.0, filter_project = "*"` | `200.0`, all projects |
+| **`[Chargeback Serverless] Project daily spend spike vs. 7-day baseline`** | `EVAL threshold_pct_increase = 50.0, min_daily_spend = 25.0, filter_project = "*"` | `+50.0%`, `25.0` min, all projects |
+| **`[Chargeback Serverless] Namespace attributed daily spend threshold exceeded`** | `EVAL threshold_spend = 100.0, filter_namespace = "*"` | `100.0`, all namespaces |
+| **`[Chargeback Serverless] AI model attributed daily spend threshold exceeded`** | `EVAL threshold_spend = 50.0, filter_model = "*"` | `50.0`, all models |
+| **`[Chargeback Serverless] Synthetics monitor attributed daily spend threshold exceeded`** | `EVAL threshold_spend = 25.0, filter_monitor = "*"` | `25.0`, all monitors |
+| **`[Chargeback Serverless] Data trust & project harvest health issue`** | `EVAL threshold_unallocated_spend = 100.0, threshold_unallocated_pct = 25.0` | `100.0` and `25.0%` |
+
+## Related pages
+
+- [Chargeback Serverless overview](README.md)
+- [Install and configure Chargeback Serverless](Instructions.md)
+- [Dashboard and alert design reference](dashboards/DESIGN.md)

@@ -1,188 +1,114 @@
-# Chargeback Serverless — Setup & Installation Guide
+# Install and configure Chargeback Serverless
 
-Install on an **Elastic Cloud Serverless hub** (Observability Complete recommended). Do not install on a Hosted monitoring cluster; use the Hosted `chargeback` package for Hosted Elasticsearch clusters.
+Deploy the **Chargeback Serverless (`chargeback_serverless` `0.3.15`)** integration on an Elastic Cloud Serverless project to collect organization-wide billing history (including deleted projects and deployments) and per-project data stream, AI model, and Synthetics usage telemetry.
+
+## Before you begin
+
+Make sure you have the following before installing Chargeback Serverless:
+
+- **Target Elastic Cloud Serverless hub project**: An Elastic Cloud Serverless project (`elasticsearch`, `observability`, or `security`) where the dashboards, lookup indices, and Fleet policy will run.
+- **Elastic Cloud Organization ID**: Your numeric organization ID from the [Elastic Cloud Console](https://cloud.elastic.co).
+- **Single unified Elastic Cloud API key**: Created in the [Elastic Cloud Console API keys page](https://cloud.elastic.co/deployment-features/keys) with both of these roles turned on:
+  - **Billing admin** (required to query organization billing costs and `/api/v1/billing/organization/{org_id}/history` for deleted deployments and projects).
+  - **Cloud resource access** set to **All resources** with **`Cloud, Elasticsearch, and Kibana API`** selected (required to list active Serverless projects and harvest per-project index, AI, and Synthetics telemetry).
+- **Elastic Agent enrolled in Fleet** (for scheduled Elastic Agent collection) or Python `3.9+` (for running the standalone collector via [`scripts/deploy_chargeback_serverless.sh`](../../../scripts/deploy_chargeback_serverless.sh)).
 
 ---
 
-## Prerequisites
+## Option A: Automated deployment with `deploy_chargeback_serverless.sh` (recommended)
 
-- Serverless hub project with Fleet Integrations enabled.
-- Fleet package `chargeback_serverless` **0.3.15+**.
-- Elastic Cloud Organization ID (from Elastic Cloud Console → Organization).
-- Elastic Cloud API key with billing read access and Serverless project read access.
-- See [CONFIG.md](CONFIG.md) for detailed configuration options.
+The [`scripts/deploy_chargeback_serverless.sh`](../../../scripts/deploy_chargeback_serverless.sh) script automates credential lookup from macOS Keychain, package build and upload, Fleet integration policy configuration, initial billing and usage backfill, transform execution, alerting rule installation, and verification.
 
----
+### Step 1: Store credentials in macOS Keychain
 
-## Installation
-
-### Method A: Automated E2E Deployment (Recommended)
-
-The deployment script automates package building, dashboard compilation, Fleet package upload, and policy configuration in a single command:
+From the repository root, store your organization ID, unified Elastic Cloud API key, and target hub endpoints in the macOS Keychain (`elasticsearch-chargeback` service):
 
 ```bash
-# Deploys latest build using macOS Keychain or interactive prompts:
+./scripts/keychain.sh set ORGANIZATION_ID 2001809318
+./scripts/keychain.sh set CLOUD_API_KEY
+./scripts/keychain.sh set ES_URL "https://<your-hub-project>.es.<region>.<csp>.elastic.cloud"
+./scripts/keychain.sh set KIBANA_URL "https://<your-hub-project>.kb.<region>.<csp>.elastic.cloud"
+```
+
+### Step 2: Run the deployment script
+
+Run the end-to-end deployment script from the repository root:
+
+```bash
+# Full build, package upload, policy update, collector backfill, and verification
 ./scripts/deploy_chargeback_serverless.sh
 
-# Useful options:
-./scripts/deploy_chargeback_serverless.sh --skip-build    # Deploy existing package zip
-./scripts/deploy_chargeback_serverless.sh --skip-policy   # Upload package without creating/updating policy
-./scripts/deploy_chargeback_serverless.sh --verify-only   # Run health check & verify data stream ingestion
+# Or skip rebuilding the package zip when using dist/chargeback_serverless-0.3.15.zip
+./scripts/deploy_chargeback_serverless.sh --skip-build
 ```
 
-The script will:
-1. Generate dashboards, import them to Kibana, export them with `elastic-package export dashboards`, and package `chargeback_serverless-0.3.15.zip` using `elastic-package`.
-2. Upload and activate the package in Kibana Fleet EPM (`/api/fleet/epm/packages`).
-3. Automatically create or update the Fleet package policy with your credentials and settings.
-4. Verify data stream health and print dashboard URLs.
+When you update only your `CLOUD_API_KEY` and want to update the Fleet policy and re-run the collector backfill without rebuilding or re-uploading the package `.zip`:
+
+```bash
+./scripts/deploy_chargeback_serverless.sh --skip-build
+```
 
 ---
 
-### Method B: Manual Fleet UI Installation
+## Option B: Manual installation in Kibana Fleet
 
-1. **Upload Package Archive:**
-   In your terminal, upload the built zip to the Kibana Fleet EPM API:
-   ```bash
-   curl -X POST "${KIBANA_URL}/api/fleet/epm/packages" \
-     -H "Authorization: ApiKey ${KIBANA_API_KEY}" \
-     -H "kbn-xsrf: true" \
-     -H "elastic-api-version: 2023-10-31" \
-     -H "Content-Type: application/zip" \
-     --data-binary @dist/chargeback_serverless-0.3.15.zip
-   ```
+Use these steps to upload and configure [`dist/chargeback_serverless-0.3.15.zip`](dist/chargeback_serverless-0.3.15.zip) directly through the Kibana UI.
 
-2. **Add Integration in Fleet:**
-   - In Kibana, open **Management → Fleet → Integrations**.
-   - Search for **Chargeback Serverless** and click **Add Chargeback Serverless**.
-   - Fill in:
-     - **Organization ID:** Your Elastic Cloud Organization ID.
-     - **Elastic Cloud API Key:** Cloud API key with billing and project read access.
-     - **Currency Unit / Symbol / Rate:** (e.g. `USD`, `$`, `1.0` or local currency).
-     - *(Optional)* **Remote Project Elasticsearch API Keys:** Least-privileged keys for remote projects.
-   - Select your target Agent Policy and click **Save and continue**.
+### Step 1: Upload `chargeback_serverless-0.3.15.zip` in Kibana
 
-Collection starts automatically via Elastic Agent CEL on the configured schedule. No Kibana Workflows or external cron jobs are required.
+1. In Kibana on your Serverless hub project, open the **Navigation menu**, go to **Management → Integrations**, and select **Create new integration**.
+2. Select **Upload it as a .zip**, choose [`integration/assets/chargeback_serverless/dist/chargeback_serverless-0.3.15.zip`](dist/chargeback_serverless-0.3.15.zip), and click **Upload**.
 
----
+### Step 2: Add the integration to an Elastic Agent policy
 
-## Harvesting Remote Projects (Optional)
+1. In **Management → Integrations**, search for `Chargeback Serverless` and select **Chargeback Serverless**.
+2. Click **Add Chargeback Serverless**.
+3. Enter your configuration values:
+   - **Elastic Cloud Organization ID (`organization_id`)**: Enter your numeric Elastic Cloud organization ID.
+   - **Elastic Cloud API Key (`cloud_api_key`)**: Paste your unified Elastic Cloud API key (configured with **Billing admin** and **Cloud resource access** → **`Cloud, Elasticsearch, and Kibana API`**).
+   - **Collection Interval (`collection_interval`)**: Keep the default `24h`.
+   - **Initial Billing Lookbehind Days (`initial_lookbehind_days`)**: Keep the default `60` (backfills up to 60 completed UTC days on first run).
+4. Select your target **Agent policy** and click **Save and continue**.
 
-Billing data (spend per project, SKU breakdown) works with **zero** remote project keys.
+### Step 3: Seed the currency conversion rate (`serverless_chargeback_conf_lookup`)
 
-To break down usage per data stream across projects outside this hub:
+Open **Management → Dev Tools** in Kibana and seed your chargeable unit conversion rate and currency code:
 
-1. **Generate a least-privileged key on the remote project** in its Kibana Dev Tools:
+```json
+PUT serverless_chargeback_conf_lookup/_doc/config_default
+{
+  "conf_key": "1",
+  "conf_chargeable_unit_rate": 0.85,
+  "conf_chargeable_unit_rate_unit": "EUR",
+  "conf_start_date": "2010-01-01T00:00:00.000Z",
+  "conf_end_date": "2046-12-31T23:59:59.999Z"
+}
+```
+
+### Step 4: Verify transforms, lookup indices, and project harvest status
+
+1. Go to **Stack Management → Transforms** and filter by `serverless_`. Confirm that all seven transforms are **Started** with `health: green`:
+   - `serverless_billing_cost-0.3.15`
+   - `serverless_billing_realized_pool-0.3.15`
+   - `serverless_project_contribution-0.3.15`
+   - `serverless_datastream_contribution-0.3.15`
+   - `serverless_ai_model_contribution-0.3.15`
+   - `serverless_synthetics_monitor_contribution-0.3.15`
+   - `serverless_project_status-0.3.15`
+2. Open **Management → Dev Tools** and run the following Elasticsearch Query Language (ES|QL) query to verify project harvest status:
+
    ```json
-   POST _security/api_key
+   POST _query?format=txt
    {
-     "name": "chargeback-usage-harvesting",
-     "role_descriptors": {
-       "chargeback_usage": {
-         "cluster": ["monitor"],
-         "indices": [
-           {
-             "names": ["*"],
-             "privileges": ["monitor"]
-           }
-         ]
-       }
-     }
+     "query": "FROM serverless_project_status_lookup | SORT @timestamp DESC | LIMIT 25"
    }
    ```
-   *(This key only grants permission to read `_cat/indices` metadata — it cannot read, search, or modify any data).*
 
-2. **Register the key(s) in the Fleet Integration Policy**:
-   - In **Fleet → Agent Policies → your policy → Chargeback Serverless**, enter `<project_id>:<encoded_api_key>` into **Remote Project Elasticsearch API Keys**.
-   - **Multiple remote projects:** Click **Add item** (or **+**) to add rows for additional projects.
-   - **Adding keys later:** If keys are already saved, Fleet hides them as policy secrets. Click **↺ Replace remote project elasticsearch api keys** and re-enter **all** keys to retain (both existing and new) before saving.
-   - Or run:
-     ```bash
-     PROJECT_ID="<remote_project_id>" SL_API_KEY="<encoded_api_key>" ./scripts/configure_chargeback_serverless.sh
-     ```
+   Confirm that each active Serverless project displays `status: "ok"` and `key_type: "cloud_key"`.
 
----
+3. Open **Dashboards** and select **`[Chargeback Serverless] Billing Components Overview`** to review your organization invoice breakdown across active and deleted projects.
 
-## Dashboards
+## Next steps
 
-Navigate to **Analytics → Dashboards** and search for `Chargeback Serverless`:
-
-- **[Chargeback Serverless] Billing Components Overview**:
-  Top-level spend, burn rate, SKU breakdowns, and project cost allocations.
-- **[Chargeback Serverless] Usage & Cost Allocation**:
-  Attributed cost partitioned by Namespace (`ds_namespace`) and Data Stream Type (`ds_type`), with data stream tables and ECU pools.
-- **[Chargeback Serverless] AI & Machine Learning**:
-  AI & ML FinOps overview, daily model cost attribution, inference volume, latency, and dedicated AI/Inference/Agent Builder SKU line items.
-- **[Chargeback Serverless] Synthetics**:
-  Direct Synthetics SKU billing, check volume, unit economics, and attributed data-tier costs for `synthetics-*` data streams.
-- **[Chargeback Serverless] Configuration**:
-  Fleet Settings reference guide, remote project key generator, and environment status.
-
----
-
-## Alerting Rule Templates
-
-The integration ships 10 ES|QL alerting rule templates (9 FinOps spend & anomaly templates + 1 consolidated Data Trust & Harvest Health template) in **Stack Management → Rules**:
-
-| Rule Template | Lookback | Line-2 `EVAL` Parameters (Defaults) | Description |
-| --- | --- | --- | --- |
-| **Total daily spend threshold exceeded** | `3d` | `threshold_spend = 1000.0` | Alerts when organization-wide daily spend on the latest billed day exceeds the threshold. |
-| **Rolling 30-day total spend budget exceeded** | `30d` | `threshold_budget = 25000.0` | Alerts when cumulative 30-day spend exceeds the monthly budget, reporting daily burn rate and 30-day projection. |
-| **Cost category daily spend threshold exceeded** | `3d` | `threshold_spend = 300.0, filter_category = "*"` | Alerts per cost category (`data_tier`, `platform`, `transfer`, `snapshot`, `support`) exceeding the daily threshold. |
-| **Workload driver daily spend threshold exceeded** | `3d` | `threshold_spend = 250.0, filter_driver = "*"` | Alerts per workload driver (`indexing`, `search`, `storage`, `ai`, `synthetics`, `unallocatable`) exceeding the daily threshold. |
-| **Project daily spend threshold exceeded** | `3d` | `threshold_spend = 200.0, filter_project = "*"` | Alerts per Serverless project exceeding the daily spend threshold. |
-| **Project daily spend spike vs. 7-day baseline** | `10d` | `threshold_pct_increase = 50.0, min_daily_spend = 25.0, filter_project = "*"` | Alerts when a project's latest daily spend spikes by more than `threshold_pct_increase`% above its prior 7-day baseline average (and is at least `min_daily_spend`). |
-| **Namespace attributed daily spend threshold exceeded** | `3d` | `threshold_spend = 100.0, filter_namespace = "*"` | Alerts when attributed daily spend (indexing + search + storage) for a `ds_namespace` exceeds the threshold. |
-| **AI model attributed daily spend threshold exceeded** | `3d` | `threshold_spend = 50.0, filter_model = "*"` | Alerts when attributed daily AI/ML pool spend for a specific `model_id` in a project exceeds the threshold. |
-| **Synthetics monitor attributed daily spend threshold exceeded** | `3d` | `threshold_spend = 25.0, filter_monitor = "*"` | Alerts when attributed daily Synthetics SKU spend (browser executions or lightweight pings) for a monitor exceeds the threshold. |
-| **Data trust & project harvest health issue** | `3d` | `threshold_unallocated_spend = 100.0, threshold_unallocated_pct = 25.0` | Consolidated operational health check for stale/unauthorized usage harvest, billed projects missing a resolved `project_name`, or high unallocated spend exceeding both the floor and org percentage threshold. |
-
-### Customizing Thresholds & Entity Filters (Line-2 `EVAL`)
-
-Every rule template places its user-configurable parameters on **Line 2** of the ES|QL query, immediately after `FROM <lookup_index>`:
-
-```esql
-FROM serverless_billing_cost_lookup
-| EVAL threshold_spend = 200.0, filter_project = "*"
-```
-
-To customize a rule in **Stack Management → Rules**:
-1. Open the rule and edit **Line 2** of the ES|QL query to adjust `threshold_*` (in your configured Fleet policy currency) or scope `filter_*` from `"*"` to a specific project name/ID, category, driver, namespace, model ID, or monitor name/ID.
-2. Clone a rule template if you want different thresholds for specific high-spend projects or namespaces.
-3. All rules preserve both a human-readable `result` summary string and structured columns (`day`, `project`, `spend`, `ecu`, `threshold`, `unit`, etc.) for use in Kibana rule previews and action connector templates (`{{context.hits}}`).
-
----
-
-## Verification
-
-Check document counts and Data Stream Lifecycle retention in the native metrics data streams:
-
-```json
-GET metrics-chargeback_serverless.billing-*/_count
-GET metrics-chargeback_serverless.usage-*/_count
-GET /_data_stream/metrics-chargeback_serverless.*/_lifecycle
-GET /metrics-chargeback_serverless.*/_lifecycle/explain
-```
-
-Inspect recent ingestion with ES|QL:
-
-```json
-POST /_query
-{
-  "query": "FROM metrics-chargeback_serverless.billing-* | STATS billing_records = count(), latest_bill = MAX(@timestamp) | KEEP billing_records, latest_bill"
-}
-```
-
-```json
-POST /_query
-{
-  "query": "FROM metrics-chargeback_serverless.usage-* | STATS usage_records = count(), projects_monitored = COUNT_DISTINCT(project_name), latest_usage = MAX(@timestamp) | KEEP usage_records, projects_monitored, latest_usage"
-}
-```
-
----
-
-## Security Architecture Notes
-
-- **Zero Plaintext Secrets in Indices:** Credentials and API keys are stored exclusively in Fleet package policies, encrypted by Kibana, and redacted from logs.
-- **Least-Privilege Isolation:** Remote project keys only require the `monitor` cluster privilege to inspect index sizes and indexing/query times; they cannot read or query documents.
-- **No Ingestion Workflows:** Native Elastic Agent CEL streams perform HTTP polling directly on schedule, eliminating workflow execution overhead.
+- Review the [Chargeback Serverless configuration reference](CONFIG.md) to set up multiple historical rate windows or customize the 10 FinOps ES|QL alerting rules.
+- See [Troubleshoot the Chargeback integration](../../docs/troubleshooting.md) if any project shows an authentication warning or missing billing history.

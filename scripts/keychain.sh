@@ -92,7 +92,7 @@ keychain_load_env() {
   local known_keys=(
     "ES_URL" "sl_url" "ES_HOST" "KIBANA_URL" "KIBANA_HOST"
     "ES_API_KEY" "KIBANA_API_KEY" "HUB_KIBANA_API_KEY" "HUB_ES_API_KEY"
-    "ORGANIZATION_ID" "BILLING_API_KEY" "USAGE_API_KEY"
+    "ORGANIZATION_ID" "CLOUD_API_KEY" "BILLING_API_KEY" "USAGE_API_KEY"
     "PROJECT_ID" "project_id" "SL_API_KEY" "sl_api_key"
     "BILLING_API_BASE" "CLOUD_API_BASE"
     "CONF_RATE" "CONF_RATE_UNIT" "CONF_CURRENCY_SYMBOL" "CURL_INSECURE"
@@ -132,6 +132,10 @@ keychain_load_env() {
     fi
   fi
 
+  if [[ -n "${CLOUD_API_KEY:-}" ]]; then
+    export BILLING_API_KEY="$CLOUD_API_KEY"
+    export USAGE_API_KEY="$CLOUD_API_KEY"
+  fi
   local hub_key="${HUB_KIBANA_API_KEY:-${HUB_ES_API_KEY:-}}"
   if [[ -z "${ES_API_KEY:-}" && -n "$hub_key" ]]; then
     export ES_API_KEY="$hub_key"

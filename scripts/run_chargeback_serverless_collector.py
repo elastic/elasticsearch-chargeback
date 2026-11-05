@@ -249,6 +249,23 @@ def main():
 
     print(f"  Window: {start_date} to {end_date} (inclusive, {LOOKBEHIND} days; excluding today {now.date()})")
 
+    # Verify whether CLOUD_API_KEY has Organization Billing Admin / Owner privileges.
+    # Without Billing Admin or Organization Owner role, Elastic Cloud Billing v2 API
+    # (/costs/instances and /costs/items) filters results to only currently active,
+    # accessible instances and silently omits deleted projects/deployments.
+    try:
+        http_get(f"{BILLING_API_BASE}/api/v1/billing/organization/{ORG_ID}/history", cloud_headers, timeout=10)
+    except urllib.error.HTTPError as e:
+        if e.code == 403:
+            print(
+                "  ⚠ WARNING: CLOUD_API_KEY does not have the Organization 'Billing Admin' (or 'Organization Owner') role.\n"
+                "    Elastic Cloud Billing API filters /costs/instances and /costs/items to only currently active, accessible\n"
+                "    projects for non-Billing-Admin keys — deleted projects and deployments are hidden by Elastic Cloud!\n"
+                "    Grant 'Billing Admin' or 'Organization Owner' to your Cloud API key in Cloud Console -> Organization -> API keys."
+            )
+    except Exception:
+        pass
+
     billing_docs = []
     latest_billing_instances = []
     all_known_projects = {
@@ -531,8 +548,9 @@ def main():
                 pass
 
             # Re-attach any preserved historical non-zero billing records for deleted projects on this day
+            api_emitted_pids = set(emitted_set)
             for (p_day, p_pid, p_sku), p_doc in preserved_deleted_billing.items():
-                if p_day == day_str and p_pid not in emitted_set:
+                if p_day == day_str and p_pid not in api_emitted_pids:
                     p_doc_copy = dict(p_doc)
                     p_doc_copy["event"] = {"ingested": (now - timedelta(seconds=90)).strftime("%Y-%m-%dT%H:%M:%SZ")}
                     billing_docs.append(p_doc_copy)
@@ -752,28 +770,37 @@ def main():
             "total_ecu": 0.0
         })
 
-        # Target key: only send HUB_ES_API_KEY to the local hub project, or explicit PROJECT_KEYS to remote projects.
-        # Do not send HUB_ES_API_KEY to remote projects.
+        # Target key: prefer explicit PROJECT_KEYS[pid], then CLOUD_API_KEY
+        # (since a unified Elastic Cloud API key with "Cloud, Elasticsearch, and Kibana API" access can query all Serverless projects),
+        # and finally HUB_ES_API_KEY on the local hub.
         is_hub = bool(ES_URL and (pid in ES_URL or (es_endpoint and es_endpoint.rstrip("/") in ES_URL.rstrip("/"))))
-        target_key = PROJECT_KEYS.get(pid)
-        if not target_key and is_hub:
-            target_key = HUB_ES_API_KEY
+        candidate_keys = []
+        if PROJECT_KEYS.get(pid):
+            candidate_keys.append(PROJECT_KEYS[pid])
+        if CLOUD_API_KEY and CLOUD_API_KEY not in candidate_keys:
+            candidate_keys.append(CLOUD_API_KEY)
+        if is_hub and HUB_ES_API_KEY and HUB_ES_API_KEY not in candidate_keys:
+            candidate_keys.append(HUB_ES_API_KEY)
 
         indices = []
-        harvest_status = "ok"
-        if target_key:
-            headers = {
-                "Authorization": f"ApiKey {target_key}",
+        harvest_status = "empty_or_unauthorized"
+        target_key = None
+        headers = {}
+        cat_url = f"{es_endpoint.rstrip('/')}/_cat/indices?h=index,dataset.size,indexing.index_time,search.query_time&format=json&bytes=b&time=ms&expand_wildcards=open,hidden"
+        for cand_key in candidate_keys:
+            cand_headers = {
+                "Authorization": f"ApiKey {cand_key}",
                 "Content-Type": "application/json"
             }
-            cat_url = f"{es_endpoint}/_cat/indices?h=index,dataset.size,indexing.index_time,search.query_time&format=json&bytes=b&time=ms&expand_wildcards=open,hidden"
             try:
-                status, cat_data = http_get(cat_url, headers, timeout=15)
+                status, cat_data = http_get(cat_url, cand_headers, timeout=15)
                 indices = cat_data if isinstance(cat_data, list) else []
+                target_key = cand_key
+                headers = cand_headers
+                harvest_status = "ok"
+                break
             except Exception:
-                harvest_status = "empty_or_unauthorized"
-        else:
-            harvest_status = "empty_or_unauthorized"
+                continue
 
         # Query _ml/trained_models/_stats
         ml_models = []
@@ -1159,7 +1186,15 @@ def main():
                 usage_docs.append(doc)
 
             # Emit project status record
-            key_type_val = ("hub_key" if is_hub else "remote_key") if harvest_status == "ok" else "missing_key"
+            if harvest_status == "ok":
+                if target_key and target_key == PROJECT_KEYS.get(pid):
+                    key_type_val = "remote_key"
+                elif target_key and target_key == CLOUD_API_KEY:
+                    key_type_val = "cloud_key"
+                else:
+                    key_type_val = "hub_key" if is_hub else "remote_key"
+            else:
+                key_type_val = "missing_key"
             synth_stat_val = "ok" if harvest_status == "ok" else ("billing_derived" if (day_monitors or proj_day_synth) else "unauthorized")
             doc = {
                 "@timestamp": usage_day_ts,
