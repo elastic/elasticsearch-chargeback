@@ -66,26 +66,14 @@ Use these steps to upload and configure [`dist/chargeback_serverless-0.3.15.zip`
 3. Enter your configuration values:
    - **Elastic Cloud Organization ID (`organization_id`)**: Enter your numeric Elastic Cloud organization ID.
    - **Elastic Cloud API Key (`cloud_api_key`)**: Paste your unified Elastic Cloud API key (configured with **Billing admin** and **Cloud resource access** → **`Cloud, Elasticsearch, and Kibana API`**).
+   - **Currency Unit (`currency_unit`)**: Enter your local currency code (for example, `USD`, `EUR`, `ZAR`, `GBP`).
+   - **Currency Symbol (`currency_symbol`)**: Enter your currency symbol (for example, `$`, `€`, `R`, `£`).
+   - **Chargeable Unit Rate (`unit_rate`)**: Enter your conversion multiplier from 1.0 ECU to your currency (for example, `1.0` or `0.85`).
    - **Collection Interval (`collection_interval`)**: Keep the default `24h`.
    - **Initial Billing Lookbehind Days (`initial_lookbehind_days`)**: Keep the default `60` (backfills up to 60 completed UTC days on first run).
 4. Select your target **Agent policy** and click **Save and continue**.
 
-### Step 3: Seed the currency conversion rate (`serverless_chargeback_conf_lookup`)
-
-Open **Management → Dev Tools** in Kibana and seed your chargeable unit conversion rate and currency code:
-
-```json
-PUT serverless_chargeback_conf_lookup/_doc/config_default
-{
-  "conf_key": "1",
-  "conf_chargeable_unit_rate": 0.85,
-  "conf_chargeable_unit_rate_unit": "EUR",
-  "conf_start_date": "2010-01-01T00:00:00.000Z",
-  "conf_end_date": "2046-12-31T23:59:59.999Z"
-}
-```
-
-### Step 4: Verify transforms, lookup indices, and project harvest status
+### Step 3: Verify transforms, lookup indices, and project harvest status
 
 1. Go to **Stack Management → Transforms** and filter by `serverless_`. Confirm that all seven transforms are **Started** with `health: green`:
    - `serverless_billing_cost-0.3.15`

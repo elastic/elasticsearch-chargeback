@@ -1,6 +1,6 @@
 # Chargeback Serverless configuration reference
 
-Use this reference to configure the **Chargeback Serverless (`chargeback_serverless` `0.3.15`)** Fleet integration policy, create the required Elastic Cloud API key, manage currency conversion rates in `serverless_chargeback_conf_lookup`, and tune FinOps alerting thresholds.
+Use this reference to configure the **Chargeback Serverless (`chargeback_serverless` `0.3.15`)** Fleet integration policy, create the required Elastic Cloud API key, customize currency conversion settings, and tune FinOps alerting thresholds.
 
 ## Single unified Elastic Cloud API key
 
@@ -26,7 +26,9 @@ Configure these fields in Kibana under **Management → Integrations → Chargeb
 | **Elastic Cloud Organization ID** | `organization_id` | Yes | — | Your numeric Elastic Cloud organization identifier (found in the [Elastic Cloud Console](https://cloud.elastic.co) URL or **Organization → Settings**). |
 | **Elastic Cloud API Key** | `cloud_api_key` | Yes | — | Unified Elastic Cloud API key (`secret: true`) with **Billing admin** and **Cloud resource access** (`Cloud, Elasticsearch, and Kibana API`). |
 | **Elastic Cloud API Base URL** | `api_url` | No | `https://api.elastic-cloud.com` | Base URL for the Elastic Cloud Billing and Serverless Control Plane APIs. |
-| **Collection Interval** | `collection_interval` | No | `24h` | Poll frequency for the `billing` and `usage` Custom Enterprise Language (CEL) streams. Completed calendar days up to yesterday (`D-1` UTC) are finalized after `02:00 UTC`. |
+| **Currency Unit** | `currency_unit` | No | `USD` | Three-letter currency code displayed across dashboards and alerts (for example, `USD`, `EUR`, `GBP`). |
+| **Currency Symbol** | `currency_symbol` | No | `$` | Currency symbol displayed on KPI scorecards and tables (for example, `$`, `€`, `£`). |
+| **Chargeable Unit Rate** | `unit_rate` | No | `1.0` | Monetary value of 1.0 ECU in your contract currency. |
 | **Initial Billing Lookbehind Days** | `initial_lookbehind_days` | No | `60` | Number of historical UTC days (`1`–`90`) to backfill on the first billing collection run. |
 
 > [!NOTE]
@@ -34,58 +36,15 @@ Configure these fields in Kibana under **Management → Integrations → Chargeb
 
 ---
 
-## Currency conversion rates (`serverless_chargeback_conf_lookup`)
+## Currency conversion configuration
 
-Dashboards and alerting rules join daily Elastic Consumption Unit (ECU) metrics with the `serverless_chargeback_conf_lookup` index (`index.mode: lookup`) to calculate monetary spend in your local currency across contract periods.
+In Chargeback Serverless 0.3.15, currency conversion rates and symbols are managed directly through Fleet policy variables (`unit_rate`, `currency_unit`, `currency_symbol`) without requiring manual Elasticsearch lookup index seeding.
 
-### Schema and default values
+- **Dynamic stamping**: The Elastic Agent CEL streams stamp `conf_chargeable_unit_rate`, `conf_chargeable_unit_rate_unit`, and `conf_currency_symbol` directly onto every ingested billing and usage record.
+- **Continuous aggregation**: Fleet-managed continuous transforms propagate these values into all `serverless_*_lookup` indices (`max` aggregation).
+- **ES|QL evaluation**: Dashboards and alerting rules read `conf_chargeable_unit_rate` and `conf_currency_symbol` directly from the lookup indices (`LOOKUP JOIN serverless_project_status_lookup ON composite_key`) to evaluate monetary spend (`cost = units * conf_chargeable_unit_rate`).
 
-| Field | Type | Default value | Description |
-| --- | --- | --- | --- |
-| `conf_key` | `keyword` | `"1"` | Constant join key (`"1"`) matched by dashboard ES|QL `LOOKUP JOIN` queries. |
-| `conf_chargeable_unit_rate` | `double` | `0.85` | Monetary value of `1.0` ECU in your contract currency. |
-| `conf_chargeable_unit_rate_unit` | `keyword` | `"EUR"` | Three-letter currency code displayed across dashboards and alerts (for example, `"USD"`, `"EUR"`, `"GBP"`). |
-| `conf_start_date` | `date` | `"2010-01-01T00:00:00.000Z"` | Start timestamp (inclusive) for this conversion rate window. |
-| `conf_end_date` | `date` | `"2046-12-31T23:59:59.999Z"` | End timestamp (inclusive) for this conversion rate window. |
-
-### Update the default currency rate in Dev Tools
-
-Open **Management → Dev Tools** in Kibana and run:
-
-```json
-PUT serverless_chargeback_conf_lookup/_doc/config_default
-{
-  "conf_key": "1",
-  "conf_chargeable_unit_rate": 1.00,
-  "conf_chargeable_unit_rate_unit": "USD",
-  "conf_start_date": "2010-01-01T00:00:00.000Z",
-  "conf_end_date": "2046-12-31T23:59:59.999Z"
-}
-```
-
-### Configure multiple contract rate windows
-
-If your ECU contract price changes over time, insert separate documents with non-overlapping `conf_start_date` and `conf_end_date` ranges:
-
-```json
-PUT serverless_chargeback_conf_lookup/_doc/config_2025
-{
-  "conf_key": "1",
-  "conf_chargeable_unit_rate": 0.85,
-  "conf_chargeable_unit_rate_unit": "EUR",
-  "conf_start_date": "2025-01-01T00:00:00.000Z",
-  "conf_end_date": "2025-12-31T23:59:59.999Z"
-}
-
-PUT serverless_chargeback_conf_lookup/_doc/config_2026
-{
-  "conf_key": "1",
-  "conf_chargeable_unit_rate": 0.92,
-  "conf_chargeable_unit_rate_unit": "EUR",
-  "conf_start_date": "2026-01-01T00:00:00.000Z",
-  "conf_end_date": "2046-12-31T23:59:59.999Z"
-}
-```
+To update currency rates or change your contract currency, edit the Fleet integration policy settings in Kibana (**Management → Integrations → Installed → Chargeback Serverless → Policies**). The next collection pass automatically applies the updated currency settings.
 
 ---
 

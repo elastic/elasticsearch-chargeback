@@ -8,14 +8,13 @@ Chargeback Serverless runs on an Elastic Cloud Serverless FinOps hub project. A 
 
 ```mermaid
 flowchart TD
-    Policy["Fleet Integration Policy<br/>(organization_id + unified cloud_api_key)"]:::navy
+    Policy["Fleet Integration Policy<br/>(organization_id + unified cloud_api_key + currency settings)"]:::navy
     Streams["Raw Metrics Data Streams (365d DLM retention)<br/>metrics-chargeback_serverless.billing-*<br/>metrics-chargeback_serverless.usage-*"]:::blue
     Lookups["7 Transform Lookup Indices (365d transform retention)<br/>serverless_billing_cost_lookup<br/>serverless_billing_realized_pool_lookup<br/>serverless_project_contribution_lookup<br/>serverless_datastream_contribution_lookup<br/>serverless_ai_model_contribution_lookup<br/>serverless_synthetics_monitor_contribution_lookup<br/>serverless_project_status_lookup"]:::mint
-    Conf["Currency Rate Lookup Index<br/>serverless_chargeback_conf_lookup"]:::yellow
     Assets["Kibana Saved Objects<br/>5 Linked ES|QL Dashboards + 10 Alerting Rule Templates"]:::pink
 
     Policy --> Streams --> Lookups
-    Lookups & Conf --> Assets
+    Lookups --> Assets
 
     classDef navy fill:#153385,stroke:#153385,color:#FFFFFF
     classDef blue fill:#0B64DD,stroke:#0B64DD,color:#FFFFFF
@@ -34,7 +33,7 @@ All five dashboards share a top horizontal navigation bar (`useCurrentDateRange:
 | **`[Chargeback Serverless] Usage & Cost Allocation`** | `chargeback_serverless-21588d0e-fb6a-4f76-ad2f-cd7b3d7a3d7c` | Provides collapsible sections for (1) Workload drivers and project allocation and (2) Data stream cost attribution and usage across `ds_namespace`, `ds_type`, `ds_dataset`, and data streams. |
 | **`[Chargeback Serverless] AI & Machine Learning`** | `chargeback_serverless-5fb3f4c6-5591-5c5c-9625-1d829944c5b2` | Tracks AI and Machine Learning (ML) FinOps KPIs (AI pool spend, inference volume, active models, average latency, unit cost per 1,000 inferences), daily attributed AI cost by model and project, and dedicated AI, Inference, and Agent Builder Stock Keeping Unit (SKU) line items. |
 | **`[Chargeback Serverless] Synthetics`** | `chargeback_serverless-c188156b-9f97-5e72-975f-022f3c862a1d` | Attributes direct Synthetics SKU spend (`observability-synthetic-executions` and `observability-synthetic-pings`) across `browser` and lightweight (`http`, `icmp`, `tcp`, `dns`) monitors, plus `synthetics-*` data stream indexing, search, and storage costs. |
-| **`[Chargeback Serverless] Configuration`** | `chargeback_serverless-7ec9743a-ccfa-43d2-8311-2f25893dadae` | Presents the unified Fleet configuration status banner, five summary KPIs, the 3-step setup guide for the single unified Elastic Cloud API key, currency rates in `serverless_chargeback_conf_lookup`, and the paginated project harvest registry. |
+| **`[Chargeback Serverless] Configuration`** | `chargeback_serverless-7ec9743a-ccfa-43d2-8311-2f25893dadae` | Presents the unified Fleet configuration status banner, five summary KPIs, the 3-step setup guide for the single unified Elastic Cloud API key, active policy currency settings, and the paginated project harvest registry. |
 
 ### Dashboard controls and filters
 

@@ -27,7 +27,6 @@ flowchart LR
         L5["serverless_ai_model_contribution_lookup<br/>AI & ML endpoint shares"]:::mint
         L6["serverless_synthetics_monitor_contribution_lookup<br/>Browser & ping monitor shares"]:::mint
         L7["serverless_project_status_lookup<br/>Project harvest audit registry"]:::mint
-        Conf["serverless_chargeback_conf_lookup<br/>Currency rates & date windows"]:::yellow
     end
 
     subgraph Kibana["Kibana FinOps Experience"]
@@ -40,7 +39,7 @@ flowchart LR
     Projects --> UStream
     BStream --> L1 & L2
     UStream --> L3 & L4 & L5 & L6 & L7
-    L1 & L2 & L3 & L4 & L5 & L6 & L7 & Conf --> Dash & Rules
+    L1 & L2 & L3 & L4 & L5 & L6 & L7 --> Dash & Rules
 
     classDef navy fill:#153385,stroke:#153385,color:#FFFFFF
     classDef blue fill:#0B64DD,stroke:#0B64DD,color:#FFFFFF
@@ -53,11 +52,15 @@ flowchart LR
 
 - **Single unified Elastic Cloud API key (`cloud_api_key`)**: One API key configured with **Billing admin** and **Cloud resource access** (`Cloud, Elasticsearch, and Kibana API`) collects organization-wide billing history (including deleted deployments and projects via `/api/v1/billing/organization/{org_id}/history`), dynamically discovers all active Serverless projects (`elasticsearch`, `observability`, `security`, and future project types), and harvests usage telemetry from each project.
 - **Exact SKU-to-workload pool reconciliation**: Unlike Hosted clusters that blend indexing, querying, and storage across shared node hardware, Elastic Cloud Serverless bills separate Stock Keeping Units (SKUs) for each resource driver:
-  - **Indexing pool (`ingest-vcu` SKUs)**: Allocated across data streams by daily `ingest_bytes_delta` (with proportional fallback to `store_size_bytes`).
-  - **Search and query pool (`search-vcu` SKUs)**: Allocated across data streams by daily `query_time_ms_delta` (with proportional fallback to `store_size_bytes`).
+  - **Indexing pool (`ingest-vcu` SKUs)**: Allocated across data streams proportionally by indexing time (`indexing.index_time` harvested from `_cat/indices`), with proportional fallback to storage size (`store_size_bytes` / `dataset.size`) when indexing time is zero.
+  - **Search and query pool (`search-vcu` SKUs)**: Allocated across data streams proportionally by query execution time (`search.query_time` harvested from `_cat/indices`), with proportional fallback to storage size (`store_size_bytes` / `dataset.size`) when query time is zero.
   - **Storage pool (`retained` SKUs)**: Allocated across data streams by daily `store_size_bytes`.
   - **AI and Machine Learning pool (`ml-vcu` and inference SKUs)**: Allocated across `.inference` endpoints and models in `serverless_ai_model_contribution_lookup`.
   - **Synthetics pools (`observability-synthetic-executions` and `observability-synthetic-pings` SKUs)**: Allocated across `browser` monitors and lightweight (`http`, `icmp`, `tcp`, `dns`) monitors in `serverless_synthetics_monitor_contribution_lookup`.
+
+> [!NOTE]
+> Telemetry metrics from `_cat/indices` (`indexing.index_time`, `search.query_time`) and `_ml/trained_models/_stats` (`inference_count`) are cumulative lifetime counters per backing index or model. Allocating daily VCU pools by each data stream's relative share of these counters cancels out snapshot frequency and avoids negative deltas. If indexing or query time across a project is zero, dashboards automatically fall back to proportional storage allocation (`dataset.size`).
+
 - **Automatic 365-day retention**: Both raw metrics data streams (`metrics-chargeback_serverless.billing-*` and `metrics-chargeback_serverless.usage-*`) and all seven lookup transforms enforce a 365-day retention policy (`data_retention: "365d"` and `retention_policy.time.max_age: 365d`).
 - **Zero plaintext secret indices**: All credentials reside exclusively in the encrypted Kibana Fleet integration policy (`secret: true`). No API keys are stored in Elasticsearch indices.
 
@@ -71,7 +74,7 @@ The package installs five linked Kibana dashboards with a shared top navigation 
 | **`[Chargeback Serverless] Usage & Cost Allocation`** | Attributes Indexing, Query, Storage, AI, and Synthetics SKU pools across projects, data stream types (`ds_type`), datasets (`ds_dataset`), namespaces (`ds_namespace`), and individual data streams. |
 | **`[Chargeback Serverless] AI & Machine Learning`** | Breaks down AI and Machine Learning (ML) Virtual Compute Unit (VCU) consumption by project, task type, model provider, and `.inference` endpoint. |
 | **`[Chargeback Serverless] Synthetics`** | Tracks Synthetics spend and check volume by monitor type (`browser`, `http`, `icmp`, `tcp`, `dns`), monitor name, namespace, and project. |
-| **`[Chargeback Serverless] Configuration`** | Displays active currency conversion rates in `serverless_chargeback_conf_lookup`, step-by-step setup documentation, and the live project harvest audit registry (`serverless_project_status_lookup`). |
+| **`[Chargeback Serverless] Configuration`** | Displays active currency settings configured in the Fleet policy, step-by-step setup documentation, and the live project harvest audit registry (`serverless_project_status_lookup`). |
 
 ## Prebuilt FinOps alerting rules
 
@@ -94,7 +97,7 @@ Chargeback Serverless includes 10 ES|QL alerting rule templates in [`kibana/aler
 | --- | --- |
 | [`dist/chargeback_serverless-0.3.15.zip`](dist/chargeback_serverless-0.3.15.zip) | Built Fleet integration package ready to upload in Kibana (**Management → Integrations → Upload it as a .zip**). |
 | [`Instructions.md`](Instructions.md) | Step-by-step installation, API key creation, and verification guide. |
-| [`CONFIG.md`](CONFIG.md) | Reference for Fleet policy settings, `serverless_chargeback_conf_lookup` currency rates, and alerting thresholds. |
+| [`CONFIG.md`](CONFIG.md) | Reference for Fleet policy settings, currency conversion configuration, and alerting thresholds. |
 | [`dashboards/DESIGN.md`](dashboards/DESIGN.md) | Detailed design reference for the five dashboards, filter controls, lookup indices, and 10 alerting rule templates. |
 | [`kibana/dashboard/`](kibana/dashboard/) | Saved object JSON definitions for all five Chargeback Serverless dashboards. |
 | [`kibana/alerting_rule_template/`](kibana/alerting_rule_template/) | 10 ES|QL FinOps spend and data-trust alerting rule template definitions. |

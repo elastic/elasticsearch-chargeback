@@ -801,7 +801,10 @@ def main():
                 "size": 0,
                 "query": {
                     "bool": {
-                        "filter": [{"exists": {"field": "monitor.id"}}],
+                        "filter": [
+                            {"exists": {"field": "monitor.id"}},
+                            {"range": {"@timestamp": {"gte": f"{end_date.strftime('%Y-%m-%d')}T00:00:00.000Z", "lt": f"{(end_date + timedelta(days=1)).strftime('%Y-%m-%d')}T00:00:00.000Z"}}}
+                        ],
                         "must_not": [{"terms": {"event.dataset": ["browser.network", "browser.screenshot"]}}]
                     }
                 },
@@ -956,26 +959,6 @@ def main():
                         entry["exec_qty"] += float(bdoc.get("quantity_value") or 0.0)
                         entry["exec_ecu"] += float(bdoc.get("total_ecu") or 0.0)
 
-        if not ds_map and proj_day_synth:
-            for synth_ds, s_dataset, s_ns, s_size, s_idx, s_qry in [
-                ("synthetics-http-default", "http", "default", 48200000, 14200, 3100),
-                ("synthetics-http-prod", "http", "prod", 24100000, 7100, 1650),
-                ("synthetics-browser-default", "browser", "default", 64500000, 19800, 4400),
-                ("synthetics-browser.network-default", "browser.network", "default", 185000000, 38400, 5200),
-                ("synthetics-browser.screenshot-default", "browser.screenshot", "default", 312000000, 29100, 2800),
-                ("synthetics-dns-default", "dns", "default", 15800000, 4900, 1100),
-                ("synthetics-tcp-prod", "tcp", "prod", 14900000, 4600, 980),
-                ("synthetics-icmp-default", "icmp", "default", 11200000, 3400, 720),
-            ]:
-                ds_map[synth_ds] = {
-                    "ds": synth_ds,
-                    "ds_type": "synthetics",
-                    "ds_dataset": s_dataset,
-                    "ds_namespace": s_ns,
-                    "size": s_size,
-                    "idx_time": s_idx,
-                    "qry_time": s_qry,
-                }
 
         proj_total_size = sum(v["size"] for v in ds_map.values()) or 1
         proj_total_idx = sum(v["idx_time"] for v in ds_map.values()) or 1
