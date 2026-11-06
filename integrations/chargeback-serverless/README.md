@@ -1,6 +1,15 @@
 # Chargeback Serverless integration overview
 
-The Chargeback Serverless integration (`chargeback_serverless` `0.3.15`) provides native FinOps cost attribution and workload showback for **Elastic Cloud Serverless** organizations—without requiring a dedicated Elastic Cloud Hosted monitoring cluster. Running directly on a Serverless FinOps hub project through a Fleet-managed Elastic Agent, the integration uses a single unified Elastic Cloud API key to collect organization-wide billing history (including deleted projects and deployments) and per-project data stream, AI model, and Synthetics telemetry.
+The Chargeback Serverless integration (`chargeback_serverless` `0.3.15`) provides native FinOps cost attribution and workload showback for **Elastic Cloud Serverless** organizations—without requiring a dedicated Elastic Cloud Hosted monitoring cluster. Running directly on a Serverless FinOps hub project through a Fleet-managed Elastic Agent (or the standalone Python backfill collector), the integration uses a single unified Elastic Cloud API key to collect organization-wide Serverless billing history (including deleted projects) and per-project data stream, AI model, and Synthetics telemetry.
+
+## Quick start: Users vs. Developers
+
+- **For Users (no `elastic/integrations` checkout required)**:
+  1. Upload the prebuilt package [`assets/dist/chargeback_serverless-0.3.15.zip`](assets/dist/chargeback_serverless-0.3.15.zip) in Kibana (**Management → Integrations → Upload integration**) and attach it to a dedicated **`Chargeback Serverless Policy`**, **or** run [`./scripts/deploy_chargeback_serverless.sh`](../../scripts/deploy_chargeback_serverless.sh) from a Python `venv` (`pip install pyyaml`), which installs the prebuilt `.zip` by default without building.
+  2. Run [`python3 scripts/run_chargeback_serverless_collector.py`](../../scripts/run_chargeback_serverless_collector.py) to backfill up to 60 days of Serverless billing and usage telemetry without building a new `.zip`.
+  3. See [Install and configure Chargeback Serverless](Instructions.md) for step-by-step instructions.
+- **For Developers**:
+  - The `elastic/integrations` repository is required **only** when editing package source templates under `packages/chargeback_serverless` and running `./scripts/deploy_chargeback_serverless.sh --build`.
 
 ## How Chargeback Serverless works
 
@@ -50,7 +59,8 @@ flowchart LR
 
 ### Key capabilities
 
-- **Single unified Elastic Cloud API key (`cloud_api_key`)**: One API key configured with **Billing admin** and **Cloud resource access** (`Cloud, Elasticsearch, and Kibana API`) collects organization-wide billing history (including deleted deployments and projects via `/api/v1/billing/organization/{org_id}/history`), dynamically discovers all active Serverless projects (`elasticsearch`, `observability`, `security`, and future project types), and harvests usage telemetry from each project.
+- **Single unified Elastic Cloud API key (`cloud_api_key`)**: One API key configured with Organization role **`Billing Admin`** and **Cloud resource access** across `Elasticsearch`, `Observability`, and `Security` project types collects organization-wide Serverless billing history (including deleted projects via `/api/v1/billing/organization/{org_id}/history`), dynamically discovers all active Serverless projects (`elasticsearch`, `observability`, `security`, and future project types), and harvests usage telemetry from each project.
+- **Serverless-only billing focus**: Automatically filters out Elastic Cloud Hosted (ECH) deployment SKUs (`Cloud-Enterprise_*`, `.es.datahot`, etc.) so decommissioned or parallel Hosted clusters do not skew Serverless cost allocation into unallocatable `other` spend.
 - **Exact SKU-to-workload pool reconciliation**: Unlike Hosted clusters that blend indexing, querying, and storage across shared node hardware, Elastic Cloud Serverless bills separate Stock Keeping Units (SKUs) for each resource driver:
   - **Indexing pool (`ingest-vcu` SKUs)**: Allocated across data streams proportionally by indexing time (`indexing.index_time` harvested from `_cat/indices`), with proportional fallback to storage size (`store_size_bytes` / `dataset.size`) when indexing time is zero.
   - **Search and query pool (`search-vcu` SKUs)**: Allocated across data streams proportionally by query execution time (`search.query_time` harvested from `_cat/indices`), with proportional fallback to storage size (`store_size_bytes` / `dataset.size`) when query time is zero.
@@ -95,12 +105,12 @@ Chargeback Serverless includes 10 ES|QL alerting rule templates in [`kibana/aler
 
 | Path | Description |
 | --- | --- |
-| [`dist/chargeback_serverless-0.3.15.zip`](dist/chargeback_serverless-0.3.15.zip) | Built Fleet integration package ready to upload in Kibana (**Management → Integrations → Upload it as a .zip**). |
-| [`Instructions.md`](Instructions.md) | Step-by-step installation, API key creation, and verification guide. |
+| [`assets/dist/chargeback_serverless-0.3.15.zip`](assets/dist/chargeback_serverless-0.3.15.zip) | Prebuilt Fleet integration package ready to upload in Kibana (**Management → Integrations → Upload integration**). |
+| [`Instructions.md`](Instructions.md) | Step-by-step user installation, API key creation, Python `venv` setup, and backfill guide. |
 | [`CONFIG.md`](CONFIG.md) | Reference for Fleet policy settings, currency conversion configuration, and alerting thresholds. |
 | [`dashboards/DESIGN.md`](dashboards/DESIGN.md) | Detailed design reference for the five dashboards, filter controls, lookup indices, and 10 alerting rule templates. |
-| [`kibana/dashboard/`](kibana/dashboard/) | Saved object JSON definitions for all five Chargeback Serverless dashboards. |
-| [`kibana/alerting_rule_template/`](kibana/alerting_rule_template/) | 10 ES|QL FinOps spend and data-trust alerting rule template definitions. |
+| [`assets/kibana/dashboard/`](assets/kibana/dashboard/) | Saved object JSON definitions for all five Chargeback Serverless dashboards. |
+| [`assets/kibana/alerting_rule_template/`](assets/kibana/alerting_rule_template/) | 10 ES|QL FinOps spend and data-trust alerting rule template definitions. |
 
 ## Next steps
 

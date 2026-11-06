@@ -15,8 +15,8 @@
 #
 # Usage:
 #   ./scripts/deploy_chargeback_serverless.sh
-#   ./scripts/deploy_chargeback_serverless.sh --skip-build
-#   ./scripts/deploy_chargeback_serverless.sh --skip-workflows
+#   ./scripts/deploy_chargeback_serverless.sh --build
+#   ./scripts/deploy_chargeback_serverless.sh --skip-policy
 #   ./scripts/deploy_chargeback_serverless.sh --verify-only
 #   ./scripts/deploy_chargeback_serverless.sh --help
 # ==============================================================================
@@ -29,7 +29,7 @@ INTEGRATIONS_REPO="${INTEGRATIONS_REPO:-$REPO_ROOT/../integrations}"
 ASSETS_DIR="$REPO_ROOT/integrations/chargeback-serverless/assets"
 DIST_DIR="$ASSETS_DIR/dist"
 
-SKIP_BUILD=0
+SKIP_BUILD=1
 SKIP_POLICY=0
 SKIP_COLLECTOR=0
 VERIFY_ONLY=0
@@ -40,7 +40,8 @@ usage() {
 Usage: ./scripts/deploy_chargeback_serverless.sh [OPTIONS]
 
 Options:
-  --skip-build          Skip rebuilding package and use existing dist zip
+  --skip-build          Use prebuilt dist zip without rebuilding (default for users)
+  --build               (Developer only) Rebuild package zip from elastic/integrations source
   --skip-policy         Upload package without creating/updating Fleet package policy
   --skip-collector      Skip running local one-shot CEL collector pass
   --verify-only         Run verification queries on existing deployment and exit
@@ -53,8 +54,10 @@ Environment variables (loaded from macOS Keychain, or .env if present):
   ES_API_KEY            Elasticsearch Hub API key (or HUB_KIBANA_API_KEY / HUB_ES_API_KEY)
   KIBANA_API_KEY        Kibana Hub API key (or HUB_KIBANA_API_KEY)
   ORGANIZATION_ID       Elastic Cloud organization ID
-  CLOUD_API_KEY         Elastic Cloud API key (Billing read and Serverless project read)
+  CLOUD_API_KEY         Elastic Cloud API key (Billing admin + Cloud resource access)
   HUB_ES_API_KEY        (Optional) Dedicated Hub ES API key if different from ES_API_KEY
+  AGENT_POLICY_ID       (Optional) Target Fleet Agent Policy ID
+  AGENT_POLICY_NAME     (Optional) Dedicated Fleet Agent Policy name (default: Chargeback Serverless Policy)
   PROJECT_ID            (Optional) Remote project ID to register in project_api_keys
   SL_API_KEY            (Optional) Least-privileged remote project API key
   LOOKBEHIND            (Optional) Historical billing lookbehind days (default: 60)
@@ -69,6 +72,7 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --skip-build) SKIP_BUILD=1; shift ;;
+    --build) SKIP_BUILD=0; shift ;;
     --skip-policy) SKIP_POLICY=1; shift ;;
     --skip-collector) SKIP_COLLECTOR=1; shift ;;
     --skip-workflows) SKIP_POLICY=1; shift ;; # backward-compat alias
@@ -82,6 +86,31 @@ done
 echo "================================================================="
 echo "       Chargeback Serverless E2E Deployment Automation           "
 echo "================================================================="
+
+# ------------------------------------------------------------------------------
+# 0. Pre-flight CLI & Python dependency checks
+# ------------------------------------------------------------------------------
+for required_bin in curl jq python3; do
+  if ! command -v "$required_bin" >/dev/null 2>&1; then
+    echo "ERROR: Required command '$required_bin' is not installed or not in PATH." >&2
+    exit 1
+  fi
+done
+
+if ! python3 -c "import yaml" >/dev/null 2>&1; then
+  cat >&2 <<'EOF'
+ERROR: Python module 'PyYAML' (import yaml) is required to provision Elasticsearch lookup indices and transforms.
+
+On macOS (Homebrew Python / PEP 668), create and activate a virtual environment first:
+  python3 -m venv .venv
+  source .venv/bin/activate
+  pip install pyyaml
+
+Then re-run:
+  ./scripts/deploy_chargeback_serverless.sh
+EOF
+  exit 1
+fi
 
 # ------------------------------------------------------------------------------
 # 1. Resolve credentials (macOS Keychain or environment)
@@ -354,10 +383,10 @@ fi
 # 4. Build package with package builder
 # ------------------------------------------------------------------------------
 PACKAGE_DIR="$INTEGRATIONS_REPO/packages/chargeback_serverless"
-if [[ -f "$PACKAGE_DIR/manifest.yml" ]]; then
-  VERSION="$(grep -E '^version:' "$PACKAGE_DIR/manifest.yml" 2>/dev/null | awk '{print $2}' | tr -d '"' || echo "0.2.0")"
+if [[ "$SKIP_BUILD" -eq 0 && -f "$PACKAGE_DIR/manifest.yml" ]]; then
+  VERSION="$(grep -E '^version:' "$PACKAGE_DIR/manifest.yml" 2>/dev/null | awk '{print $2}' | tr -d '"' || echo "0.3.15")"
 else
-  TARGET_ZIP=$(ls -1t "$DIST_DIR"/chargeback_serverless-*.zip 2>/dev/null | head -1 || echo "$DIST_DIR/chargeback_serverless-0.2.0.zip")
+  TARGET_ZIP=$(ls -1t "$DIST_DIR"/chargeback_serverless-*.zip 2>/dev/null | head -1 || echo "$DIST_DIR/chargeback_serverless-0.3.15.zip")
   VERSION="$(basename "$TARGET_ZIP" | sed -E 's/chargeback_serverless-([0-9.]+)\.zip/\1/')"
 fi
 ZIP_NAME="chargeback_serverless-${VERSION}.zip"
@@ -422,12 +451,13 @@ if [[ "$SKIP_BUILD" -eq 0 ]]; then
   echo "  ✓ Copied built zip to $TARGET_ZIP ($(ls -lh "$TARGET_ZIP" | awk '{print $5}'))"
 else
   echo ""
-  echo ">>> Step 1-3: Skipped package build (--skip-build)"
+  echo ">>> Step 1-3: Using prebuilt integration package (pass --build to rebuild from elastic/integrations)"
   if [[ ! -f "$TARGET_ZIP" ]]; then
-    echo "ERROR: Target zip not found at $TARGET_ZIP. Run without --skip-build." >&2
+    echo "ERROR: Prebuilt package zip not found at $TARGET_ZIP." >&2
+    echo "Ensure $DIST_DIR/chargeback_serverless-*.zip exists, or pass --build with INTEGRATIONS_REPO set." >&2
     exit 1
   fi
-  echo "  Using existing zip: $TARGET_ZIP"
+  echo "  Using prebuilt zip: $TARGET_ZIP"
 fi
 
 # ------------------------------------------------------------------------------
@@ -508,11 +538,8 @@ echo "  ✓ Fleet package $ZIP_NAME uploaded and activated successfully."
 # Ensure all 7 lookup indices and transforms from the package zip exist and are started in ES
 export TARGET_ZIP VERSION DATA_RETENTION
 python3 -c '
-import json, os, ssl, urllib.request, zipfile
-try:
-    import yaml
-except ImportError:
-    sys.exit(0)
+import json, os, ssl, sys, urllib.request, zipfile
+import yaml
 
 es_url = os.environ["ES_URL"].rstrip("/")
 api_key = os.environ["ES_API_KEY"]
@@ -543,7 +570,7 @@ def es_req(method, path, body=None):
         except Exception:
             return e.code, {}
 
-def fields_to_mappings(fields_list):
+def fields_to_mappings(fields_list, default_pipeline=None):
     props = {}
     for f in fields_list or []:
         name = f.get("name", "")
@@ -558,11 +585,31 @@ def fields_to_mappings(fields_list):
             cur[parts[-1]] = {"type": "alias", "path": f.get("path", "")}
         else:
             cur[parts[-1]] = {"type": ftype}
+    idx_settings = {"mode": "lookup", "codec": "best_compression"}
+    if default_pipeline:
+        idx_settings["default_pipeline"] = default_pipeline
     return {
-        "settings": {"index": {"mode": "lookup", "codec": "best_compression"}},
+        "settings": {"index": idx_settings},
         "mappings": {"dynamic": False, "properties": props},
     }
 
+def needs_recreate(existing_idx_body, expected_props):
+    if not isinstance(existing_idx_body, dict) or not existing_idx_body:
+        return True
+    idx_info = next(iter(existing_idx_body.values()), {})
+    idx_settings = idx_info.get("settings", {}).get("index", {})
+    if idx_settings.get("mode") != "lookup":
+        return True
+    cur_props = idx_info.get("mappings", {}).get("properties", {})
+    for k, exp_v in expected_props.items():
+        exp_t = exp_v.get("type")
+        if exp_t and k in cur_props:
+            cur_t = cur_props[k].get("type")
+            if cur_t and cur_t != exp_t:
+                return True
+    return False
+
+started_transforms = 0
 with zipfile.ZipFile(zip_path, "r") as z:
     names = z.namelist()
     # Ensure lookup ingest pipelines in ES match the package zip even on same-version re-uploads
@@ -577,7 +624,10 @@ with zipfile.ZipFile(zip_path, "r") as z:
             pipe_id = pipe_map.get(fname)
             if pipe_id:
                 pipe_cfg = yaml.safe_load(z.read(n).decode("utf-8"))
-                es_req("PUT", f"/_ingest/pipeline/{pipe_id}", pipe_cfg)
+                code, resp = es_req("PUT", f"/_ingest/pipeline/{pipe_id}", pipe_cfg)
+                if code >= 300:
+                    print(f"ERROR: Failed to install pipeline {pipe_id} (HTTP {code}): {resp}", file=sys.stderr)
+                    sys.exit(1)
         elif n.endswith("/data_stream/billing/elasticsearch/ingest_pipeline/default.yml"):
             pipe_cfg = yaml.safe_load(z.read(n).decode("utf-8"))
             procs = pipe_cfg.setdefault("processors", [])
@@ -588,6 +638,16 @@ with zipfile.ZipFile(zip_path, "r") as z:
                 {"pipeline": {"name": "metrics-chargeback_serverless.billing@custom", "ignore_missing_pipeline": True}},
             ])
             es_req("PUT", f"/_ingest/pipeline/metrics-chargeback_serverless.billing-{version}", pipe_cfg)
+        elif n.endswith("/data_stream/usage/elasticsearch/ingest_pipeline/default.yml"):
+            pipe_cfg = yaml.safe_load(z.read(n).decode("utf-8"))
+            procs = pipe_cfg.setdefault("processors", [])
+            procs.extend([
+                {"pipeline": {"name": "global@custom", "ignore_missing_pipeline": True}},
+                {"pipeline": {"name": "metrics@custom", "ignore_missing_pipeline": True}},
+                {"pipeline": {"name": "metrics-chargeback_serverless.integration@custom", "ignore_missing_pipeline": True}},
+                {"pipeline": {"name": "metrics-chargeback_serverless.usage@custom", "ignore_missing_pipeline": True}},
+            ])
+            es_req("PUT", f"/_ingest/pipeline/metrics-chargeback_serverless.usage-{version}", pipe_cfg)
 
     tf_files = [n for n in names if "/elasticsearch/transform/" in n and n.endswith("/transform.yml")]
     # Install primary transforms before dependent ones (realized_pool, proj_contrib)
@@ -605,34 +665,54 @@ with zipfile.ZipFile(zip_path, "r") as z:
             }
         fields_file = f"{base_dir}/fields/fields.yml"
         dest_idx = tf_cfg.get("dest", {}).get("index")
-        if dest_idx and fields_file in names:
-            fields_cfg = yaml.safe_load(z.read(fields_file).decode("utf-8"))
-            mapping_body = fields_to_mappings(fields_cfg)
-            code, _ = es_req("GET", f"/{dest_idx}")
-            if code == 404:
-                es_req("PUT", f"/{dest_idx}", mapping_body)
-            else:
-                es_req("PUT", f"/{dest_idx}/_mapping", mapping_body["mappings"])
-                dest_pipe = tf_cfg.get("dest", {}).get("pipeline")
-                if dest_pipe:
-                    es_req("PUT", f"/{dest_idx}/_settings", {"index": {"default_pipeline": dest_pipe}})
-
+        dest_pipe = tf_cfg.get("dest", {}).get("pipeline")
         tf_id = f"logs-chargeback_serverless.{tf_name}-default-{version}"
+
         # Stop and remove older versioned transforms for this transform name so stale pipelines do not overwrite lookup docs
         code_list, raw_list = es_req("GET", f"/_transform/logs-chargeback_serverless.{tf_name}-default-*")
         if code_list == 200 and isinstance(raw_list, dict):
-            try:
-                tfs = raw_list.get("transforms", [])
-                for old_tf in tfs:
-                    old_id = old_tf.get("id", "")
-                    if old_id and old_id != tf_id:
-                        es_req("POST", f"/_transform/{old_id}/_stop?force=true&wait_for_completion=true")
-                        es_req("DELETE", f"/_transform/{old_id}?force=true")
-            except Exception:
-                pass
+            for old_tf in raw_list.get("transforms", []):
+                old_id = old_tf.get("id", "")
+                if old_id and old_id != tf_id:
+                    es_req("POST", f"/_transform/{old_id}/_stop?force=true&wait_for_completion=true")
+                    es_req("DELETE", f"/_transform/{old_id}?force=true")
+
+        if dest_idx and fields_file in names:
+            fields_cfg = yaml.safe_load(z.read(fields_file).decode("utf-8"))
+            mapping_body = fields_to_mappings(fields_cfg, default_pipeline=dest_pipe)
+            # Install persistent index template so transform _reset / _start always recreates in lookup mode with exact mappings
+            tpl_body = {
+                "index_patterns": [dest_idx],
+                "priority": 500,
+                "template": mapping_body,
+            }
+            es_req("PUT", f"/_index_template/chargeback_serverless_lookup_{tf_name}", tpl_body)
+
+            code, idx_body = es_req("GET", f"/{dest_idx}")
+            if code == 404:
+                c_put, r_put = es_req("PUT", f"/{dest_idx}", mapping_body)
+                if c_put >= 300:
+                    print(f"ERROR: Failed to create lookup index {dest_idx} (HTTP {c_put}): {r_put}", file=sys.stderr)
+                    sys.exit(1)
+            elif needs_recreate(idx_body, mapping_body["mappings"]["properties"]):
+                print(f"  • Recreating {dest_idx} as lookup-mode index with keyword mappings...")
+                es_req("POST", f"/_transform/{tf_id}/_stop?force=true&wait_for_completion=true")
+                es_req("DELETE", f"/{dest_idx}")
+                c_put, r_put = es_req("PUT", f"/{dest_idx}", mapping_body)
+                if c_put >= 300:
+                    print(f"ERROR: Failed to recreate lookup index {dest_idx} (HTTP {c_put}): {r_put}", file=sys.stderr)
+                    sys.exit(1)
+            else:
+                es_req("PUT", f"/{dest_idx}/_mapping", mapping_body["mappings"])
+                if dest_pipe:
+                    es_req("PUT", f"/{dest_idx}/_settings", {"index": {"default_pipeline": dest_pipe}})
+
         code, existing_tf = es_req("GET", f"/_transform/{tf_id}")
         if code == 404:
-            es_req("PUT", f"/_transform/{tf_id}", tf_cfg)
+            c_tf, r_tf = es_req("PUT", f"/_transform/{tf_id}", tf_cfg)
+            if c_tf >= 300:
+                print(f"ERROR: Failed to create transform {tf_id} (HTTP {c_tf}): {r_tf}", file=sys.stderr)
+                sys.exit(1)
         else:
             cur_doc = (existing_tf.get("transforms") or [{}])[0]
             if (
@@ -643,12 +723,23 @@ with zipfile.ZipFile(zip_path, "r") as z:
             ):
                 es_req("POST", f"/_transform/{tf_id}/_stop?force=true&wait_for_completion=true")
                 es_req("DELETE", f"/_transform/{tf_id}?force=true")
-                es_req("PUT", f"/_transform/{tf_id}", tf_cfg)
+                c_tf, r_tf = es_req("PUT", f"/_transform/{tf_id}", tf_cfg)
+                if c_tf >= 300:
+                    print(f"ERROR: Failed to recreate transform {tf_id} (HTTP {c_tf}): {r_tf}", file=sys.stderr)
+                    sys.exit(1)
             else:
                 es_req("POST", f"/_transform/{tf_id}/_update", {k: tf_cfg[k] for k in ("source", "dest", "frequency", "description", "retention_policy", "_meta") if k in tf_cfg})
-        es_req("POST", f"/_transform/{tf_id}/_start")
-' || true
-echo "  ✓ Verified lookup index mappings and started 7 Fleet transforms ($VERSION, retention: $DATA_RETENTION)."
+        c_st, r_st = es_req("POST", f"/_transform/{tf_id}/_start")
+        if c_st >= 300:
+            print(f"ERROR: Failed to start transform {tf_id} (HTTP {c_st}): {r_st}", file=sys.stderr)
+            sys.exit(1)
+        started_transforms += 1
+
+if started_transforms < 7:
+    print(f"ERROR: Expected 7 Fleet transforms, only started {started_transforms}.", file=sys.stderr)
+    sys.exit(1)
+'
+echo "  ✓ Verified lookup index templates, mappings, and started 7 Fleet transforms ($VERSION, retention: $DATA_RETENTION)."
 
 apply_datastream_lifecycle() {
   local retention="${DATA_RETENTION:-365d}"
@@ -687,6 +778,12 @@ echo "  ✓ Applied Data Stream Lifecycle retention ($DATA_RETENTION) to Chargeb
 python3 "$REPO_ROOT/scripts/generate_dashboards.py" "$ASSETS_DIR/kibana" "/tmp/cbs_dashboards.ndjson" >/dev/null 2>&1 || true
 
 if [[ -f "/tmp/cbs_dashboards.ndjson" ]]; then
+  # Delete legacy index-pattern first so Kibana updates the title to metrics-chargeback_serverless.* cleanly
+  kbn_curl -o /dev/null -w '%{http_code}' \
+    -X DELETE "${KIBANA_URL%/}/api/saved_objects/index-pattern/chargeback_serverless-billing?force=true" \
+    -H "Authorization: ApiKey ${KIBANA_API_KEY}" \
+    -H "kbn-xsrf: true" >/dev/null 2>&1 || true
+
   SO_HTTP=$(kbn_curl -o /tmp/cbs-so-import.json -w '%{http_code}' \
     -X POST "${KIBANA_URL%/}/api/saved_objects/_import?overwrite=true" \
     -H "Authorization: ApiKey ${KIBANA_API_KEY}" \
@@ -704,32 +801,7 @@ if [[ "$SKIP_POLICY" -eq 0 ]]; then
   echo ""
   echo ">>> Step 5: Configuring Fleet Integration Policy ($ZIP_NAME)..."
 
-  # Find an agent policy or create one
-  AGENT_POLICIES_HTTP=$(kbn_curl -o /tmp/cbs-agent-policies.json -w '%{http_code}' \
-    -X GET "${KIBANA_URL%/}/api/fleet/agent_policies?perPage=50" \
-    -H "Authorization: ApiKey ${KIBANA_API_KEY}" \
-    -H "kbn-xsrf: true" || true)
-
-  AGENT_POLICY_ID=$(jq -r '(.items // .results // .)[0].id // empty' /tmp/cbs-agent-policies.json 2>/dev/null || true)
-
-  if [[ -z "$AGENT_POLICY_ID" ]]; then
-    echo "  No existing Agent Policy found in Fleet. Creating 'Fleet Serverless Policy'..."
-    CREATE_AP_HTTP=$(kbn_curl -o /tmp/cbs-ap-create.json -w '%{http_code}' \
-      -X POST "${KIBANA_URL%/}/api/fleet/agent_policies" \
-      -H "Authorization: ApiKey ${KIBANA_API_KEY}" \
-      -H "kbn-xsrf: true" \
-      -H "Content-Type: application/json" \
-      -d '{"name": "Fleet Serverless Policy", "namespace": "default"}' || true)
-    AGENT_POLICY_ID=$(jq -r '.item.id // .id // empty' /tmp/cbs-ap-create.json 2>/dev/null || true)
-    if [[ -z "$AGENT_POLICY_ID" ]]; then
-      echo "ERROR: Failed to find or create a Fleet Agent Policy (HTTP $CREATE_AP_HTTP)." >&2
-      cat /tmp/cbs-ap-create.json >&2
-      exit 1
-    fi
-  fi
-  echo "  ✓ Target Fleet Agent Policy: $AGENT_POLICY_ID"
-
-  # Check for existing package policy
+  # Check for existing package policy first so we can reuse its policy_id if already attached
   PKG_POLICIES_HTTP=$(kbn_curl -o /tmp/cbs-pkg-policies.json -w '%{http_code}' \
     -X GET "${KIBANA_URL%/}/api/fleet/package_policies?perPage=100" \
     -H "Authorization: ApiKey ${KIBANA_API_KEY}" \
@@ -742,18 +814,80 @@ if [[ "$SKIP_POLICY" -eq 0 ]]; then
     | .[0] // empty
   ' /tmp/cbs-pkg-policies.json 2>/dev/null || true)
 
-  export AGENT_POLICY_ID VERSION EXISTING_PKG_ID
-  PROJECT_KEYS_ARR="[]"
-  if [[ -n "${PROJECT_ID:-}" && -n "${SL_API_KEY:-}" ]]; then
-    PROJECT_KEYS_ARR="[\"${PROJECT_ID}:${SL_API_KEY}\"]"
+  EXISTING_PKG_POLICY_ID=$(jq -r --arg pkg "chargeback_serverless" '
+    (.items // .results // .)
+    | if type=="array" then . else [] end
+    | map(select(.package.name == $pkg or .name == $pkg) | .policy_id)
+    | .[0] // empty
+  ' /tmp/cbs-pkg-policies.json 2>/dev/null || true)
+
+  # Find or create a dedicated Fleet Agent Policy (never silently attach to an unrelated existing policy)
+  AGENT_POLICIES_HTTP=$(kbn_curl -o /tmp/cbs-agent-policies.json -w '%{http_code}' \
+    -X GET "${KIBANA_URL%/}/api/fleet/agent_policies?perPage=50" \
+    -H "Authorization: ApiKey ${KIBANA_API_KEY}" \
+    -H "kbn-xsrf: true" || true)
+
+  if [[ -n "${AGENT_POLICY_ID:-}" ]]; then
+    echo "  Using explicit AGENT_POLICY_ID: $AGENT_POLICY_ID"
+  elif [[ -n "$EXISTING_PKG_POLICY_ID" ]]; then
+    AGENT_POLICY_ID="$EXISTING_PKG_POLICY_ID"
+    echo "  Reusing existing Chargeback Serverless Agent Policy: $AGENT_POLICY_ID"
+  else
+    # Look for a dedicated Chargeback Serverless Policy or Fleet Serverless Policy first
+    DEDICATED_AP_ID=$(jq -r '
+      (.items // .results // .)
+      | if type=="array" then . else [] end
+      | map(select(.name == "Chargeback Serverless Policy" or .name == "Fleet Serverless Policy") | .id)
+      | .[0] // empty
+    ' /tmp/cbs-agent-policies.json 2>/dev/null || true)
+
+    if [[ -n "$DEDICATED_AP_ID" ]]; then
+      AGENT_POLICY_ID="$DEDICATED_AP_ID"
+    else
+      EXISTING_AP_COUNT=$(jq -r '(.items // .results // .) | if type=="array" then length else 0 end' /tmp/cbs-agent-policies.json 2>/dev/null || echo "0")
+      if [[ "$EXISTING_AP_COUNT" -gt 0 && -t 0 && "${NON_INTERACTIVE:-0}" != "1" ]]; then
+        echo ""
+        echo "  Existing Fleet Agent Policies in this project:"
+        jq -r '(.items // .results // .)[] | "    - \(.name) (id: \(.id))"' /tmp/cbs-agent-policies.json 2>/dev/null || true
+        echo ""
+        read -r -p "  Create dedicated 'Chargeback Serverless Policy' [ENTER], or type an existing Agent Policy ID to attach to: " USER_AP_CHOICE || true
+        USER_AP_CHOICE="${USER_AP_CHOICE// /}"
+        if [[ -n "$USER_AP_CHOICE" ]]; then
+          AGENT_POLICY_ID="$USER_AP_CHOICE"
+        fi
+      fi
+
+      if [[ -z "${AGENT_POLICY_ID:-}" ]]; then
+        echo "  Creating dedicated Agent Policy 'Chargeback Serverless Policy' (avoids disrupting existing policies)..."
+        CREATE_AP_HTTP=$(kbn_curl -o /tmp/cbs-ap-create.json -w '%{http_code}' \
+          -X POST "${KIBANA_URL%/}/api/fleet/agent_policies" \
+          -H "Authorization: ApiKey ${KIBANA_API_KEY}" \
+          -H "kbn-xsrf: true" \
+          -H "Content-Type: application/json" \
+          -d '{"name": "Chargeback Serverless Policy", "description": "Dedicated policy for Chargeback Serverless scheduled collection (enroll 1 Elastic Agent)", "namespace": "default"}' || true)
+        AGENT_POLICY_ID=$(jq -r '.item.id // .id // empty' /tmp/cbs-ap-create.json 2>/dev/null || true)
+        if [[ -z "$AGENT_POLICY_ID" ]]; then
+          echo "ERROR: Failed to create Fleet Agent Policy (HTTP $CREATE_AP_HTTP)." >&2
+          cat /tmp/cbs-ap-create.json >&2
+          exit 1
+        fi
+      fi
+    fi
   fi
-  export PROJECT_KEYS_ARR
+  echo "  ✓ Target Fleet Agent Policy: $AGENT_POLICY_ID"
+
+  export AGENT_POLICY_ID VERSION EXISTING_PKG_ID
+  PROJECT_KEYS_STR=""
+  if [[ -n "${PROJECT_ID:-}" && -n "${SL_API_KEY:-}" ]]; then
+    PROJECT_KEYS_STR="${PROJECT_ID}:${SL_API_KEY}"
+  fi
+  export PROJECT_KEYS_STR
 
   POLICY_PAYLOAD=$(python3 -c '
 import json, os, sys
 
 agent_policy_id = os.environ.get("AGENT_POLICY_ID", "")
-version = os.environ.get("VERSION", "0.2.0")
+version = os.environ.get("VERSION", "0.3.15")
 org_id = os.environ.get("ORGANIZATION_ID", "")
 cloud_api_key = os.environ.get("CLOUD_API_KEY", "") or os.environ.get("USAGE_API_KEY", "") or os.environ.get("BILLING_API_KEY", "")
 hub_es_api_key = os.environ.get("HUB_ES_API_KEY", "") or os.environ.get("ES_API_KEY", "")
@@ -763,19 +897,17 @@ currency_symbol = os.environ.get("CONF_CURRENCY_SYMBOL", "") or ""
 unit_rate = os.environ.get("CONF_RATE", "") or ""
 billing_api_base = os.environ.get("BILLING_API_BASE", "https://billing.elastic-cloud.com")
 cloud_api_base = os.environ.get("CLOUD_API_BASE", "https://api.elastic-cloud.com")
-
-proj_keys_raw = os.environ.get("PROJECT_KEYS_ARR", "[]")
-try:
-    proj_keys = json.loads(proj_keys_raw)
-except Exception:
-    proj_keys = []
+proj_keys_str = os.environ.get("PROJECT_KEYS_STR", "").strip()
 
 existing_json_file = "/tmp/cbs-pkg-policies.json"
 existing_pkg_id = os.environ.get("EXISTING_PKG_ID", "")
 policy_name = "chargeback_serverless"
+
+# Always pass plain string secret values when updating/creating so Fleet never fails with
+# "inputs.cel.vars.project_api_keys: Secret reference is invalid" on re-runs.
 cloud_secret_val = { "value": str(cloud_api_key), "type": "password" }
 hub_secret_val = { "value": str(hub_es_api_key), "type": "password" }
-proj_secret_val = { "value": proj_keys, "type": "password" }
+proj_secret_val = { "value": str(proj_keys_str), "type": "password" }
 
 if existing_pkg_id and os.path.exists(existing_json_file):
     try:
@@ -790,22 +922,13 @@ if existing_pkg_id and os.path.exists(existing_json_file):
                 if isinstance(old_inputs, list):
                     for inp in old_inputs:
                         old_vars = inp.get("vars", {})
-                        old_cloud = old_vars.get("cloud_api_key", {}).get("value")
-                        if isinstance(old_cloud, dict) and old_cloud.get("isSecretRef") and (not cloud_api_key or os.environ.get("KEEP_CLOUD_SECRET_REF")):
-                            cloud_secret_val = { "value": old_cloud, "type": "password" }
-                        old_hub = old_vars.get("hub_es_api_key", {}).get("value")
-                        if isinstance(old_hub, dict) and old_hub.get("isSecretRef") and (not hub_es_api_key or os.environ.get("KEEP_HUB_SECRET_REF")):
-                            hub_secret_val = { "value": old_hub, "type": "password" }
                         old_keys = old_vars.get("project_api_keys", {}).get("value")
-                        if old_keys and not os.environ.get("FORCE_PROJECT_KEYS"):
-                            if isinstance(old_keys, dict) and old_keys.get("isSecretRef"):
-                                proj_secret_val = { "value": old_keys, "type": "password" }
-                            else:
-                                merged_keys = list(old_keys) if isinstance(old_keys, list) else [old_keys]
-                                for pk in proj_keys:
-                                    if pk not in merged_keys:
-                                        merged_keys.append(pk)
-                                proj_secret_val = { "value": merged_keys, "type": "password" }
+                        # Only merge non-secret-ref plain strings/lists; never forward stale isSecretRef objects
+                        if old_keys and not isinstance(old_keys, dict) and not os.environ.get("FORCE_PROJECT_KEYS"):
+                            existing_list = [k.strip() for k in (old_keys if isinstance(old_keys, list) else str(old_keys).split(",")) if str(k).strip()]
+                            if proj_keys_str and proj_keys_str not in existing_list:
+                                existing_list.append(proj_keys_str)
+                            proj_secret_val = { "value": ",".join(existing_list), "type": "password" }
                         if not os.environ.get("CONF_RATE_UNIT"):
                             old_unit = old_vars.get("currency_unit", {}).get("value")
                             if old_unit:
@@ -829,10 +952,11 @@ if not unit_rate:
     unit_rate = "1.0"
 
 try:
+    sq = chr(39)
     with open("/tmp/cbs_currency.env", "w") as ef:
-        print(f"export CONF_RATE='{unit_rate}'", file=ef)
-        print(f"export CONF_RATE_UNIT='{currency_unit}'", file=ef)
-        print(f"export CONF_CURRENCY_SYMBOL='{currency_symbol}'", file=ef)
+        print(f"export CONF_RATE={sq}{unit_rate}{sq}", file=ef)
+        print(f"export CONF_RATE_UNIT={sq}{currency_unit}{sq}", file=ef)
+        print(f"export CONF_CURRENCY_SYMBOL={sq}{currency_symbol}{sq}", file=ef)
 except Exception:
     pass
 
@@ -891,6 +1015,22 @@ print(json.dumps(payload))
       -H "kbn-xsrf: true" \
       -H "Content-Type: application/json" \
       -d "$POLICY_PAYLOAD" || true)
+
+    # If PUT fails due to a stale Fleet secret reference or schema change from an earlier version,
+    # automatically delete and recreate the package policy cleanly.
+    if [[ "$PKG_SAVE_HTTP" != "200" && "$PKG_SAVE_HTTP" != "201" ]]; then
+      echo "  • Existing package policy update returned HTTP $PKG_SAVE_HTTP; recreating package policy cleanly..."
+      kbn_curl -o /dev/null -w '%{http_code}' \
+        -X DELETE "${KIBANA_URL%/}/api/fleet/package_policies/${EXISTING_PKG_ID}" \
+        -H "Authorization: ApiKey ${KIBANA_API_KEY}" \
+        -H "kbn-xsrf: true" >/dev/null 2>&1 || true
+      PKG_SAVE_HTTP=$(kbn_curl -o /tmp/cbs-pkg-save.json -w '%{http_code}' \
+        -X POST "${KIBANA_URL%/}/api/fleet/package_policies" \
+        -H "Authorization: ApiKey ${KIBANA_API_KEY}" \
+        -H "kbn-xsrf: true" \
+        -H "Content-Type: application/json" \
+        -d "$POLICY_PAYLOAD" || true)
+    fi
   else
     echo "  Creating new package policy 'chargeback_serverless'..."
     PKG_SAVE_HTTP=$(kbn_curl -o /tmp/cbs-pkg-save.json -w '%{http_code}' \
@@ -955,25 +1095,18 @@ if [[ "$SKIP_COLLECTOR" -eq 0 ]]; then
     | jq -r '.transforms[]?.id // empty' 2>/dev/null || true)
   for tf_id in $ACTIVE_TF; do
     [[ -z "$tf_id" ]] && continue
-    es_curl -sS -X POST "${ES_URL%/}/_transform/${tf_id}/_stop?force=true&wait_for_completion=true" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
-    es_curl -sS -X POST "${ES_URL%/}/_transform/${tf_id}/_reset?force=true" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
     es_curl -sS -X POST "${ES_URL%/}/_transform/${tf_id}/_start" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
     es_curl -sS -X POST "${ES_URL%/}/_transform/${tf_id}/_schedule_now" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
   done
-  sleep 18
-  es_curl -sS -X POST "${ES_URL%/}/serverless_*_lookup/_refresh" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
-  echo "  • Waiting 10s for downstream transform sync window (realized_pool & proj_contrib)..."
   sleep 10
+  es_curl -sS -X POST "${ES_URL%/}/serverless_*_lookup/_refresh" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
+  echo "  • Waiting 8s for downstream transform sync window (realized_pool & proj_contrib)..."
+  sleep 8
   for tf_id in $ACTIVE_TF; do
     [[ -z "$tf_id" ]] && continue
-    if [[ "$tf_id" == *"realized_pool"* || "$tf_id" == *"proj_contrib"* ]]; then
-      es_curl -sS -X POST "${ES_URL%/}/_transform/${tf_id}/_stop?force=true&wait_for_completion=true" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
-      es_curl -sS -X POST "${ES_URL%/}/_transform/${tf_id}/_reset?force=true" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
-      es_curl -sS -X POST "${ES_URL%/}/_transform/${tf_id}/_start" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
-    fi
     es_curl -sS -X POST "${ES_URL%/}/_transform/${tf_id}/_schedule_now" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
   done
-  sleep 10
+  sleep 8
   es_curl -sS -X POST "${ES_URL%/}/serverless_*_lookup/_refresh" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
 else
   echo ""

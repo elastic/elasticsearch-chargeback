@@ -56,8 +56,11 @@ elasticsearch-chargeback/
 
 ## Quick Installation Guides
 
+> [!IMPORTANT]
+> **Users vs. Developers**: To install any integration in this repository, **you do NOT need the `elastic/integrations` repository or `elastic-package` CLI**. Each solution ships with a prebuilt `.zip` package under `assets/dist/` that you can upload directly in Kibana (**Management → Integrations → Upload integration**). For **Chargeback Serverless**, you can either upload [`integrations/chargeback-serverless/assets/dist/chargeback_serverless-0.3.15.zip`](integrations/chargeback-serverless/assets/dist/chargeback_serverless-0.3.15.zip) in Kibana and run [`python3 scripts/run_chargeback_serverless_collector.py`](scripts/run_chargeback_serverless_collector.py) to backfill historical data, or run [`./scripts/deploy_chargeback_serverless.sh`](scripts/deploy_chargeback_serverless.sh) (which uses the prebuilt `.zip` by default without building). Building from `elastic/integrations` (`--build`) is only for developers modifying package source files.
+
 1. **Elastic Cloud Hosted**: Follow the [Chargeback Installation Instructions](integrations/chargeback/Instructions.md). Current release: `0.5.0` in [`integrations/chargeback/assets/dist/0.5.0/`](integrations/chargeback/assets/dist/0.5.0/).
-2. **Elastic Cloud Serverless**: Follow the [Chargeback Serverless Instructions](integrations/chargeback-serverless/Instructions.md) or deploy automatically with [`scripts/deploy_chargeback_serverless.sh`](scripts/deploy_chargeback_serverless.sh).
+2. **Elastic Cloud Serverless**: Follow the [Chargeback Serverless Instructions](integrations/chargeback-serverless/Instructions.md) (upload [`chargeback_serverless-0.3.15.zip`](integrations/chargeback-serverless/assets/dist/chargeback_serverless-0.3.15.zip) in Kibana + run [`scripts/run_chargeback_serverless_collector.py`](scripts/run_chargeback_serverless_collector.py), or deploy end-to-end with [`scripts/deploy_chargeback_serverless.sh`](scripts/deploy_chargeback_serverless.sh)).
 3. **On-Premises Clusters**: Follow the [On-Premises Billing Instructions](integrations/onprem-billing/Instructions.md) to install `onprem_billing` and configure ERU rate pipelines.
 4. **FinOps Companion Agent**: Run [`scripts/install_chargeback_agent.sh`](scripts/install_chargeback_agent.sh) and see [`agents/companion-agent/Instructions.md`](agents/companion-agent/Instructions.md).
 

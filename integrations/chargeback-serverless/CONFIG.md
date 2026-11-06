@@ -4,16 +4,26 @@ Use this reference to configure the **Chargeback Serverless (`chargeback_serverl
 
 ## Single unified Elastic Cloud API key
 
-Chargeback Serverless requires **one** Elastic Cloud API key (`cloud_api_key`) to collect organization billing records (including deleted projects and deployments), discover active Serverless projects, and harvest per-project usage telemetry.
+Chargeback Serverless requires **one** Elastic Cloud API key (`cloud_api_key`) inside the Fleet integration policy to collect organization billing records (including deleted Serverless projects), discover active Serverless projects, and harvest per-project usage telemetry.
 
 ### Create the API key in Elastic Cloud Console
 
-1. Sign in to the [Elastic Cloud Console API keys page](https://cloud.elastic.co/deployment-features/keys) and click **Create API key**.
+1. Sign in to the [Elastic Cloud Console API keys page](https://cloud.elastic.co/deployment-features/keys) (**Organization → API keys**) and click **Create API key**.
 2. Enter a descriptive name (for example, `chargeback-serverless-collector`) and select an expiration period.
-3. Under **Assign roles**, turn on both of the following toggles:
-   - **Billing admin**: Grants access to organization invoices, hourly SKU costs, and `/api/v1/billing/organization/{organization_id}/history` so the collector captures costs from both active and deleted deployments and Serverless projects.
-   - **Cloud resource access**: Select **All resources** (or the specific Serverless projects you want to monitor) and choose **`Cloud, Elasticsearch, and Kibana API`** so the same key can list Serverless projects and read `_resolve/index/*`, `_cat/indices`, `.inference`, and `.synthetics-monitors-*` across projects.
+3. Configure both organization and project-level access:
+   - **Organization role**: Select **`Billing Admin`**. This grants access to organization invoices, hourly SKU costs, and `/api/v1/billing/organization/{organization_id}/history` so the collector captures costs from both active and deleted Serverless projects.
+   - **Enable access to Cloud resources**: Toggle **ON**, select **All projects** (or the specific Serverless projects you want to monitor), and in the separate per-project-type **Roles / API Access** dropdowns configure **`Elasticsearch`**, **`Observability`**, and **`Security`** (`Admin`) so the same key can list Serverless projects and read `_resolve/index/*`, `_cat/indices`, `_ml/trained_models/_stats`, `_inference`, and `.ds-synthetics-*` across projects.
 4. Click **Create API key** and copy the key value.
+
+### Hub project API keys for the deployment & backfill scripts
+
+When running [`scripts/deploy_chargeback_serverless.sh`](../../scripts/deploy_chargeback_serverless.sh) or [`scripts/run_chargeback_serverless_collector.py`](../../scripts/run_chargeback_serverless_collector.py) from the CLI, the scripts also authenticate directly to your Serverless FinOps hub project's Elasticsearch (`ES_URL`) and Kibana (`KIBANA_URL`) endpoints using `ES_API_KEY` and `KIBANA_API_KEY`:
+- In Kibana on your Serverless hub project, navigate to **Management → Security → API keys → Create API key** and copy the encoded Base64 API key.
+- Store it in macOS Keychain for both `ES_API_KEY` and `KIBANA_API_KEY`:
+  ```bash
+  ./scripts/keychain.sh set ES_API_KEY
+  ./scripts/keychain.sh set KIBANA_API_KEY
+  ```
 
 ---
 
@@ -32,7 +42,8 @@ Configure these fields in Kibana under **Management → Integrations → Chargeb
 | **Initial Billing Lookbehind Days** | `initial_lookbehind_days` | No | `60` | Number of historical UTC days (`1`–`90`) to backfill on the first billing collection run. |
 
 > [!NOTE]
-> Advanced override fields (`hub_es_api_key` and `project_api_keys`) are hidden by default (`show_user: false` in `manifest.yml`) because `cloud_api_key` handles both organization billing and per-project usage harvesting when created with **Billing admin** and **Cloud resource access** (`Cloud, Elasticsearch, and Kibana API`).
+> - **Hidden override fields (`hub_es_api_key` and `project_api_keys`)**: Hidden by default (`show_user: false`, `multi: false` comma-separated string in `manifest.yml`) because `cloud_api_key` handles both organization billing and per-project usage harvesting when created with **Billing Admin** and **Cloud resource access** across `Elasticsearch`, `Observability`, and `Security` projects.
+> - **Serverless-only billing scope**: Both the Elastic Agent CEL streams and `run_chargeback_serverless_collector.py` automatically filter out Elastic Cloud Hosted (ECH) deployment SKUs (`Cloud-Enterprise_*`, `.es.datahot`, `.es.kibana`, etc.) so Hosted deployments do not inflate unallocatable `other` spend on Serverless dashboards. For Elastic Cloud Hosted clusters, use the [Hosted Chargeback integration](../chargeback/README.md) (or set `INCLUDE_HOSTED_BILLING=1` when running `run_chargeback_serverless_collector.py` if you intentionally want Hosted line items included).
 
 ---
 

@@ -1,49 +1,76 @@
-# Local Testing Scripts
+# Deployment, Backfill, and Testing Scripts
 
-Scripts for running Chargeback integration tests locally. **Use the automated E2E script** for full install and verification.
+Scripts for deploying Chargeback integrations, backfilling historical Serverless billing and usage data, and running local E2E developer tests.
 
-## Prerequisites
+## Prerequisites: Users vs. Developers
 
-- **elastic-package** (e.g. `go install github.com/elastic/elastic-package` or use from the integrations repo: `go run github.com/elastic/elastic-package`)
-- **integrations** repo (sibling of `elasticsearch-chargeback`, or set `INTEGRATIONS_REPO`)
-- **jq** (for billing doc patch so `total_ecu` and `deployment_tags` are correct in evidence)
-- **Docker** (4GB+ memory). Stack: Elasticsearch 9.2+ (for ES|QL LOOKUP JOIN), Kibana, Package Registry
+### For Users (Installing & Backfilling Prebuilt Packages)
+You do **not** need the `elastic/integrations` repository, `elastic-package`, or Docker to deploy or backfill Chargeback Serverless:
+- **Prebuilt package `.zip`**: Included in the repository at [`../integrations/chargeback-serverless/assets/dist/chargeback_serverless-0.3.15.zip`](../integrations/chargeback-serverless/assets/dist/chargeback_serverless-0.3.15.zip).
+- **`curl`**, **`jq`**, and **`python3` (`3.9+`) with `PyYAML`**:
+  - On macOS with Homebrew Python (PEP 668 `externally-managed-environment`), create a virtual environment before running `deploy_chargeback_serverless.sh`:
+    ```bash
+    python3 -m venv .venv
+    source .venv/bin/activate
+    pip install pyyaml
+    ```
+
+### For Developers (Rebuilding `.zip` Packages & Running Local Stack E2E Tests)
+Required **only** when editing integration package templates and building new `.zip` archives (`--build`) or running `run_e2e_tests.sh`:
+- **`elastic/integrations` repo** (sibling of `elasticsearch-chargeback`, or set `INTEGRATIONS_REPO`)
+- **`elastic-package`** (`go install github.com/elastic/elastic-package@latest`)
+- **Docker** (4GB+ memory) for local stack E2E tests (`run_e2e_tests.sh`)
 
 ---
 
-## Chargeback Serverless (Native Fleet & CEL Deployment)
+## Chargeback Serverless (`0.3.15` — User Deployment & Backfill)
 
-For deploying and verifying the **native Chargeback Serverless hub integration** (`chargeback_serverless` package 0.2.0+ with Elastic Agent CEL scheduled data streams, Fleet package policy automation, and least-privileged harvesting keys):
+For deploying and backfilling the **Chargeback Serverless hub integration** ([`chargeback_serverless-0.3.15.zip`](../integrations/chargeback-serverless/assets/dist/chargeback_serverless-0.3.15.zip)):
 
 ```bash
-# Full E2E deployment to test env (uses macOS Keychain or prompts for credentials)
+# 1. Activate a Python venv with PyYAML (required by deploy_chargeback_serverless.sh)
+python3 -m venv .venv
+source .venv/bin/activate
+pip install pyyaml
+
+# 2. Deploy prebuilt dist/chargeback_serverless-0.3.15.zip, create dedicated Fleet policy,
+#    provision lookup-mode indices & 7 transforms, and run the Python backfill collector:
 ./scripts/deploy_chargeback_serverless.sh
 
-# Fast deployment skipping build step (uses existing package zip in dist/)
-./scripts/deploy_chargeback_serverless.sh --skip-build
+# Or if you already uploaded chargeback_serverless-0.3.15.zip in the Kibana UI,
+# run the standalone Python collector directly (never builds a zip):
+source scripts/keychain.sh
+python3 scripts/run_chargeback_serverless_collector.py
 
 # Upload package without creating/updating Fleet package policy
 ./scripts/deploy_chargeback_serverless.sh --skip-policy
 
-# Verification and health check only (prints data stream counts & recent ES|QL ingestion status)
+# Verification and health check only (prints data stream & lookup counts + ES|QL checks)
 ./scripts/deploy_chargeback_serverless.sh --verify-only
+
+# DEVELOPER ONLY: Rebuild package zip from elastic/integrations before deploying
+./scripts/deploy_chargeback_serverless.sh --build
 ```
 
 Modular components:
-- [`keychain.sh`](keychain.sh): macOS Keychain credential manager. Securely stores, loads, lists, and manages environment variables in Keychain (`elasticsearch-chargeback` service) instead of plaintext `.env`.
-- [`deploy_chargeback_serverless.sh`](deploy_chargeback_serverless.sh): Orchestrates dashboard generation, `elastic-package build`, Fleet package upload, Fleet package policy creation/update, and data stream verification queries.
-- [`configure_chargeback_serverless.sh`](configure_chargeback_serverless.sh): Updates the Fleet package policy settings (Cloud Org ID, Cloud API key, Hub ES API key, remote project harvesting keys, currency rates) via Kibana Fleet API with zero plaintext secret indices.
-- [`install_chargeback_serverless.sh`](install_chargeback_serverless.sh): Legacy installer (deprecated in v0.2.0 in favor of native Fleet EPM and `deploy_chargeback_serverless.sh`).
+- [`keychain.sh`](keychain.sh): macOS Keychain credential manager. Securely stores, loads, lists, and manages environment variables in Keychain (`elasticsearch-chargeback` service) instead of a plaintext `.env`.
+- [`deploy_chargeback_serverless.sh`](deploy_chargeback_serverless.sh): Installs the prebuilt `chargeback_serverless-0.3.15.zip` (unless `--build` is passed), installs persistent `mode: lookup` index templates and starts all 7 Fleet transforms, creates/updates a dedicated `'Chargeback Serverless Policy'` in Fleet, runs `run_chargeback_serverless_collector.py`, and verifies all lookup indices and dashboards.
+- [`run_chargeback_serverless_collector.py`](run_chargeback_serverless_collector.py): Standalone Python collector (stdlib only) that backfills up to 60 days of Serverless billing and per-project data stream, AI model, and Synthetics telemetry and refreshes the 7 `serverless_*_lookup` indices.
+- [`configure_chargeback_serverless.sh`](configure_chargeback_serverless.sh): Updates the Fleet package policy settings (Cloud Org ID, unified Cloud API key, optional overrides, currency rates) on a dedicated `'Chargeback Serverless Policy'` via Kibana Fleet API with zero plaintext secret indices.
+- [`install_chargeback_serverless.sh`](install_chargeback_serverless.sh): Legacy installer (deprecated in favor of native Fleet EPM and `deploy_chargeback_serverless.sh`).
 
 ### Managing Credentials with macOS Keychain
 
-Instead of storing credentials in a plaintext `.env` file, credentials can be stored in the macOS Keychain:
+Instead of storing credentials in a plaintext `.env` file, store all required credentials in the macOS Keychain:
 
 ```bash
-# Store or update a credential (prompts securely for value)
-./scripts/keychain.sh set BILLING_API_KEY
-./scripts/keychain.sh set USAGE_API_KEY
+# Store required credentials for Chargeback Serverless (prompts securely when value is omitted)
 ./scripts/keychain.sh set ORGANIZATION_ID 2001809318
+./scripts/keychain.sh set CLOUD_API_KEY
+./scripts/keychain.sh set ES_URL "https://<your-hub-project>.es.<region>.<csp>.elastic.cloud"
+./scripts/keychain.sh set ES_API_KEY
+./scripts/keychain.sh set KIBANA_URL "https://<your-hub-project>.kb.<region>.<csp>.elastic.cloud"
+./scripts/keychain.sh set KIBANA_API_KEY
 
 # List stored credentials
 ./scripts/keychain.sh list

@@ -149,13 +149,18 @@ for inp in inputs:
         vars_dict["unit_rate"] = {"value": str(unit_rate), "type": "text"}
 
     if pid and pkey:
-        curr_keys = vars_dict.get("project_api_keys", {}).get("value", [])
-        if isinstance(curr_keys, str):
-            curr_keys = [curr_keys]
+        curr_keys = vars_dict.get("project_api_keys", {}).get("value", "")
+        if isinstance(curr_keys, dict):
+            curr_keys = ""
+        elif isinstance(curr_keys, list):
+            curr_keys = ",".join(str(x).strip() for x in curr_keys if str(x).strip())
+        existing_list = [x.strip() for x in str(curr_keys).split(",") if x.strip()]
         new_entry = f"{pid}:{pkey}"
-        if new_entry not in curr_keys:
-            curr_keys.append(new_entry)
-        vars_dict["project_api_keys"] = {"value": curr_keys, "type": "password"}
+        if new_entry not in existing_list:
+            existing_list.append(new_entry)
+        vars_dict["project_api_keys"] = {"value": ",".join(existing_list), "type": "password"}
+    elif isinstance(vars_dict.get("project_api_keys", {}).get("value"), (list, dict)):
+        vars_dict["project_api_keys"] = {"value": "", "type": "password"}
 
     for s in inp.get("streams", []):
         if s.get("data_stream", {}).get("dataset") == "chargeback_serverless.billing":
@@ -182,6 +187,20 @@ print(json.dumps(clean_payload))
       -H "kbn-xsrf: true" \
       -H "Content-Type: application/json" \
       -d "$UPDATED_POLICY_PAYLOAD" || true)
+
+    if [[ "$SAVE_HTTP" != "200" && "$SAVE_HTTP" != "201" ]]; then
+      echo "  • Package policy PUT returned HTTP $SAVE_HTTP; recreating package policy cleanly..."
+      kbn_curl -o /dev/null -w '%{http_code}' \
+        -X DELETE "${KIBANA_URL%/}/api/fleet/package_policies/${PKG_ID}" \
+        -H "Authorization: ApiKey ${KIBANA_API_KEY}" \
+        -H "kbn-xsrf: true" >/dev/null 2>&1 || true
+      SAVE_HTTP=$(kbn_curl -o /tmp/cbs-conf-save.json -w '%{http_code}' \
+        -X POST "${KIBANA_URL%/}/api/fleet/package_policies" \
+        -H "Authorization: ApiKey ${KIBANA_API_KEY}" \
+        -H "kbn-xsrf: true" \
+        -H "Content-Type: application/json" \
+        -d "$UPDATED_POLICY_PAYLOAD" || true)
+    fi
 
     if [[ "$SAVE_HTTP" == "200" || "$SAVE_HTTP" == "201" ]]; then
       echo "  ✓ Fleet package policy '$PKG_ID' updated securely."

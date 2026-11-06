@@ -1106,12 +1106,18 @@ AI_MODELS_TEMPLATE = f"""\
 {{% if max_time <= 0 %}}{{% assign max_time = 1.0 %}}{{% endif %}}
 {{% assign tot_compute = 0.0 %}}
 {{% assign tot_inferences = 0 %}}
+{{% assign tot_attr_cost = 0.0 %}}
+{{% assign max_attr_cost = 0.0 %}}
 {{% for r in rows %}}
   {{% assign tc = r["total_compute"].value | default: 0 %}}
   {{% assign tot_compute = tot_compute | plus: tc %}}
   {{% assign ti = r["total_inf"].value | default: 0 %}}
   {{% assign tot_inferences = tot_inferences | plus: ti %}}
+  {{% assign ac = r["attributed_cost"].value | default: 0.0 %}}
+  {{% assign tot_attr_cost = tot_attr_cost | plus: ac %}}
+  {{% if ac > max_attr_cost %}}{{% assign max_attr_cost = ac %}}{{% endif %}}
 {{% endfor %}}
+{{% if max_attr_cost <= 0 %}}{{% assign max_attr_cost = 1.0 %}}{{% endif %}}
 
 {paged_top("aimod", 10, 6)}
 <div class="cb-model-list">
@@ -1132,16 +1138,6 @@ AI_MODELS_TEMPLATE = f"""\
   {{% assign c_time = r["total_compute"].value | default: 0 %}}
   {{% assign calls = r["total_inf"].value | default: 0 %}}
   {{% assign lat_ms = r["avg_latency"].value | default: 0.0 | round: 1 %}}
-  {{% if max_time > 1 and tot_compute > 0 %}}
-    {{% assign bar_w = c_time | times: 100.0 | divided_by: max_time | round: 1 %}}
-    {{% assign share_pct = c_time | times: 100.0 | divided_by: tot_compute | round: 1 %}}
-  {{% elsif tot_inferences > 0 %}}
-    {{% assign bar_w = calls | times: 100.0 | divided_by: tot_inferences | round: 1 %}}
-    {{% assign share_pct = calls | times: 100.0 | divided_by: tot_inferences | round: 1 %}}
-  {{% else %}}
-    {{% assign bar_w = 0.0 %}}
-    {{% assign share_pct = 0.0 %}}
-  {{% endif %}}
   {{% assign cost = r["attributed_cost"].value | default: 0.0 %}}
   {{% if cost <= 0.0 %}}
     {{% assign p_cost = r["ai_pool"].value | default: 0.0 %}}
@@ -1149,7 +1145,22 @@ AI_MODELS_TEMPLATE = f"""\
       {{% assign cost = c_time | times: p_cost | divided_by: tot_compute %}}
     {{% elsif tot_inferences > 0 %}}
       {{% assign cost = calls | times: p_cost | divided_by: tot_inferences %}}
+    {{% elsif _total_items > 0 and p_cost > 0 %}}
+      {{% assign cost = p_cost | divided_by: _total_items %}}
     {{% endif %}}
+  {{% endif %}}
+  {{% if max_time > 1 and tot_compute > 0 %}}
+    {{% assign bar_w = c_time | times: 100.0 | divided_by: max_time | round: 1 %}}
+    {{% assign share_pct = c_time | times: 100.0 | divided_by: tot_compute | round: 1 %}}
+  {{% elsif tot_inferences > 0 %}}
+    {{% assign bar_w = calls | times: 100.0 | divided_by: tot_inferences | round: 1 %}}
+    {{% assign share_pct = calls | times: 100.0 | divided_by: tot_inferences | round: 1 %}}
+  {{% elsif tot_attr_cost > 0 %}}
+    {{% assign bar_w = cost | times: 100.0 | divided_by: max_attr_cost | round: 1 %}}
+    {{% assign share_pct = cost | times: 100.0 | divided_by: tot_attr_cost | round: 1 %}}
+  {{% else %}}
+    {{% assign bar_w = 0.0 %}}
+    {{% assign share_pct = 0.0 %}}
   {{% endif %}}
   {liquid_money_block("calls", "fmt_calls", with_decimals=False)}
   {liquid_money_block("cost", "fmt_cost", with_decimals=True)}
@@ -3241,12 +3252,11 @@ CONFIG_UNIFIED_TEMPLATE = f"""\
       </div>
       <p class="cb-cfg-card-desc">In <strong>Cloud Console &rarr; Organization &rarr; API keys</strong>, create a single key with both roles enabled:</p>
       <pre class="cb-cfg-code"># Assign Roles in Cloud Console:
-1. Billing admin:          ON (✓)
-   (Required to see deleted projects &amp; deployments)
-
-2. Cloud resource access:  ON (✓)
-   Resources: All projects
-   Access:    Cloud, Elasticsearch, and Kibana API</pre>
+1. Organization role:     Billing Admin (✓)
+2. Cloud resource access: ON (✓) &rarr; All projects
+   • Elasticsearch:       Admin / Full API access
+   • Observability:       Admin / Full API access
+   • Security:            Admin / Full API access</pre>
       <div class="cb-cfg-card-foot">
         <span>🔑 One key unlocks Billing, Control Plane, and ES Data Plane</span>
       </div>
@@ -3530,8 +3540,9 @@ def build_billing() -> dict:
 | EVAL alloc_cost = CASE(COALESCE(is_allocatable, false) == true AND allocation_driver != "none", cost, 0.0)
 | EVAL unalloc_cost = CASE(COALESCE(is_allocatable, false) == false OR allocation_driver == "none", cost, 0.0)
 | EVAL day = DATE_TRUNC(1 day, ts)
+| EVAL billed_pid = CASE(cost > 0, project_id, null)
 | EVAL active_pid = CASE(cost > 0 AND COALESCE(last_status, "") != "inactive" AND COALESCE(optimized_for, "") != "decommissioned", project_id, null)
-| STATS total_spend = SUM(cost), allocatable_spend = SUM(alloc_cost), unallocatable_spend = SUM(unalloc_cost), project_count = COUNT_DISTINCT(project_id), active_project_count = COUNT_DISTINCT(active_pid), days_count = COUNT_DISTINCT(day), billed_days = COUNT_DISTINCT(day), latest_day = TO_STRING(MAX(ts)), currency_symbol = MAX(currency_symbol), unit = MAX(unit)""",
+| STATS total_spend = SUM(cost), allocatable_spend = SUM(alloc_cost), unallocatable_spend = SUM(unalloc_cost), project_count = CASE(COUNT_DISTINCT(billed_pid) > 0, COUNT_DISTINCT(billed_pid), COUNT_DISTINCT(project_id)), active_project_count = COUNT_DISTINCT(active_pid), days_count = COUNT_DISTINCT(day), billed_days = COUNT_DISTINCT(day), latest_day = TO_STRING(MAX(ts)), currency_symbol = MAX(currency_symbol), unit = MAX(unit)""",
         0,
         2,
         48,
@@ -3999,8 +4010,8 @@ def build_ai() -> dict:
 | EVAL model_weight = CASE(compute_time > 0.0, compute_time, TO_DOUBLE(inference_count))
 | EVAL ai_ecu_val = CASE(ai_ecu IS NOT NULL, ai_ecu, 0.0), qry_ecu_val = CASE(query_ecu IS NOT NULL, query_ecu, 0.0)
 | EVAL ai_pool_cost = CASE(ai_ecu_val > 0.0, ai_ecu_val, qry_ecu_val) * rate
-| INLINE STATS day_proj_weight = SUM(model_weight) BY composite_key
-| EVAL day_model_cost = CASE(day_proj_weight > 0, (model_weight / day_proj_weight) * ai_pool_cost, 0.0)
+| INLINE STATS day_proj_weight = SUM(model_weight), day_proj_models = COUNT(model_id) BY composite_key
+| EVAL day_model_cost = CASE(day_proj_weight > 0.0, (model_weight / day_proj_weight) * ai_pool_cost, day_proj_models > 0, ai_pool_cost / TO_DOUBLE(day_proj_models), 0.0)
 | STATS cost = SUM(day_model_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY b = DATE_TRUNC(1 day, @timestamp), model_id
 | EVAL day = TO_STRING(b)
 | INLINE STATS day_cost = SUM(cost) BY day
@@ -4029,8 +4040,8 @@ def build_ai() -> dict:
 | EVAL model_weight = CASE(compute_time > 0.0, compute_time, TO_DOUBLE(inference_count))
 | EVAL ai_ecu_val = CASE(ai_ecu IS NOT NULL, ai_ecu, 0.0), qry_ecu_val = CASE(query_ecu IS NOT NULL, query_ecu, 0.0)
 | EVAL ai_pool_cost = CASE(ai_ecu_val > 0.0, ai_ecu_val, qry_ecu_val) * rate
-| INLINE STATS day_proj_weight = SUM(model_weight) BY composite_key
-| EVAL day_model_cost = CASE(day_proj_weight > 0, (model_weight / day_proj_weight) * ai_pool_cost, 0.0)
+| INLINE STATS day_proj_weight = SUM(model_weight), day_proj_models = COUNT(model_id) BY composite_key
+| EVAL day_model_cost = CASE(day_proj_weight > 0.0, (model_weight / day_proj_weight) * ai_pool_cost, day_proj_models > 0, ai_pool_cost / TO_DOUBLE(day_proj_models), 0.0)
 | EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "unknown")
 | STATS cost = SUM(day_model_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project
 | SORT cost DESC
@@ -4061,11 +4072,11 @@ def build_ai() -> dict:
 | EVAL model_weight = CASE(compute_time > 0.0, compute_time, TO_DOUBLE(inference_count))
 | EVAL ai_ecu_val = CASE(ai_ecu IS NOT NULL, ai_ecu, 0.0), qry_ecu_val = CASE(query_ecu IS NOT NULL, query_ecu, 0.0)
 | EVAL ai_pool_cost = CASE(ai_ecu_val > 0.0, ai_ecu_val, qry_ecu_val) * rate
-| INLINE STATS day_proj_weight = SUM(model_weight) BY composite_key
-| EVAL day_model_cost = CASE(day_proj_weight > 0, (model_weight / day_proj_weight) * ai_pool_cost, 0.0)
+| INLINE STATS day_proj_weight = SUM(model_weight), day_proj_models = COUNT(model_id) BY composite_key
+| EVAL day_model_cost = CASE(day_proj_weight > 0.0, (model_weight / day_proj_weight) * ai_pool_cost, day_proj_models > 0, ai_pool_cost / TO_DOUBLE(day_proj_models), 0.0)
 | EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "unknown")
 | STATS total_compute = SUM(compute_time), total_inf = SUM(inference_count), avg_latency = ROUND(AVG(average_inference_time_ms), 1), attributed_cost = SUM(day_model_cost), ai_pool = SUM(ai_pool_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY task_type, model_id, project
-| SORT total_compute DESC, total_inf DESC, model_id ASC
+| SORT attributed_cost DESC, total_compute DESC, total_inf DESC, model_id ASC
 | LIMIT 50
 | KEEP task_type, model_id, project, total_compute, total_inf, avg_latency, attributed_cost, ai_pool, currency_symbol, unit"""
 
@@ -4424,14 +4435,24 @@ def build_config() -> dict:
 | INLINE STATS latest_upd = MAX(updated_at), latest_ts = MAX(ts) BY project_id
 | EVAL is_latest = CASE(updated_at IS NOT NULL AND latest_upd IS NOT NULL, updated_at == latest_upd, ts == latest_ts)
 | EVAL cur_status = CASE(is_latest, last_status, null),
-       cur_idx_cnt = CASE(is_latest, index_count, null)
+       cur_key_type = CASE(is_latest, api_key_type, null),
+       cur_synth_status = CASE(is_latest, synthetics_status, null),
+       cur_idx_cnt = CASE(is_latest, index_count, null),
+       cur_ds_cnt = CASE(is_latest, datastream_count, null),
+       cur_ai_cnt = CASE(is_latest, ai_model_count, null),
+       cur_syn_cnt = CASE(is_latest, synthetics_monitor_count, null)
 | STATS
     project_name = MAX(project_name),
     project_type = MAX(project_type),
     optimized_for = MAX(optimized_for),
     es_url = MAX(es_url),
     last_status = COALESCE(MAX(cur_status), MAX(last_status)),
+    api_key_type = COALESCE(MAX(cur_key_type), MAX(api_key_type)),
+    synthetics_status = COALESCE(MAX(cur_synth_status), MAX(synthetics_status)),
     index_count = COALESCE(MAX(cur_idx_cnt), MAX(index_count)),
+    datastream_count = COALESCE(MAX(cur_ds_cnt), MAX(datastream_count)),
+    ai_model_count = COALESCE(MAX(cur_ai_cnt), MAX(ai_model_count)),
+    synthetics_monitor_count = COALESCE(MAX(cur_syn_cnt), MAX(synthetics_monitor_count)),
     store_bytes = MAX(deployment_sum_data_set_store_size),
     total_ecu = ROUND(SUM(day_ecu), 2),
     total_cost = ROUND(SUM(day_cost), 2),
@@ -4452,7 +4473,7 @@ def build_config() -> dict:
 | EVAL sort_order = CASE(health == "ok", 1, health == "empty_or_unauthorized", 2, health == "inactive", 3, 4)
 | SORT sort_order ASC, total_cost DESC, project_name ASC
 | LIMIT 200
-| KEEP project_id, project_name, project_type, optimized_for, es_url, last_status, index_count, store_bytes, total_ecu, total_cost, billed_days, latest_bill_ts, window_days, updated_at, health, conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_currency_symbol""",
+| KEEP project_id, project_name, project_type, optimized_for, es_url, last_status, api_key_type, synthetics_status, index_count, datastream_count, ai_model_count, synthetics_monitor_count, store_bytes, total_ecu, total_cost, billed_days, latest_bill_ts, window_days, updated_at, health, conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_currency_symbol""",
         0,
         2,
         48,
@@ -4683,8 +4704,8 @@ def build_alerts() -> list[dict]:
 | EVAL model_weight = CASE(compute_time > 0.0, compute_time, TO_DOUBLE(inference_count))
 | EVAL ai_ecu_val = CASE(ai_ecu IS NOT NULL, ai_ecu, 0.0), qry_ecu_val = CASE(query_ecu IS NOT NULL, query_ecu, 0.0)
 | EVAL ai_pool_cost = CASE(ai_ecu_val > 0.0, ai_ecu_val, qry_ecu_val) * rate
-| INLINE STATS day_proj_weight = SUM(model_weight) BY composite_key
-| EVAL day_model_cost = CASE(day_proj_weight > 0, (model_weight / day_proj_weight) * ai_pool_cost, 0.0)
+| INLINE STATS day_proj_weight = SUM(model_weight), day_proj_models = COUNT(model_id) BY composite_key
+| EVAL day_model_cost = CASE(day_proj_weight > 0.0, (model_weight / day_proj_weight) * ai_pool_cost, day_proj_models > 0, ai_pool_cost / TO_DOUBLE(day_proj_models), 0.0)
 | EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "unknown"), day = LEFT(TO_STRING(@timestamp), 10)
 | WHERE filter_model == "*" OR model_id == filter_model
 | STATS spend = ROUND(SUM(day_model_cost), 2), inferences = SUM(inference_count), avg_latency_ms = ROUND(AVG(average_inference_time_ms), 1), threshold = MAX(threshold_spend), sym = COALESCE(MAX(currency_symbol), "$"), unit = COALESCE(MAX(unit), "USD") BY day, model_id, task_type, project
@@ -4814,7 +4835,7 @@ def build_index_pattern() -> dict:
             "runtimeFieldMap": "{}",
             "sourceFilters": "[]",
             "timeFieldName": "@timestamp",
-            "title": "serverless_*_lookup",
+            "title": "metrics-chargeback_serverless.*",
         },
         "coreMigrationVersion": "8.8.0",
         "id": INDEX_PATTERN_ID,

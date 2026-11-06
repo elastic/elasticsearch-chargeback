@@ -45,11 +45,19 @@ if project_keys_env:
         parsed = json.loads(project_keys_env)
         if isinstance(parsed, list):
             for item in parsed:
+                if ":" in str(item):
+                    pid, pkey = str(item).split(":", 1)
+                    PROJECT_KEYS[pid.strip()] = pkey.strip()
+        elif isinstance(parsed, str):
+            for item in parsed.split(","):
                 if ":" in item:
                     pid, pkey = item.split(":", 1)
                     PROJECT_KEYS[pid.strip()] = pkey.strip()
     except Exception:
-        pass
+        for item in project_keys_env.split(","):
+            if ":" in item:
+                pid, pkey = item.split(":", 1)
+                PROJECT_KEYS[pid.strip()] = pkey.strip()
 
 single_pid = get_env("PROJECT_ID")
 single_pkey = get_env("SL_API_KEY")
@@ -57,6 +65,255 @@ if single_pid and single_pkey:
     PROJECT_KEYS[single_pid] = single_pkey
 
 CURL_INSECURE = get_env("CURL_INSECURE", "0") == "1"
+INCLUDE_HOSTED_BILLING = get_env("INCLUDE_HOSTED_BILLING", "0") == "1"
+
+
+def is_serverless_sku(sku):
+    if INCLUDE_HOSTED_BILLING:
+        return True
+    sl = (sku or "").strip().lower()
+    if not sl:
+        return False
+    # Exclude Elastic Cloud Hosted (ECH) / Enterprise deployment SKUs
+    if any(h in sl for h in [
+        "cloud-enterprise",
+        "cloud_enterprise",
+        ".es.data",
+        ".es.master",
+        ".es.ml",
+        ".es.coordinating",
+        ".es.ingest",
+        ".kibana.",
+        ".apm.",
+        ".appsearch.",
+        ".enterprisesearch.",
+        ".integrations_server.",
+        ".fleet_server.",
+    ]):
+        return False
+    return any(k in sl for k in [
+        "serverless",
+        "-vcu",
+        "observability-",
+        "security-",
+        "search-",
+        "elasticsearch-",
+        "synthetic",
+        "agent-builder",
+        "inference",
+    ])
+
+
+SEMVER_RE = re.compile(r"^v?\d+\.\d+(?:\.\d+.*)?$")
+
+
+def parse_datastream_parts(ds_name):
+    ds_parts = (ds_name or "").split("-")
+    if len(ds_parts) <= 1:
+        return ("other", ds_name or "other", "default")
+    raw_first = ds_parts[0]
+    raw_last = ds_parts[-1]
+    if SEMVER_RE.match(raw_last):
+        # Beat or versioned index name (e.g. metricbeat-8.11.3, filebeat-7.17.22, apm-8.12.0)
+        if raw_first == "metricbeat" or raw_first.startswith("metrics"):
+            ds_type = "metrics"
+        elif raw_first in ("filebeat", "winlogbeat", "auditbeat", "journalbeat", "functionbeat", "packetbeat") or raw_first.startswith("logs"):
+            ds_type = "logs"
+        elif raw_first == "heartbeat":
+            ds_type = "synthetics"
+        elif raw_first == "apm" or raw_first.startswith("traces"):
+            ds_type = "traces"
+        else:
+            ds_type = "other"
+        ds_dataset = "-".join(ds_parts[:-1]) if len(ds_parts) >= 2 else ds_name
+        ds_namespace = "default"
+        return (ds_type, ds_dataset, ds_namespace)
+    else:
+        ds_type = raw_first
+        ds_dataset = "-".join(ds_parts[1:-1]) if len(ds_parts) >= 3 else (ds_parts[0] if len(ds_parts) == 2 else ds_name)
+        ds_namespace = raw_last
+        return (ds_type, ds_dataset, ds_namespace)
+
+
+LOOKUP_INDEX_SCHEMAS = {
+    "serverless_billing_cost_lookup": {
+        "@timestamp": {"type": "date"},
+        "period_start": {"type": "date"},
+        "composite_key": {"type": "keyword"},
+        "project_id": {"type": "keyword"},
+        "project_name": {"type": "keyword"},
+        "project_type": {"type": "keyword"},
+        "sku": {"type": "keyword"},
+        "cost_type": {"type": "keyword"},
+        "cost_category": {"type": "keyword"},
+        "allocation_driver": {"type": "keyword"},
+        "is_allocatable": {"type": "boolean"},
+        "total_ecu": {"type": "double"},
+        "total_chargeable_units": {"type": "double"},
+        "quantity_value": {"type": "double"},
+        "conf_chargeable_unit_rate": {"type": "double"},
+        "conf_chargeable_unit_rate_unit": {"type": "keyword"},
+        "conf_currency_symbol": {"type": "keyword"},
+    },
+    "serverless_billing_realized_pool_lookup": {
+        "@timestamp": {"type": "date"},
+        "period_start": {"type": "date"},
+        "composite_key": {"type": "keyword"},
+        "project_id": {"type": "keyword"},
+        "project_name": {"type": "keyword"},
+        "project_type": {"type": "keyword"},
+        "indexing_pool_ecu": {"type": "double"},
+        "query_pool_ecu": {"type": "double"},
+        "storage_pool_ecu": {"type": "double"},
+        "ai_pool_ecu": {"type": "double"},
+        "synthetics_pool_ecu": {"type": "double"},
+        "synthetics_pings_pool_ecu": {"type": "double"},
+        "synthetics_exec_pool_ecu": {"type": "double"},
+        "synthetics_pings_qty": {"type": "double"},
+        "synthetics_exec_qty": {"type": "double"},
+        "total_allocatable_ecu": {"type": "double"},
+        "unallocatable_ecu": {"type": "double"},
+        "total_project_ecu": {"type": "double"},
+        "conf_chargeable_unit_rate": {"type": "double"},
+        "conf_chargeable_unit_rate_unit": {"type": "keyword"},
+        "conf_currency_symbol": {"type": "keyword"},
+    },
+    "serverless_datastream_contribution_lookup": {
+        "@timestamp": {"type": "date"},
+        "period_start": {"type": "date"},
+        "composite_key": {"type": "keyword"},
+        "project_id": {"type": "keyword"},
+        "project_name": {"type": "keyword"},
+        "project_type": {"type": "keyword"},
+        "datastream": {"type": "keyword"},
+        "ds_type": {"type": "keyword"},
+        "ds_dataset": {"type": "keyword"},
+        "ds_namespace": {"type": "keyword"},
+        "datastream_sum_indexing_time": {"type": "double"},
+        "datastream_sum_query_time": {"type": "double"},
+        "datastream_sum_data_set_store_size": {"type": "double"},
+        "conf_chargeable_unit_rate": {"type": "double"},
+        "conf_chargeable_unit_rate_unit": {"type": "keyword"},
+        "conf_currency_symbol": {"type": "keyword"},
+    },
+    "serverless_project_contribution_lookup": {
+        "@timestamp": {"type": "date"},
+        "period_start": {"type": "date"},
+        "composite_key": {"type": "keyword"},
+        "project_id": {"type": "keyword"},
+        "project_name": {"type": "keyword"},
+        "project_type": {"type": "keyword"},
+        "project_sum_indexing_time": {"type": "double"},
+        "project_sum_query_time": {"type": "double"},
+        "project_sum_data_set_store_size": {"type": "double"},
+        "project_datastream_count": {"type": "long"},
+    },
+    "serverless_ai_model_contribution_lookup": {
+        "@timestamp": {"type": "date"},
+        "period_start": {"type": "date"},
+        "composite_key": {"type": "keyword"},
+        "project_id": {"type": "keyword"},
+        "project_name": {"type": "keyword"},
+        "project_type": {"type": "keyword"},
+        "model_id": {"type": "keyword"},
+        "task_type": {"type": "keyword"},
+        "inference_count": {"type": "double"},
+        "average_inference_time_ms": {"type": "double"},
+        "total_inference_time_ms": {"type": "double"},
+        "conf_chargeable_unit_rate": {"type": "double"},
+        "conf_chargeable_unit_rate_unit": {"type": "keyword"},
+        "conf_currency_symbol": {"type": "keyword"},
+    },
+    "serverless_synthetics_monitor_contribution_lookup": {
+        "@timestamp": {"type": "date"},
+        "period_start": {"type": "date"},
+        "composite_key": {"type": "keyword"},
+        "project_id": {"type": "keyword"},
+        "project_name": {"type": "keyword"},
+        "project_type": {"type": "keyword"},
+        "monitor_id": {"type": "keyword"},
+        "monitor_name": {"type": "keyword"},
+        "monitor_type": {"type": "keyword"},
+        "monitor_namespace": {"type": "keyword"},
+        "check_count": {"type": "double"},
+        "up_count": {"type": "double"},
+        "down_count": {"type": "double"},
+        "locations_count": {"type": "double"},
+        "average_duration_ms": {"type": "double"},
+        "conf_chargeable_unit_rate": {"type": "double"},
+        "conf_chargeable_unit_rate_unit": {"type": "keyword"},
+        "conf_currency_symbol": {"type": "keyword"},
+    },
+    "serverless_project_status_lookup": {
+        "@timestamp": {"type": "date"},
+        "period_start": {"type": "date"},
+        "composite_key": {"type": "keyword"},
+        "project_id": {"type": "keyword"},
+        "project_name": {"type": "keyword"},
+        "project_type": {"type": "keyword"},
+        "optimized_for": {"type": "keyword"},
+        "es_url": {"type": "keyword"},
+        "last_status": {"type": "keyword"},
+        "api_key_type": {"type": "keyword"},
+        "synthetics_status": {"type": "keyword"},
+        "index_count": {"type": "long"},
+        "datastream_count": {"type": "long"},
+        "ai_model_count": {"type": "long"},
+        "synthetics_monitor_count": {"type": "long"},
+        "updated_at": {"type": "date"},
+        "conf_chargeable_unit_rate": {"type": "double"},
+        "conf_chargeable_unit_rate_unit": {"type": "keyword"},
+        "conf_currency_symbol": {"type": "keyword"},
+    },
+}
+
+
+def ensure_lookup_index(es_url, api_key, index_name, properties=None):
+    base = es_url.rstrip("/")
+    hdrs = {"Authorization": f"ApiKey {api_key}", "Content-Type": "application/json"}
+    props = properties or LOOKUP_INDEX_SCHEMAS.get(index_name, {})
+    # Install persistent index template so transform resets always recreate in mode: lookup
+    tmpl_body = json.dumps({
+        "index_patterns": [index_name],
+        "priority": 500,
+        "template": {
+            "settings": {"index": {"mode": "lookup"}},
+            "mappings": {"properties": props}
+        }
+    })
+    try:
+        req = urllib.request.Request(f"{base}/_index_template/chargeback_serverless_{index_name}", data=tmpl_body.encode("utf-8"), headers=hdrs, method="PUT")
+        with urllib.request.urlopen(req, timeout=10, context=create_ssl_context(base)):
+            pass
+    except Exception:
+        pass
+    try:
+        _, info = http_get(f"{base}/{index_name}", hdrs, timeout=10, retries=1)
+        idx_obj = (info or {}).get(index_name) or next(iter((info or {}).values()), {})
+        mode = (((idx_obj.get("settings") or {}).get("index") or {}).get("mode")) or ""
+        if mode == "lookup":
+            return
+        # Recreate if existing index is not in lookup mode
+        req = urllib.request.Request(f"{base}/{index_name}", headers=hdrs, method="DELETE")
+        with urllib.request.urlopen(req, timeout=10, context=create_ssl_context(base)):
+            pass
+    except Exception:
+        pass
+    body = json.dumps({
+        "settings": {"index": {"mode": "lookup"}},
+        "mappings": {"properties": props}
+    })
+    try:
+        req = urllib.request.Request(f"{base}/{index_name}", data=body.encode("utf-8"), headers=hdrs, method="PUT")
+        with urllib.request.urlopen(req, timeout=15, context=create_ssl_context(base)):
+            pass
+    except Exception:
+        pass
+
+
+def ensure_all_lookup_indices(es_url, api_key):
+    for idx_name, props in LOOKUP_INDEX_SCHEMAS.items():
+        ensure_lookup_index(es_url, api_key, idx_name, props)
 
 def create_ssl_context(target_url=""):
     if CURL_INSECURE or "localhost" in target_url or "127.0.0.1" in target_url:
@@ -271,10 +528,57 @@ def main():
     day_emitted_projects = {}
 
     # Pre-scan existing Elasticsearch metrics/lookup indices before deleting the window
-    # so deleted/decommissioned projects and their historical billing/usage records are preserved.
+    # so deleted/decommissioned Serverless projects and their historical billing/usage records are preserved,
+    # while purging any legacy Elastic Cloud Hosted (ECH) deployment records unless INCLUDE_HOSTED_BILLING=1.
     preserved_deleted_billing = {}  # (day_str, pid, sku) -> doc
     preserved_deleted_usage = []
+    hosted_project_ids = set()
     search_hdrs = {"Authorization": f"ApiKey {ES_API_KEY}", "Content-Type": "application/json"}
+
+    if not INCLUDE_HOSTED_BILLING:
+        try:
+            _, sku_agg_resp = http_post_bulk(
+                f"{ES_URL.rstrip('/')}/metrics-chargeback_serverless.billing-*/_search",
+                search_hdrs,
+                json.dumps({
+                    "size": 0,
+                    "aggs": {
+                        "by_proj": {
+                            "terms": {"field": "project_id", "size": 500},
+                            "aggs": {"skus": {"terms": {"field": "sku", "size": 50}}}
+                        }
+                    }
+                }),
+                timeout=15
+            )
+            for b in ((sku_agg_resp.get("aggregations") or {}).get("by_proj") or {}).get("buckets") or []:
+                pid = b.get("key")
+                if not pid or pid in active_project_ids:
+                    continue
+                skus = [sb.get("key") for sb in ((b.get("skus") or {}).get("buckets") or []) if sb.get("key") and sb.get("key") != "none"]
+                if skus and not any(is_serverless_sku(s) for s in skus):
+                    hosted_project_ids.add(pid)
+            if hosted_project_ids:
+                print(f"  • Excluding and purging {len(hosted_project_ids)} non-Serverless Hosted deployment(s) from Chargeback Serverless indices")
+                del_q = json.dumps({"query": {"terms": {"project_id": list(hosted_project_ids)}}})
+                for target_idx in [
+                    "metrics-chargeback_serverless.billing-default",
+                    "metrics-chargeback_serverless.usage-default",
+                    "serverless_billing_cost_lookup",
+                    "serverless_billing_realized_pool_lookup",
+                    "serverless_datastream_contribution_lookup",
+                    "serverless_project_contribution_lookup",
+                    "serverless_ai_model_contribution_lookup",
+                    "serverless_synthetics_monitor_contribution_lookup",
+                    "serverless_project_status_lookup",
+                ]:
+                    try:
+                        http_post_bulk(f"{ES_URL.rstrip('/')}/{target_idx}/_delete_by_query?conflicts=proceed&refresh=true", search_hdrs, del_q, timeout=20)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
     for idx_pat in ["serverless_project_status_lookup", "metrics-chargeback_serverless.billing-*", "metrics-chargeback_serverless.usage-*"]:
         try:
             _, agg_resp = http_post_bulk(
@@ -296,7 +600,7 @@ def main():
             )
             for b in ((agg_resp.get("aggregations") or {}).get("by_proj") or {}).get("buckets") or []:
                 pid = b.get("key")
-                if not pid:
+                if not pid or pid in hosted_project_ids:
                     continue
                 nb = ((b.get("names") or {}).get("buckets") or [])
                 tb = ((b.get("types") or {}).get("buckets") or [])
@@ -309,7 +613,7 @@ def main():
         except Exception:
             pass
 
-    inactive_known_ids = [pid for pid in all_known_projects if pid not in active_project_ids]
+    inactive_known_ids = [pid for pid in all_known_projects if pid not in active_project_ids and pid not in hosted_project_ids]
     if inactive_known_ids:
         try:
             _, old_b_resp = http_post_bulk(
@@ -334,7 +638,7 @@ def main():
                 d_str = (src.get("@timestamp") or "")[:10]
                 pid = src.get("project_id")
                 sku = src.get("sku")
-                if d_str and pid and sku:
+                if d_str and pid and sku and is_serverless_sku(sku):
                     preserved_deleted_billing[(d_str, pid, sku)] = src
         except Exception:
             pass
@@ -358,7 +662,7 @@ def main():
             )
             for h in (old_u_resp.get("hits") or {}).get("hits") or []:
                 src = h.get("_source") or {}
-                if src.get("project_id"):
+                if src.get("project_id") and src.get("project_id") not in hosted_project_ids:
                     preserved_deleted_usage.append(src)
         except Exception:
             pass
@@ -382,20 +686,23 @@ def main():
             day_instances = []
             for inst in raw_instances:
                 inst_id = inst.get("id")
-                has_items = bool(inst.get("product_line_items"))
-                has_ecu = float(inst.get("total_ecu") or 0.0) > 0.0
-                if inst_id and inst_id in active_project_ids:
-                    day_instances.append(inst)
-                    continue
-                if has_items or has_ecu:
-                    day_instances.append(inst)
-                    continue
                 itype = (inst.get("type") or "").lower()
                 if itype in [
                     "kibana", "enterprise_search", "integrations_server", "appsearch", "fleet_server", "apm"
                 ]:
                     continue
-                if inst_id:
+                if inst_id and inst_id in active_project_ids:
+                    day_instances.append(inst)
+                    continue
+                inst_items = inst.get("product_line_items") or []
+                serverless_items = [li for li in inst_items if is_serverless_sku(li.get("sku", ""))]
+                if serverless_items:
+                    inst_copy = dict(inst)
+                    inst_copy["product_line_items"] = serverless_items
+                    day_instances.append(inst_copy)
+                    continue
+                # If an instance has 0 line items, only keep it if it is explicitly a serverless project type
+                if not inst_items and itype in ["serverless", "observability", "security", "search"] and inst_id and inst_id not in hosted_project_ids:
                     day_instances.append(inst)
 
             if day_instances:
@@ -412,13 +719,13 @@ def main():
                 ptype = proj.get("project_type") or inst.get("type")
                 if not ptype or ptype in ["serverless", "deployment"]:
                     skus = " ".join((li.get("sku") or "").lower() for li in (inst.get("product_line_items") or []))
-                    if "observability." in skus:
+                    if "observability." in skus or "observability-" in skus:
                         ptype = "observability"
-                    elif "security." in skus:
+                    elif "security." in skus or "security-" in skus:
                         ptype = "security"
-                    elif "search." in skus:
+                    elif "search." in skus or "search-" in skus:
                         ptype = "search"
-                    elif "elasticsearch." in skus or "-vcu" in skus:
+                    elif "elasticsearch." in skus or "elasticsearch-" in skus or "-vcu" in skus:
                         ptype = "elasticsearch"
                     else:
                         ptype = ptype or "elasticsearch"
@@ -438,6 +745,8 @@ def main():
                 line_items = inst.get("product_line_items", []) or []
                 for li in line_items:
                     sku = li.get("sku", "")
+                    if not is_serverless_sku(sku):
+                        continue
                     kind = li.get("kind", "")
                     itype = li.get("type", "")
                     total_ecu = float(li.get("total_ecu") or 0.0)
@@ -472,7 +781,7 @@ def main():
                     day_sku_qty[sku] = day_sku_qty.get(sku, 0.0) + qty_val
                     day_line_count += 1
 
-            # Reconcile against /costs/items so any RBAC-filtered deleted project or org-level line items are captured
+            # Reconcile against /costs/items so any RBAC-filtered deleted Serverless project or org-level Serverless line items are captured
             try:
                 _, items_data = http_get(items_url, cloud_headers)
                 for prod in items_data.get("products", []) or []:
@@ -481,7 +790,7 @@ def main():
                         prod_type = "elasticsearch"
                     for li in prod.get("product_line_items", []) or []:
                         sku = li.get("sku", "")
-                        if not sku:
+                        if not sku or not is_serverless_sku(sku):
                             continue
                         item_ecu = float(li.get("total_ecu") or 0.0)
                         qty = li.get("quantity") or {}
@@ -489,7 +798,7 @@ def main():
                         diff_ecu = round(item_ecu - day_sku_ecu.get(sku, 0.0), 6)
                         diff_qty = max(0.0, round(item_qty - day_sku_qty.get(sku, 0.0), 6))
                         if diff_ecu > 1e-4 or (sku not in day_sku_ecu and item_qty > 0):
-                            # Check if there is a known inactive/deleted project of this product type
+                            # Check if there is a known inactive/deleted Serverless project of this product type
                             cand_pids = [
                                 kp_id for kp_id, kp_info in all_known_projects.items()
                                 if kp_id not in active_project_ids and kp_info.get("project_type") == prod_type
@@ -614,7 +923,7 @@ def main():
     except Exception:
         active_transforms = []
     has_billing_cost_tf = any("billing_cost" in tid for tid in active_transforms)
-    has_proj_status_tf = any("proj_status" in tid for tid in active_transforms)
+    has_proj_status_tf = any("project_status" in tid or "proj_status" in tid for tid in active_transforms)
 
     if billing_docs:
         min_ts = billing_docs[0]["@timestamp"]
@@ -643,6 +952,25 @@ def main():
 
         # Only direct-write to serverless_billing_cost_lookup when the continuous Fleet transform is not installed
         if not has_billing_cost_tf:
+            ensure_lookup_index(ES_URL, ES_API_KEY, "serverless_billing_cost_lookup", {
+                "@timestamp": {"type": "date"},
+                "period_start": {"type": "date"},
+                "composite_key": {"type": "keyword"},
+                "project_id": {"type": "keyword"},
+                "project_name": {"type": "keyword"},
+                "project_type": {"type": "keyword"},
+                "sku": {"type": "keyword"},
+                "cost_type": {"type": "keyword"},
+                "cost_category": {"type": "keyword"},
+                "allocation_driver": {"type": "keyword"},
+                "is_allocatable": {"type": "boolean"},
+                "total_ecu": {"type": "double"},
+                "total_chargeable_units": {"type": "double"},
+                "quantity_value": {"type": "double"},
+                "conf_chargeable_unit_rate": {"type": "double"},
+                "conf_chargeable_unit_rate_unit": {"type": "keyword"},
+                "conf_currency_symbol": {"type": "keyword"},
+            })
             print(f"  • Ingesting {len(billing_docs)} daily billing records directly into serverless_billing_cost_lookup (no transform detected)...")
             lk_bulk_lines = []
             for d in billing_docs:
@@ -784,18 +1112,40 @@ def main():
             except Exception:
                 continue
 
-        # Query _ml/trained_models/_stats
+        # Query _ml/trained_models/_stats and /_inference endpoints
         ml_models = []
+        seen_model_ids = set()
         if harvest_status == "ok" and target_key:
-            ml_url = f"{es_endpoint}/_ml/trained_models/_stats"
+            ml_url = f"{es_endpoint.rstrip('/')}/_ml/trained_models/_stats"
             try:
                 status, ml_data = http_get(ml_url, headers, timeout=15)
-                ml_models = ml_data.get("trained_model_stats", [])
+                for m in (ml_data.get("trained_model_stats") or []):
+                    mid = m.get("model_id")
+                    if mid and mid not in seen_model_ids:
+                        seen_model_ids.add(mid)
+                        ml_models.append(m)
+            except Exception:
+                pass
+            inf_url = f"{es_endpoint.rstrip('/')}/_inference"
+            try:
+                status, inf_data = http_get(inf_url, headers, timeout=15)
+                for ep in (inf_data.get("endpoints") or []):
+                    mid = ep.get("inference_id") or ep.get("model_id")
+                    if mid and mid not in seen_model_ids:
+                        seen_model_ids.add(mid)
+                        ml_models.append({
+                            "model_id": mid,
+                            "task_type": ep.get("task_type") or "inference_api",
+                            "pipeline_count": 0,
+                            "inference_stats": {"inference_count": 0},
+                            "deployment_stats": {"nodes": []},
+                        })
             except Exception:
                 pass
 
-        # Query synthetics-*/_search for monitor-level breakdown
-        synth_monitors = []
+        # Query /.ds-synthetics-*-*,synthetics-*/_search across the window by day for monitor-level breakdown
+        synth_monitors_by_day = {}
+        all_discovered_monitors = {}
         if harvest_status == "ok" and target_key:
             syn_query = {
                 "size": 0,
@@ -803,55 +1153,73 @@ def main():
                     "bool": {
                         "filter": [
                             {"exists": {"field": "monitor.id"}},
-                            {"range": {"@timestamp": {"gte": f"{end_date.strftime('%Y-%m-%d')}T00:00:00.000Z", "lt": f"{(end_date + timedelta(days=1)).strftime('%Y-%m-%d')}T00:00:00.000Z"}}}
+                            {"range": {"@timestamp": {"gte": f"{start_date.strftime('%Y-%m-%d')}T00:00:00.000Z", "lt": f"{(end_date + timedelta(days=1)).strftime('%Y-%m-%d')}T00:00:00.000Z"}}}
                         ],
                         "must_not": [{"terms": {"event.dataset": ["browser.network", "browser.screenshot"]}}]
                     }
                 },
                 "aggs": {
-                    "monitors": {
-                        "terms": {"field": "monitor.id", "size": 500},
+                    "by_day": {
+                        "date_histogram": {
+                            "field": "@timestamp",
+                            "calendar_interval": "1d",
+                            "time_zone": "UTC",
+                            "min_doc_count": 1
+                        },
                         "aggs": {
-                            "monitor_name": {"terms": {"field": "monitor.name", "size": 1}},
-                            "monitor_type": {"terms": {"field": "monitor.type", "size": 1}},
-                            "monitor_namespace": {"terms": {"field": "data_stream.namespace", "size": 1}},
-                            "up_checks": {"filter": {"term": {"monitor.status": "up"}}},
-                            "down_checks": {"filter": {"term": {"monitor.status": "down"}}},
-                            "locations": {"cardinality": {"field": "observer.geo.name"}},
-                            "avg_duration_us": {"avg": {"field": "monitor.duration.us"}}
+                            "monitors": {
+                                "terms": {"field": "monitor.id", "size": 500},
+                                "aggs": {
+                                    "monitor_name": {"terms": {"field": "monitor.name", "size": 1}},
+                                    "monitor_type": {"terms": {"field": "monitor.type", "size": 1}},
+                                    "monitor_namespace": {"terms": {"field": "data_stream.namespace", "size": 1}},
+                                    "up_checks": {"filter": {"term": {"monitor.status": "up"}}},
+                                    "down_checks": {"filter": {"term": {"monitor.status": "down"}}},
+                                    "locations": {"cardinality": {"field": "observer.geo.name"}},
+                                    "avg_duration_us": {"avg": {"field": "monitor.duration.us"}}
+                                }
+                            }
                         }
                     }
                 }
             }
-            syn_url = f"{es_endpoint}/synthetics-*/_search?ignore_unavailable=true&size=0&source_content_type=application/json&source={urllib.parse.quote(json.dumps(syn_query))}"
+            syn_url = f"{es_endpoint.rstrip('/')}/.ds-synthetics-*-*,synthetics-*/_search?ignore_unavailable=true&expand_wildcards=open,hidden"
             try:
-                status, syn_data = http_get(syn_url, headers, timeout=15)
-                buckets = ((syn_data.get("aggregations") or {}).get("monitors") or {}).get("buckets") or []
-                for b in buckets:
-                    mid = str(b.get("key") or "unknown")
-                    mname_b = ((b.get("monitor_name") or {}).get("buckets") or [])
-                    mtype_b = ((b.get("monitor_type") or {}).get("buckets") or [])
-                    mns_b = ((b.get("monitor_namespace") or {}).get("buckets") or [])
-                    mname = str(mname_b[0].get("key")) if mname_b and mname_b[0].get("key") else mid
-                    mtype = str(mtype_b[0].get("key")) if mtype_b and mtype_b[0].get("key") else "http"
-                    mns = str(mns_b[0].get("key")) if mns_b and mns_b[0].get("key") else "default"
-                    chk_cnt = int(b.get("doc_count") or 0)
-                    up_cnt = int((b.get("up_checks") or {}).get("doc_count") or 0)
-                    dn_cnt = int((b.get("down_checks") or {}).get("doc_count") or 0)
-                    loc_cnt = int((b.get("locations") or {}).get("value") or 1)
-                    avg_us = (b.get("avg_duration_us") or {}).get("value")
-                    avg_ms = round(float(avg_us) / 1000.0, 2) if avg_us is not None else 0.0
-                    synth_monitors.append({
-                        "monitor_id": mid,
-                        "monitor_name": mname,
-                        "monitor_type": mtype,
-                        "monitor_namespace": mns,
-                        "check_count": chk_cnt,
-                        "up_count": up_cnt,
-                        "down_count": dn_cnt,
-                        "locations_count": loc_cnt,
-                        "average_duration_ms": avg_ms
-                    })
+                status, syn_data = http_post_bulk(syn_url, headers, json.dumps(syn_query), timeout=20)
+                day_buckets = ((syn_data.get("aggregations") or {}).get("by_day") or {}).get("buckets") or []
+                for db in day_buckets:
+                    d_key = str(db.get("key_as_string") or "")[:10]
+                    if not d_key:
+                        continue
+                    mon_buckets = ((db.get("monitors") or {}).get("buckets") or [])
+                    day_list = synth_monitors_by_day.setdefault(d_key, [])
+                    for b in mon_buckets:
+                        mid = str(b.get("key") or "unknown")
+                        mname_b = ((b.get("monitor_name") or {}).get("buckets") or [])
+                        mtype_b = ((b.get("monitor_type") or {}).get("buckets") or [])
+                        mns_b = ((b.get("monitor_namespace") or {}).get("buckets") or [])
+                        mname = str(mname_b[0].get("key")) if mname_b and mname_b[0].get("key") else mid
+                        mtype = str(mtype_b[0].get("key")) if mtype_b and mtype_b[0].get("key") else "http"
+                        mns = str(mns_b[0].get("key")) if mns_b and mns_b[0].get("key") else "default"
+                        chk_cnt = int(b.get("doc_count") or 0)
+                        up_cnt = int((b.get("up_checks") or {}).get("doc_count") or 0)
+                        dn_cnt = int((b.get("down_checks") or {}).get("doc_count") or 0)
+                        loc_cnt = int((b.get("locations") or {}).get("value") or 1)
+                        avg_us = (b.get("avg_duration_us") or {}).get("value")
+                        avg_ms = round(float(avg_us) / 1000.0, 2) if avg_us is not None else 0.0
+                        m_entry = {
+                            "monitor_id": mid,
+                            "monitor_name": mname,
+                            "monitor_type": mtype,
+                            "monitor_namespace": mns,
+                            "check_count": chk_cnt,
+                            "up_count": up_cnt,
+                            "down_count": dn_cnt,
+                            "locations_count": loc_cnt,
+                            "average_duration_ms": avg_ms
+                        }
+                        day_list.append(m_entry)
+                        all_discovered_monitors[mid] = m_entry
             except Exception:
                 pass
 
@@ -865,10 +1233,7 @@ def main():
             m_ds = DS_INDEX_RE.match(idx_name)
             ds_name = m_ds.group(1) if m_ds else idx_name
 
-            ds_parts = ds_name.split("-")
-            ds_type = ds_parts[0] if len(ds_parts) > 1 else "other"
-            ds_dataset = "-".join(ds_parts[1:-1]) if len(ds_parts) >= 3 else (ds_parts[0] if len(ds_parts) == 2 else ds_name)
-            ds_namespace = ds_parts[-1] if len(ds_parts) > 1 else "other"
+            ds_type, ds_dataset, ds_namespace = parse_datastream_parts(ds_name)
 
             size_b = int(row.get("dataset.size") or 0)
             idx_time = int(row.get("indexing.index_time") or 0)
@@ -905,10 +1270,11 @@ def main():
                     ds_name = m_ds.group(1) if m_ds else raw_ds
                     if not ds_name:
                         continue
-                    ds_parts = ds_name.split("-")
-                    ds_type = cdoc.get("ds_type") or (ds_parts[0] if len(ds_parts) > 1 else "other")
-                    ds_dataset = cdoc.get("ds_dataset") or ("-".join(ds_parts[1:-1]) if len(ds_parts) >= 3 else (ds_parts[0] if len(ds_parts) == 2 else ds_name))
-                    ds_namespace = cdoc.get("ds_namespace") or (ds_parts[-1] if len(ds_parts) > 1 else "other")
+                    p_type, p_dataset, p_ns = parse_datastream_parts(ds_name)
+                    ds_type = cdoc.get("ds_type") or p_type
+                    ds_dataset = cdoc.get("ds_dataset") or p_dataset
+                    raw_cached_ns = cdoc.get("ds_namespace") or p_ns
+                    ds_namespace = "default" if SEMVER_RE.match(str(raw_cached_ns)) else raw_cached_ns
                     if ds_name not in ds_map:
                         ds_map[ds_name] = {
                             "ds": ds_name,
@@ -923,16 +1289,21 @@ def main():
                     ds_map[ds_name]["idx_time"] += int(cdoc.get("datastream_sum_indexing_time") or 0)
                     ds_map[ds_name]["qry_time"] += int(cdoc.get("datastream_sum_query_time") or 0)
                 elif dtype == "ai_model":
-                    ml_models.append({
-                        "model_id": cdoc.get("model_id", "unknown"),
-                        "pipeline_count": 1 if cdoc.get("task_type") == "ingest_inference" else 0,
-                        "inference_stats": {"inference_count": int(cdoc.get("inference_count") or 0)},
-                        "deployment_stats": {"nodes": [{"average_inference_time_ms": float(cdoc.get("average_inference_time_ms") or 0.0)}]},
-                    })
+                    mid = cdoc.get("model_id", "unknown")
+                    if mid not in seen_model_ids:
+                        seen_model_ids.add(mid)
+                        ml_models.append({
+                            "model_id": mid,
+                            "task_type": cdoc.get("task_type"),
+                            "pipeline_count": 1 if cdoc.get("task_type") == "ingest_inference" else 0,
+                            "inference_stats": {"inference_count": int(cdoc.get("inference_count") or 0)},
+                            "deployment_stats": {"nodes": [{"average_inference_time_ms": float(cdoc.get("average_inference_time_ms") or 0.0)}]},
+                        })
                 elif dtype == "synthetics_monitor":
-                    synth_monitors.append({
-                        "monitor_id": cdoc.get("monitor_id", "unknown"),
-                        "monitor_name": cdoc.get("monitor_name", cdoc.get("monitor_id", "unknown")),
+                    mid = cdoc.get("monitor_id", "unknown")
+                    m_entry = {
+                        "monitor_id": mid,
+                        "monitor_name": cdoc.get("monitor_name", mid),
                         "monitor_type": cdoc.get("monitor_type", "http"),
                         "monitor_namespace": cdoc.get("monitor_namespace", "default"),
                         "check_count": int(cdoc.get("check_count") or 0),
@@ -940,12 +1311,14 @@ def main():
                         "down_count": int(cdoc.get("down_count") or 0),
                         "locations_count": int(cdoc.get("locations_count") or 1),
                         "average_duration_ms": float(cdoc.get("average_duration_ms") or 0.0),
-                    })
+                    }
+                    all_discovered_monitors[mid] = m_entry
             if not harvested_idx_count:
                 harvested_idx_count = len(ds_map)
 
-        # Index daily synthetics billing per day for this project to support monitor/type attribution when remote data-plane key is absent
+        # Index daily synthetics and AI billing per day for this project
         proj_day_synth = {}
+        proj_day_ai = {}
         for bdoc in billing_docs:
             if bdoc.get("project_id") == pid:
                 d_ts = bdoc.get("@timestamp", "")[:10]
@@ -958,11 +1331,18 @@ def main():
                     else:
                         entry["exec_qty"] += float(bdoc.get("quantity_value") or 0.0)
                         entry["exec_ecu"] += float(bdoc.get("total_ecu") or 0.0)
+                if bdoc.get("allocation_driver") == "ai" and float(bdoc.get("total_ecu") or 0.0) > 0:
+                    proj_day_ai[d_ts] = proj_day_ai.get(d_ts, 0.0) + float(bdoc.get("total_ecu") or 0.0)
 
-
-        proj_total_size = sum(v["size"] for v in ds_map.values()) or 1
-        proj_total_idx = sum(v["idx_time"] for v in ds_map.values()) or 1
-        proj_total_qry = sum(v["qry_time"] for v in ds_map.values()) or 1
+        # If project has AI billing in the window and 0 discovered models, register a fallback Serverless Inference Service model
+        if proj_day_ai and not ml_models:
+            ml_models.append({
+                "model_id": "serverless-inference-service",
+                "task_type": "inference_api",
+                "pipeline_count": 0,
+                "inference_stats": {"inference_count": 1},
+                "deployment_stats": {"nodes": []},
+            })
 
         ts_now = now.strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -1004,7 +1384,7 @@ def main():
                 nodes = (m.get("deployment_stats") or {}).get("nodes") or []
                 avg_inf_ms = float(nodes[0].get("average_inference_time_ms") or 0.0) if nodes else 0.0
                 total_inf_ms = int(inf_count * avg_inf_ms)
-                task_type = "ingest_inference" if int(m.get("pipeline_count") or 0) > 0 else "query_inference"
+                task_type = m.get("task_type") or ("ingest_inference" if int(m.get("pipeline_count") or 0) > 0 else "query_inference")
                 doc = {
                     "@timestamp": usage_day_ts,
                     "period_start": usage_day_ts,
@@ -1025,104 +1405,42 @@ def main():
                 }
                 usage_docs.append(doc)
 
-            # Emit Synthetics monitors (harvested or derived from day's synthetics billing SKUs)
-            day_monitors = list(synth_monitors)
+            # Emit Synthetics monitors for this day (exact daily harvest, or project monitors / billing SKU fallback)
+            day_monitors = list(synth_monitors_by_day.get(usage_day_str, []))
             if not day_monitors and usage_day_str in proj_day_synth:
-                s_info = proj_day_synth[usage_day_str]
-                exec_runs = int(round(s_info["exec_qty"]))
-                # Billing SKU observability-synthetic-pings reports quantity in 1k-ping packs when small integer with high ECU, or raw pings
-                raw_p = s_info["pings_qty"]
-                ping_runs = int(round(raw_p * 1000.0)) if (0 < raw_p < 100 and s_info["pings_ecu"] > raw_p) else int(round(raw_p))
-                if exec_runs > 0:
-                    c1 = int(round(exec_runs * 0.56))
-                    c2 = max(1, exec_runs - c1)
-                    day_monitors.extend([
-                        {
-                            "monitor_id": "checkout-flow-browser",
-                            "monitor_name": "Checkout Flow E2E Journey",
+                if all_discovered_monitors:
+                    day_monitors = list(all_discovered_monitors.values())
+                else:
+                    s_info = proj_day_synth[usage_day_str]
+                    exec_runs = int(round(s_info["exec_qty"]))
+                    raw_p = s_info["pings_qty"]
+                    ping_runs = int(round(raw_p * 1000.0)) if (0 < raw_p < 100 and s_info["pings_ecu"] > raw_p) else int(round(raw_p))
+                    if exec_runs > 0 or s_info["exec_ecu"] > 0:
+                        runs_val = max(1, exec_runs)
+                        day_monitors.append({
+                            "monitor_id": "billing-derived-browser",
+                            "monitor_name": "Browser Monitors (Billing SKU)",
                             "monitor_type": "browser",
                             "monitor_namespace": "default",
-                            "check_count": c1,
-                            "up_count": max(0, c1 - 1),
-                            "down_count": 1 if c1 > 10 else 0,
-                            "locations_count": 3,
-                            "average_duration_ms": 1842.5,
-                        },
-                        {
-                            "monitor_id": "customer-portal-browser",
-                            "monitor_name": "Customer Portal Login & Search",
-                            "monitor_type": "browser",
-                            "monitor_namespace": "default",
-                            "check_count": c2,
-                            "up_count": c2,
+                            "check_count": runs_val,
+                            "up_count": runs_val,
                             "down_count": 0,
-                            "locations_count": 2,
-                            "average_duration_ms": 1418.0,
-                        },
-                    ])
-                if ping_runs > 0:
-                    p_http1 = int(round(ping_runs * 0.38))
-                    p_http2 = int(round(ping_runs * 0.22))
-                    p_dns = int(round(ping_runs * 0.16))
-                    p_tcp = int(round(ping_runs * 0.14))
-                    p_icmp = max(1, ping_runs - (p_http1 + p_http2 + p_dns + p_tcp))
-                    day_monitors.extend([
-                        {
-                            "monitor_id": "api-gateway-http",
-                            "monitor_name": "API Gateway Health Check",
+                            "locations_count": 1,
+                            "average_duration_ms": 0.0,
+                        })
+                    if ping_runs > 0 or s_info["pings_ecu"] > 0:
+                        runs_val = max(1, ping_runs)
+                        day_monitors.append({
+                            "monitor_id": "billing-derived-lightweight",
+                            "monitor_name": "Lightweight Monitors (Billing SKU)",
                             "monitor_type": "http",
                             "monitor_namespace": "default",
-                            "check_count": p_http1,
-                            "up_count": max(0, p_http1 - 2),
-                            "down_count": 2 if p_http1 > 20 else 0,
-                            "locations_count": 4,
-                            "average_duration_ms": 118.4,
-                        },
-                        {
-                            "monitor_id": "payments-webhook-http",
-                            "monitor_name": "Payments Webhook TLS Endpoint",
-                            "monitor_type": "http",
-                            "monitor_namespace": "prod",
-                            "check_count": p_http2,
-                            "up_count": max(0, p_http2 - 1),
-                            "down_count": 1 if p_http2 > 20 else 0,
-                            "locations_count": 3,
-                            "average_duration_ms": 164.8,
-                        },
-                        {
-                            "monitor_id": "core-dns-resolver",
-                            "monitor_name": "Core DNS Authoritative Lookup",
-                            "monitor_type": "dns",
-                            "monitor_namespace": "default",
-                            "check_count": p_dns,
-                            "up_count": p_dns,
+                            "check_count": runs_val,
+                            "up_count": runs_val,
                             "down_count": 0,
-                            "locations_count": 3,
-                            "average_duration_ms": 24.6,
-                        },
-                        {
-                            "monitor_id": "postgres-primary-tcp",
-                            "monitor_name": "Postgres Primary TCP Port 5432",
-                            "monitor_type": "tcp",
-                            "monitor_namespace": "prod",
-                            "check_count": p_tcp,
-                            "up_count": p_tcp,
-                            "down_count": 0,
-                            "locations_count": 2,
-                            "average_duration_ms": 38.2,
-                        },
-                        {
-                            "monitor_id": "edge-gateway-icmp",
-                            "monitor_name": "Edge Router ICMP Reachability",
-                            "monitor_type": "icmp",
-                            "monitor_namespace": "default",
-                            "check_count": p_icmp,
-                            "up_count": p_icmp,
-                            "down_count": 0,
-                            "locations_count": 4,
-                            "average_duration_ms": 14.1,
-                        },
-                    ])
+                            "locations_count": 1,
+                            "average_duration_ms": 0.0,
+                        })
 
             for sm in day_monitors:
                 doc = {
@@ -1160,6 +1478,7 @@ def main():
             else:
                 key_type_val = "missing_key"
             synth_stat_val = "ok" if harvest_status == "ok" else ("billing_derived" if (day_monitors or proj_day_synth) else "unauthorized")
+            proj_mon_count = max(len(day_monitors), len(all_discovered_monitors))
             doc = {
                 "@timestamp": usage_day_ts,
                 "period_start": usage_day_ts,
@@ -1177,7 +1496,7 @@ def main():
                 "index_count": harvested_idx_count,
                 "datastream_count": max(len(ds_map), harvested_ds_count),
                 "ai_model_count": len(ml_models),
-                "synthetics_monitor_count": len(day_monitors),
+                "synthetics_monitor_count": proj_mon_count,
                 "updated_at": ts_now,
                 "conf_chargeable_unit_rate": u_rate,
                 "conf_chargeable_unit_rate_unit": u_unit,
@@ -1186,7 +1505,7 @@ def main():
             usage_docs.append(doc)
             u_curr += timedelta(days=1)
 
-        print(f"  • {pname} ({pid}): status={harvest_status}, datastreams={len(ds_map)}, ai_models={len(ml_models)}")
+        print(f"  • {pname} ({pid}): status={harvest_status}, datastreams={len(ds_map)}, ai_models={len(ml_models)}, monitors={len(all_discovered_monitors)}")
 
     # Preserve historical usage docs (datastream, ai_model, synthetics_monitor) for deleted/decommissioned projects
     ingested_str_inactive = (now - timedelta(seconds=90)).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -1278,6 +1597,7 @@ def main():
         # Only direct-write project_status into serverless_project_status_lookup when the continuous Fleet transform is not installed
         status_docs = [d for d in usage_docs if d.get("doc_type") == "project_status"]
         if status_docs and not has_proj_status_tf:
+            ensure_lookup_index(ES_URL, ES_API_KEY, "serverless_project_status_lookup")
             print(f"  • Ingesting {len(status_docs)} project status records directly into serverless_project_status_lookup (no transform detected)...")
             ps_bulk_lines = []
             for d in status_docs:
@@ -1306,13 +1626,18 @@ def main():
 
     # Reset and schedule continuous transforms so lookup indices are cleanly populated without duplicate _ids
     if active_transforms:
-        import time
+        ensure_all_lookup_indices(ES_URL, ES_API_KEY)
         upstream_tfs = [t for t in active_transforms if "realized_pool" not in t and "proj_contrib" not in t]
         downstream_tfs = [t for t in active_transforms if "realized_pool" in t or "proj_contrib" in t]
         for tid in upstream_tfs:
             try:
                 http_post_bulk(f"{ES_URL.rstrip('/')}/_transform/{tid}/_stop?force=true&wait_for_completion=true", es_headers, "{}")
                 http_post_bulk(f"{ES_URL.rstrip('/')}/_transform/{tid}/_reset?force=true", es_headers, "{}")
+            except Exception:
+                pass
+        ensure_all_lookup_indices(ES_URL, ES_API_KEY)
+        for tid in upstream_tfs:
+            try:
                 http_post_bulk(f"{ES_URL.rstrip('/')}/_transform/{tid}/_start", es_headers, "{}")
                 http_post_bulk(f"{ES_URL.rstrip('/')}/_transform/{tid}/_schedule_now", es_headers, "{}")
             except Exception:
@@ -1326,6 +1651,11 @@ def main():
             try:
                 http_post_bulk(f"{ES_URL.rstrip('/')}/_transform/{tid}/_stop?force=true&wait_for_completion=true", es_headers, "{}")
                 http_post_bulk(f"{ES_URL.rstrip('/')}/_transform/{tid}/_reset?force=true", es_headers, "{}")
+            except Exception:
+                pass
+        ensure_all_lookup_indices(ES_URL, ES_API_KEY)
+        for tid in downstream_tfs:
+            try:
                 http_post_bulk(f"{ES_URL.rstrip('/')}/_transform/{tid}/_start", es_headers, "{}")
                 http_post_bulk(f"{ES_URL.rstrip('/')}/_transform/{tid}/_schedule_now", es_headers, "{}")
             except Exception:
