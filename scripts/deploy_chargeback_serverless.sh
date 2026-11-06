@@ -730,7 +730,7 @@ with zipfile.ZipFile(zip_path, "r") as z:
             else:
                 es_req("POST", f"/_transform/{tf_id}/_update", {k: tf_cfg[k] for k in ("source", "dest", "frequency", "description", "retention_policy", "_meta") if k in tf_cfg})
         c_st, r_st = es_req("POST", f"/_transform/{tf_id}/_start")
-        if c_st >= 300:
+        if c_st >= 300 and not (c_st == 409 and "already started" in json.dumps(r_st).lower()):
             print(f"ERROR: Failed to start transform {tf_id} (HTTP {c_st}): {r_st}", file=sys.stderr)
             sys.exit(1)
         started_transforms += 1
