@@ -16,6 +16,7 @@ import json
 import shutil
 import sys
 import uuid
+import zipfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -426,62 +427,63 @@ def liquid_money_block(val_var: str, out_var: str, with_decimals: bool = True) -
     """Liquid snippet to format a number with thousands and millions comma separators (e.g. 1,234 or 1,234.56)."""
     p = f"_{out_var}"
     if not with_decimals:
-        return f"""\
-{{% assign {p}_iv = {val_var} | round %}}
-{{% if {p}_iv >= 1000000000 %}}
-  {{% assign {p}_b = {p}_iv | divided_by: 1000000000 | floor %}}
-  {{% assign {p}_m = {p}_iv | modulo: 1000000000 | divided_by: 1000000 | floor %}}
-  {{% assign {p}_k = {p}_iv | modulo: 1000000 | divided_by: 1000 | floor %}}
-  {{% assign {p}_u = {p}_iv | modulo: 1000 | floor %}}
-  {{% if {p}_m < 10 %}}{{% assign {p}_ms = "00" | append: {p}_m %}}{{% elsif {p}_m < 100 %}}{{% assign {p}_ms = "0" | append: {p}_m %}}{{% else %}}{{% assign {p}_ms = {p}_m %}}{{% endif %}}
-  {{% if {p}_k < 10 %}}{{% assign {p}_ks = "00" | append: {p}_k %}}{{% elsif {p}_k < 100 %}}{{% assign {p}_ks = "0" | append: {p}_k %}}{{% else %}}{{% assign {p}_ks = {p}_k %}}{{% endif %}}
-  {{% if {p}_u < 10 %}}{{% assign {p}_us = "00" | append: {p}_u %}}{{% elsif {p}_u < 100 %}}{{% assign {p}_us = "0" | append: {p}_u %}}{{% else %}}{{% assign {p}_us = {p}_u %}}{{% endif %}}
-  {{% assign {out_var} = {p}_b | append: "," | append: {p}_ms | append: "," | append: {p}_ks | append: "," | append: {p}_us %}}
-{{% elsif {p}_iv >= 1000000 %}}
-  {{% assign {p}_m = {p}_iv | divided_by: 1000000 | floor %}}
-  {{% assign {p}_k = {p}_iv | modulo: 1000000 | divided_by: 1000 | floor %}}
-  {{% assign {p}_u = {p}_iv | modulo: 1000 | floor %}}
-  {{% if {p}_k < 10 %}}{{% assign {p}_ks = "00" | append: {p}_k %}}{{% elsif {p}_k < 100 %}}{{% assign {p}_ks = "0" | append: {p}_k %}}{{% else %}}{{% assign {p}_ks = {p}_k %}}{{% endif %}}
-  {{% if {p}_u < 10 %}}{{% assign {p}_us = "00" | append: {p}_u %}}{{% elsif {p}_u < 100 %}}{{% assign {p}_us = "0" | append: {p}_u %}}{{% else %}}{{% assign {p}_us = {p}_u %}}{{% endif %}}
-  {{% assign {out_var} = {p}_m | append: "," | append: {p}_ks | append: "," | append: {p}_us %}}
-{{% elsif {p}_iv >= 1000 %}}
-  {{% assign {p}_k = {p}_iv | divided_by: 1000 | floor %}}
-  {{% assign {p}_u = {p}_iv | modulo: 1000 | floor %}}
-  {{% if {p}_u < 10 %}}{{% assign {p}_us = "00" | append: {p}_u %}}{{% elsif {p}_u < 100 %}}{{% assign {p}_us = "0" | append: {p}_u %}}{{% else %}}{{% assign {p}_us = {p}_u %}}{{% endif %}}
-  {{% assign {out_var} = {p}_k | append: "," | append: {p}_us %}}
-{{% else %}}
-  {{% assign {out_var} = {p}_iv %}}
-{{% endif %}}"""
+        return (
+            f'{{% assign {p}_iv = {val_var} | round %}}'
+            f'{{% if {p}_iv < 1000 %}}{{% assign {out_var} = {p}_iv %}}'
+            f'{{% elsif {p}_iv < 1000000 %}}'
+            f'{{% assign {p}_k = {p}_iv | divided_by: 1000 | floor %}}'
+            f'{{% assign {p}_u = {p}_iv | modulo: 1000 | floor %}}'
+            f'{{% if {p}_u < 10 %}}{{% assign {p}_us = "00" | append: {p}_u %}}{{% elsif {p}_u < 100 %}}{{% assign {p}_us = "0" | append: {p}_u %}}{{% else %}}{{% assign {p}_us = {p}_u %}}{{% endif %}}'
+            f'{{% assign {out_var} = {p}_k | append: "," | append: {p}_us %}}'
+            f'{{% elsif {p}_iv < 1000000000 %}}'
+            f'{{% assign {p}_m = {p}_iv | divided_by: 1000000 | floor %}}'
+            f'{{% assign {p}_k = {p}_iv | modulo: 1000000 | divided_by: 1000 | floor %}}'
+            f'{{% assign {p}_u = {p}_iv | modulo: 1000 | floor %}}'
+            f'{{% if {p}_k < 10 %}}{{% assign {p}_ks = "00" | append: {p}_k %}}{{% elsif {p}_k < 100 %}}{{% assign {p}_ks = "0" | append: {p}_k %}}{{% else %}}{{% assign {p}_ks = {p}_k %}}{{% endif %}}'
+            f'{{% if {p}_u < 10 %}}{{% assign {p}_us = "00" | append: {p}_u %}}{{% elsif {p}_u < 100 %}}{{% assign {p}_us = "0" | append: {p}_u %}}{{% else %}}{{% assign {p}_us = {p}_u %}}{{% endif %}}'
+            f'{{% assign {out_var} = {p}_m | append: "," | append: {p}_ks | append: "," | append: {p}_us %}}'
+            f'{{% else %}}'
+            f'{{% assign {p}_b = {p}_iv | divided_by: 1000000000 | floor %}}'
+            f'{{% assign {p}_m = {p}_iv | modulo: 1000000000 | divided_by: 1000000 | floor %}}'
+            f'{{% assign {p}_k = {p}_iv | modulo: 1000000 | divided_by: 1000 | floor %}}'
+            f'{{% assign {p}_u = {p}_iv | modulo: 1000 | floor %}}'
+            f'{{% if {p}_m < 10 %}}{{% assign {p}_ms = "00" | append: {p}_m %}}{{% elsif {p}_m < 100 %}}{{% assign {p}_ms = "0" | append: {p}_m %}}{{% else %}}{{% assign {p}_ms = {p}_m %}}{{% endif %}}'
+            f'{{% if {p}_k < 10 %}}{{% assign {p}_ks = "00" | append: {p}_k %}}{{% elsif {p}_k < 100 %}}{{% assign {p}_ks = "0" | append: {p}_k %}}{{% else %}}{{% assign {p}_ks = {p}_k %}}{{% endif %}}'
+            f'{{% if {p}_u < 10 %}}{{% assign {p}_us = "00" | append: {p}_u %}}{{% elsif {p}_u < 100 %}}{{% assign {p}_us = "0" | append: {p}_u %}}{{% else %}}{{% assign {p}_us = {p}_u %}}{{% endif %}}'
+            f'{{% assign {out_var} = {p}_b | append: "," | append: {p}_ms | append: "," | append: {p}_ks | append: "," | append: {p}_us %}}'
+            f'{{% endif %}}'
+        )
 
-    return f"""\
-{{% assign {p}_cents = {val_var} | times: 100 | round %}}
-{{% assign {p}_iv = {p}_cents | divided_by: 100 | floor %}}
-{{% assign {p}_dv = {p}_cents | modulo: 100 | floor %}}
-{{% if {p}_dv < 10 %}}{{% assign {p}_ds = "0" | append: {p}_dv %}}{{% else %}}{{% assign {p}_ds = {p}_dv | append: "" %}}{{% endif %}}
-{{% if {p}_iv >= 1000000000 %}}
-  {{% assign {p}_b = {p}_iv | divided_by: 1000000000 | floor %}}
-  {{% assign {p}_m = {p}_iv | modulo: 1000000000 | divided_by: 1000000 | floor %}}
-  {{% assign {p}_k = {p}_iv | modulo: 1000000 | divided_by: 1000 | floor %}}
-  {{% assign {p}_u = {p}_iv | modulo: 1000 | floor %}}
-  {{% if {p}_m < 10 %}}{{% assign {p}_ms = "00" | append: {p}_m %}}{{% elsif {p}_m < 100 %}}{{% assign {p}_ms = "0" | append: {p}_m %}}{{% else %}}{{% assign {p}_ms = {p}_m %}}{{% endif %}}
-  {{% if {p}_k < 10 %}}{{% assign {p}_ks = "00" | append: {p}_k %}}{{% elsif {p}_k < 100 %}}{{% assign {p}_ks = "0" | append: {p}_k %}}{{% else %}}{{% assign {p}_ks = {p}_k %}}{{% endif %}}
-  {{% if {p}_u < 10 %}}{{% assign {p}_us = "00" | append: {p}_u %}}{{% elsif {p}_u < 100 %}}{{% assign {p}_us = "0" | append: {p}_u %}}{{% else %}}{{% assign {p}_us = {p}_u %}}{{% endif %}}
-  {{% assign {out_var} = {p}_b | append: "," | append: {p}_ms | append: "," | append: {p}_ks | append: "," | append: {p}_us | append: "." | append: {p}_ds %}}
-{{% elsif {p}_iv >= 1000000 %}}
-  {{% assign {p}_m = {p}_iv | divided_by: 1000000 | floor %}}
-  {{% assign {p}_k = {p}_iv | modulo: 1000000 | divided_by: 1000 | floor %}}
-  {{% assign {p}_u = {p}_iv | modulo: 1000 | floor %}}
-  {{% if {p}_k < 10 %}}{{% assign {p}_ks = "00" | append: {p}_k %}}{{% elsif {p}_k < 100 %}}{{% assign {p}_ks = "0" | append: {p}_k %}}{{% else %}}{{% assign {p}_ks = {p}_k %}}{{% endif %}}
-  {{% if {p}_u < 10 %}}{{% assign {p}_us = "00" | append: {p}_u %}}{{% elsif {p}_u < 100 %}}{{% assign {p}_us = "0" | append: {p}_u %}}{{% else %}}{{% assign {p}_us = {p}_u %}}{{% endif %}}
-  {{% assign {out_var} = {p}_m | append: "," | append: {p}_ks | append: "," | append: {p}_us | append: "." | append: {p}_ds %}}
-{{% elsif {p}_iv >= 1000 %}}
-  {{% assign {p}_k = {p}_iv | divided_by: 1000 | floor %}}
-  {{% assign {p}_u = {p}_iv | modulo: 1000 | floor %}}
-  {{% if {p}_u < 10 %}}{{% assign {p}_us = "00" | append: {p}_u %}}{{% elsif {p}_u < 100 %}}{{% assign {p}_us = "0" | append: {p}_u %}}{{% else %}}{{% assign {p}_us = {p}_u %}}{{% endif %}}
-  {{% assign {out_var} = {p}_k | append: "," | append: {p}_us | append: "." | append: {p}_ds %}}
-{{% else %}}
-  {{% assign {out_var} = {p}_iv | append: "." | append: {p}_ds %}}
-{{% endif %}}"""
+    return (
+        f'{{% assign {p}_cents = {val_var} | times: 100 | round %}}'
+        f'{{% assign {p}_iv = {p}_cents | divided_by: 100 | floor %}}'
+        f'{{% assign {p}_dv = {p}_cents | modulo: 100 | floor %}}'
+        f'{{% if {p}_dv < 10 %}}{{% assign {p}_ds = "0" | append: {p}_dv %}}{{% else %}}{{% assign {p}_ds = {p}_dv | append: "" %}}{{% endif %}}'
+        f'{{% if {p}_iv < 1000 %}}'
+        f'{{% assign {out_var} = {p}_iv | append: "." | append: {p}_ds %}}'
+        f'{{% elsif {p}_iv < 1000000 %}}'
+        f'{{% assign {p}_k = {p}_iv | divided_by: 1000 | floor %}}'
+        f'{{% assign {p}_u = {p}_iv | modulo: 1000 | floor %}}'
+        f'{{% if {p}_u < 10 %}}{{% assign {p}_us = "00" | append: {p}_u %}}{{% elsif {p}_u < 100 %}}{{% assign {p}_us = "0" | append: {p}_u %}}{{% else %}}{{% assign {p}_us = {p}_u %}}{{% endif %}}'
+        f'{{% assign {out_var} = {p}_k | append: "," | append: {p}_us | append: "." | append: {p}_ds %}}'
+        f'{{% elsif {p}_iv < 1000000000 %}}'
+        f'{{% assign {p}_m = {p}_iv | divided_by: 1000000 | floor %}}'
+        f'{{% assign {p}_k = {p}_iv | modulo: 1000000 | divided_by: 1000 | floor %}}'
+        f'{{% assign {p}_u = {p}_iv | modulo: 1000 | floor %}}'
+        f'{{% if {p}_k < 10 %}}{{% assign {p}_ks = "00" | append: {p}_k %}}{{% elsif {p}_k < 100 %}}{{% assign {p}_ks = "0" | append: {p}_k %}}{{% else %}}{{% assign {p}_ks = {p}_k %}}{{% endif %}}'
+        f'{{% if {p}_u < 10 %}}{{% assign {p}_us = "00" | append: {p}_u %}}{{% elsif {p}_u < 100 %}}{{% assign {p}_us = "0" | append: {p}_u %}}{{% else %}}{{% assign {p}_us = {p}_u %}}{{% endif %}}'
+        f'{{% assign {out_var} = {p}_m | append: "," | append: {p}_ks | append: "," | append: {p}_us | append: "." | append: {p}_ds %}}'
+        f'{{% else %}}'
+        f'{{% assign {p}_b = {p}_iv | divided_by: 1000000000 | floor %}}'
+        f'{{% assign {p}_m = {p}_iv | modulo: 1000000000 | divided_by: 1000000 | floor %}}'
+        f'{{% assign {p}_k = {p}_iv | modulo: 1000000 | divided_by: 1000 | floor %}}'
+        f'{{% assign {p}_u = {p}_iv | modulo: 1000 | floor %}}'
+        f'{{% if {p}_m < 10 %}}{{% assign {p}_ms = "00" | append: {p}_m %}}{{% elsif {p}_m < 100 %}}{{% assign {p}_ms = "0" | append: {p}_m %}}{{% else %}}{{% assign {p}_ms = {p}_m %}}{{% endif %}}'
+        f'{{% if {p}_k < 10 %}}{{% assign {p}_ks = "00" | append: {p}_k %}}{{% elsif {p}_k < 100 %}}{{% assign {p}_ks = "0" | append: {p}_k %}}{{% else %}}{{% assign {p}_ks = {p}_k %}}{{% endif %}}'
+        f'{{% if {p}_u < 10 %}}{{% assign {p}_us = "00" | append: {p}_u %}}{{% elsif {p}_u < 100 %}}{{% assign {p}_us = "0" | append: {p}_u %}}{{% else %}}{{% assign {p}_us = {p}_u %}}{{% endif %}}'
+        f'{{% assign {out_var} = {p}_b | append: "," | append: {p}_ms | append: "," | append: {p}_ks | append: "," | append: {p}_us | append: "." | append: {p}_ds %}}'
+        f'{{% endif %}}'
+    )
 
 
 PAGED_BASE_CSS = """\
@@ -1337,50 +1339,57 @@ def make_daily_cost_template(
     group_field: str,
     header_label: str = "Project",
     is_category: bool = False,
+    plot_height: int = 210,
 ) -> str:
+    container_min_height = plot_height + 32
     palette_colors = (
         "var(--cc-vis-0),var(--cc-vis-1),var(--cc-vis-2),var(--cc-vis-3),var(--cc-vis-4),var(--cc-vis-5),var(--cc-vis-6),var(--cc-vis-7),var(--cc-vis-8),var(--cc-vis-9)"
     )
     if is_category:
-        legend_color_code = """\
-      {% if itm == "data_tier" %}{% assign item_color = "var(--cc-vis-0)" %}
-      {% elsif itm == "platform" %}{% assign item_color = "var(--cc-vis-1)" %}
-      {% elsif itm == "transfer" %}{% assign item_color = "var(--cc-vis-2)" %}
-      {% elsif itm == "snapshot" %}{% assign item_color = "var(--cc-vis-3)" %}
-      {% elsif itm == "support" %}{% assign item_color = "var(--cc-vis-4)" %}
-      {% elsif itm == "other" %}{% assign item_color = "var(--cc-vis-5)" %}
-      {% else %}
-        {% assign c_idx = forloop.index0 | modulo: 10 %}
-        {% assign item_color = colors[c_idx] %}
-      {% endif %}"""
-        seg_color_code = """\
-          {% if p_name == "data_tier" %}{% assign item_color = "var(--cc-vis-0)" %}
-          {% elsif p_name == "platform" %}{% assign item_color = "var(--cc-vis-1)" %}
-          {% elsif p_name == "transfer" %}{% assign item_color = "var(--cc-vis-2)" %}
-          {% elsif p_name == "snapshot" %}{% assign item_color = "var(--cc-vis-3)" %}
-          {% elsif p_name == "support" %}{% assign item_color = "var(--cc-vis-4)" %}
-          {% elsif p_name == "other" %}{% assign item_color = "var(--cc-vis-5)" %}
-          {% else %}
-            {% assign item_color = "var(--cc-vis-9)" %}
-            {% for itm in items %}
-              {% if itm == p_name %}
-                {% assign c_idx = forloop.index0 | modulo: 10 %}
-                {% assign item_color = colors[c_idx] %}
-              {% endif %}
-            {% endfor %}
-          {% endif %}"""
+        legend_color_code = (
+            '{% if itm == "data_tier" %}{% assign item_color = "var(--cc-vis-0)" %}'
+            '{% elsif itm == "platform" %}{% assign item_color = "var(--cc-vis-1)" %}'
+            '{% elsif itm == "transfer" %}{% assign item_color = "var(--cc-vis-2)" %}'
+            '{% elsif itm == "snapshot" %}{% assign item_color = "var(--cc-vis-3)" %}'
+            '{% elsif itm == "support" %}{% assign item_color = "var(--cc-vis-4)" %}'
+            '{% elsif itm == "other" %}{% assign item_color = "var(--cc-vis-5)" %}'
+            '{% else %}{% assign c_idx = forloop.index0 | modulo: 10 %}{% assign item_color = colors[c_idx] %}{% endif %}'
+        )
+        seg_color_code = (
+            '{% if p_name == "data_tier" %}{% assign item_color = "var(--cc-vis-0)" %}'
+            '{% elsif p_name == "platform" %}{% assign item_color = "var(--cc-vis-1)" %}'
+            '{% elsif p_name == "transfer" %}{% assign item_color = "var(--cc-vis-2)" %}'
+            '{% elsif p_name == "snapshot" %}{% assign item_color = "var(--cc-vis-3)" %}'
+            '{% elsif p_name == "support" %}{% assign item_color = "var(--cc-vis-4)" %}'
+            '{% elsif p_name == "other" %}{% assign item_color = "var(--cc-vis-5)" %}'
+            '{% elsif p_name == i0 %}{% assign item_color = "var(--cc-vis-0)" %}'
+            '{% elsif p_name == i1 %}{% assign item_color = "var(--cc-vis-1)" %}'
+            '{% elsif p_name == i2 %}{% assign item_color = "var(--cc-vis-2)" %}'
+            '{% elsif p_name == i3 %}{% assign item_color = "var(--cc-vis-3)" %}'
+            '{% elsif p_name == i4 %}{% assign item_color = "var(--cc-vis-4)" %}'
+            '{% elsif p_name == i5 %}{% assign item_color = "var(--cc-vis-5)" %}'
+            '{% elsif p_name == i6 %}{% assign item_color = "var(--cc-vis-6)" %}'
+            '{% elsif p_name == i7 %}{% assign item_color = "var(--cc-vis-7)" %}'
+            '{% elsif p_name == i8 %}{% assign item_color = "var(--cc-vis-8)" %}'
+            '{% else %}{% assign item_color = "var(--cc-vis-9)" %}{% endif %}'
+        )
     else:
-        legend_color_code = """\
-      {% assign c_idx = forloop.index0 | modulo: 10 %}
-      {% assign item_color = colors[c_idx] %}"""
-        seg_color_code = """\
-          {% assign item_color = "var(--cc-vis-0)" %}
-          {% for itm in items %}
-            {% if itm == p_name %}
-              {% assign c_idx = forloop.index0 | modulo: 10 %}
-              {% assign item_color = colors[c_idx] %}
-            {% endif %}
-          {% endfor %}"""
+        legend_color_code = (
+            '{% assign c_idx = forloop.index0 | modulo: 10 %}'
+            '{% assign item_color = colors[c_idx] %}'
+        )
+        seg_color_code = (
+            '{% if p_name == i0 %}{% assign item_color = "var(--cc-vis-0)" %}'
+            '{% elsif p_name == i1 %}{% assign item_color = "var(--cc-vis-1)" %}'
+            '{% elsif p_name == i2 %}{% assign item_color = "var(--cc-vis-2)" %}'
+            '{% elsif p_name == i3 %}{% assign item_color = "var(--cc-vis-3)" %}'
+            '{% elsif p_name == i4 %}{% assign item_color = "var(--cc-vis-4)" %}'
+            '{% elsif p_name == i5 %}{% assign item_color = "var(--cc-vis-5)" %}'
+            '{% elsif p_name == i6 %}{% assign item_color = "var(--cc-vis-6)" %}'
+            '{% elsif p_name == i7 %}{% assign item_color = "var(--cc-vis-7)" %}'
+            '{% elsif p_name == i8 %}{% assign item_color = "var(--cc-vis-8)" %}'
+            '{% else %}{% assign item_color = "var(--cc-vis-9)" %}{% endif %}'
+        )
 
     return f"""\
 {{% assign _total_rows = rows.size | default: 0 %}}
@@ -1390,10 +1399,10 @@ def make_daily_cost_template(
     display: flex;
     flex-direction: column;
     height: 100%;
-    min-height: 180px;
+    min-height: {container_min_height}px;
     width: 100%;
     box-sizing: border-box;
-    padding: 4px 8px 6px 8px;
+    padding: 4px 8px 2px 8px;
     overflow: hidden;
   }}
   .cb-daily-head {{
@@ -1403,7 +1412,7 @@ def make_daily_cost_template(
     font-size: 0.78rem;
     font-weight: 600;
     opacity: 0.92;
-    padding: 0 4px 6px 4px;
+    padding: 0 4px 5px 4px;
     border-bottom: 1px solid var(--cc-color-border);
     margin-bottom: 6px;
     gap: 10px;
@@ -1419,20 +1428,24 @@ def make_daily_cost_template(
   }}
   .cb-daily-legend {{
     display: flex;
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 6px 12px;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 8px;
+    min-width: 115px;
+    max-width: 170px;
+    max-height: {plot_height}px;
+    padding: 2px 2px 14px 10px;
+    border-left: 1px solid var(--cc-color-border);
+    box-sizing: border-box;
     user-select: none;
-    max-height: 40px;
     overflow-y: auto;
-    margin-left: auto;
+    overflow-x: hidden;
+    flex-shrink: 0;
   }}
   .cb-legend-item {{
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 7px;
     font-size: 0.75rem;
     font-weight: 500;
     color: var(--cc-color-text);
@@ -1449,24 +1462,27 @@ def make_daily_cost_template(
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    max-width: 165px;
+    max-width: 135px;
   }}
   .cb-daily-wrap {{
     display: flex;
     flex-direction: row;
     align-items: stretch;
     flex: 1;
-    min-height: 150px;
+    height: {plot_height}px;
+    min-height: {plot_height}px;
     font-family: inherit;
     box-sizing: border-box;
     padding: 0;
+    gap: 10px;
     overflow: hidden;
   }}
   .cb-daily-main {{
     display: flex;
     flex: 1;
     position: relative;
-    min-height: 150px;
+    height: 100%;
+    min-height: {plot_height}px;
     gap: 8px;
     min-width: 0;
   }}
@@ -1484,14 +1500,17 @@ def make_daily_cost_template(
     border-right: 1px solid var(--cc-color-border);
     user-select: none;
     margin-top: 1px;
-    margin-bottom: 20px;
+    margin-bottom: 14px;
     box-sizing: border-box;
     font-variant-numeric: tabular-nums;
   }}
   .cb-hist-plot {{
     display: flex;
     flex: 1;
+    height: 100%;
+    min-height: {plot_height}px;
     overflow-x: auto;
+    overflow-y: hidden;
     position: relative;
     min-width: 0;
   }}
@@ -1501,8 +1520,9 @@ def make_daily_cost_template(
     justify-content: space-between;
     min-width: 100%;
     height: 100%;
+    min-height: {plot_height}px;
     position: relative;
-    padding-bottom: 26px;
+    padding-bottom: 20px;
     padding-top: 6px;
     box-sizing: border-box;
   }}
@@ -1511,7 +1531,7 @@ def make_daily_cost_template(
     top: 6px;
     left: 0;
     right: 0;
-    bottom: 26px;
+    bottom: 20px;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
@@ -1559,7 +1579,7 @@ def make_daily_cost_template(
   }}
   .cb-hist-date {{
     position: absolute;
-    bottom: -22px;
+    bottom: -18px;
     font-size: 0.70rem;
     font-weight: 500;
     font-variant-numeric: tabular-nums;
@@ -1573,109 +1593,34 @@ def make_daily_cost_template(
   .cb-sym {{ font-weight: 500; opacity: 0.85; margin-right: 2px; }}
   .cb-empty {{ display:flex; align-items:center; justify-content:center; flex:1; min-height:140px; font-size:0.84rem; color:var(--cc-color-text); opacity:0.65; }}
 </style>
-{{% assign unit = "USD" %}}
-{{% assign sym = "$" %}}
-{{% for r in rows %}}
-  {{% assign r_unit = r["unit"].value | default: "" %}}
-  {{% if r_unit != "" %}}
-    {{% assign unit = r_unit %}}
-    {{% assign r_sym = r["currency_symbol"].value | default: "" %}}
-    {{% if r_sym != "" %}}
-      {{% assign sym = r_sym %}}
-    {{% else %}}
-      {{% assign sym = unit %}}
-    {{% endif %}}
-    {{% break %}}
-  {{% endif %}}
-{{% endfor %}}
+{{% assign unit = rows[0]["unit"].value | default: "USD" %}}{{% if unit == "" %}}{{% assign unit = "USD" %}}{{% endif %}}
+{{% assign sym = rows[0]["currency_symbol"].value | default: unit %}}{{% if sym == "" %}}{{% assign sym = "$" %}}{{% endif %}}
 {{% assign colors = "{palette_colors}" | split: "," %}}
-
-{{% assign item_str = "||" %}}
-{{% assign b_str = "||" %}}
-{{% assign max_day_cost = 1.0 %}}
-{{% for r in rows %}}
-  {{% assign itm = r["{group_field}"].value | default: "unknown" %}}
-  {{% assign itm_tok = "||" | append: itm | append: "||" %}}
-  {{% unless item_str contains itm_tok %}}
-    {{% assign item_str = item_str | append: itm | append: "||" %}}
-  {{% endunless %}}
-  {{% assign b_val = r["day"].value | default: "" %}}
-  {{% assign b_tok = "||" | append: b_val | append: "||" %}}
-  {{% unless b_str contains b_tok %}}
-    {{% assign b_str = b_str | append: b_val | append: "||" %}}
-  {{% endunless %}}
-  {{% assign dc = r["day_cost"].value | default: 0.0 %}}
-  {{% if dc > max_day_cost %}}
-    {{% assign max_day_cost = dc %}}
-  {{% endif %}}
-{{% endfor %}}
+{{% assign max_day_cost = rows[0]["max_day_cost"].value | default: 0.0 %}}
+{{% assign b_count = rows[0]["b_count"].value | default: 0 %}}
+{{% assign max_items = rows[0]["item_limit"].value | default: 10 %}}{{% if max_items > 10 %}}{{% assign max_items = 10 %}}{{% endif %}}
+{{% assign item_str = "||" %}}{{% assign item_cnt = 0 %}}
+{{% for r in rows %}}{{% assign itm = r["{group_field}"].value | default: "unknown" %}}{{% assign itm_tok = "||" | append: itm | append: "||" %}}{{% unless item_str contains itm_tok %}}{{% assign item_str = item_str | append: itm | append: "||" %}}{{% assign item_cnt = item_cnt | plus: 1 %}}{{% if item_cnt >= max_items and max_day_cost > 0 %}}{{% break %}}{{% endif %}}{{% endunless %}}{{% if max_day_cost <= 0 %}}{{% assign dc = r["day_cost"].value | default: 0.0 %}}{{% if dc > max_day_cost %}}{{% assign max_day_cost = dc %}}{{% endif %}}{{% endif %}}{{% endfor %}}
+{{% if max_day_cost <= 0 %}}{{% assign max_day_cost = 1.0 %}}{{% endif %}}
+{{% if b_count <= 0 %}}{{% assign b_count = 30 %}}{{% endif %}}
 {{% assign items = item_str | remove_first: "||" | split: "||" %}}
-{{% assign all_b = b_str | remove_first: "||" | split: "||" %}}
-{{% assign b_count = all_b.size | minus: 1 %}}
+{{% assign i0 = items[0] %}}{{% assign i1 = items[1] %}}{{% assign i2 = items[2] %}}{{% assign i3 = items[3] %}}{{% assign i4 = items[4] %}}{{% assign i5 = items[5] %}}{{% assign i6 = items[6] %}}{{% assign i7 = items[7] %}}{{% assign i8 = items[8] %}}
 
-{{% if b_count <= 8 %}}
-  {{% assign step_mod = 1 %}}
-{{% elsif b_count <= 16 %}}
-  {{% assign step_mod = 2 %}}
-{{% elsif b_count <= 24 %}}
-  {{% assign step_mod = 3 %}}
-{{% elsif b_count <= 35 %}}
-  {{% assign step_mod = 5 %}}
-{{% elsif b_count <= 50 %}}
-  {{% assign step_mod = 7 %}}
-{{% elsif b_count <= 75 %}}
-  {{% assign step_mod = 10 %}}
-{{% else %}}
-  {{% assign step_mod = b_count | divided_by: 6 | floor %}}
-  {{% if step_mod < 10 %}}{{% assign step_mod = 10 %}}{{% endif %}}
-{{% endif %}}
+{{% if b_count <= 8 %}}{{% assign step_mod = 1 %}}{{% elsif b_count <= 16 %}}{{% assign step_mod = 2 %}}{{% elsif b_count <= 24 %}}{{% assign step_mod = 3 %}}{{% elsif b_count <= 35 %}}{{% assign step_mod = 5 %}}{{% elsif b_count <= 50 %}}{{% assign step_mod = 7 %}}{{% elsif b_count <= 75 %}}{{% assign step_mod = 10 %}}{{% else %}}{{% assign step_mod = b_count | divided_by: 6 | floor %}}{{% if step_mod < 10 %}}{{% assign step_mod = 10 %}}{{% endif %}}{{% endif %}}
 
 {{% assign raw_top = max_day_cost | times: 1.15 %}}
-{{% if raw_top <= 4 %}}{{% assign y_top = 4 %}}
-{{% elsif raw_top <= 8 %}}{{% assign y_top = 8 %}}
-{{% elsif raw_top <= 16 %}}{{% assign y_top = 16 %}}
-{{% elsif raw_top <= 40 %}}{{% assign y_top = 40 %}}
-{{% elsif raw_top <= 80 %}}{{% assign y_top = 80 %}}
-{{% elsif raw_top <= 120 %}}{{% assign y_top = 120 %}}
-{{% elsif raw_top <= 200 %}}{{% assign y_top = 200 %}}
-{{% elsif raw_top <= 320 %}}{{% assign y_top = 320 %}}
-{{% elsif raw_top <= 480 %}}{{% assign y_top = 480 %}}
-{{% elsif raw_top <= 800 %}}{{% assign y_top = 800 %}}
-{{% elsif raw_top <= 1200 %}}{{% assign y_top = 1200 %}}
-{{% elsif raw_top <= 2000 %}}{{% assign y_top = 2000 %}}
-{{% elsif raw_top <= 4000 %}}{{% assign y_top = 4000 %}}
-{{% elsif raw_top <= 8000 %}}{{% assign y_top = 8000 %}}
-{{% elsif raw_top <= 20000 %}}{{% assign y_top = 20000 %}}
-{{% elsif raw_top <= 40000 %}}{{% assign y_top = 40000 %}}
-{{% else %}}
-  {{% assign y_top = raw_top | divided_by: 10000 | floor | plus: 1 | times: 10000 %}}
-{{% endif %}}
-{{% assign y_1 = y_top | times: 0.25 | round %}}
-{{% assign y_2 = y_top | times: 0.50 | round %}}
-{{% assign y_3 = y_top | times: 0.75 | round %}}
-{{% assign y_4 = y_top %}}
-
+{{% if raw_top <= 4 %}}{{% assign y_top = 4 %}}{{% elsif raw_top <= 8 %}}{{% assign y_top = 8 %}}{{% elsif raw_top <= 16 %}}{{% assign y_top = 16 %}}{{% elsif raw_top <= 40 %}}{{% assign y_top = 40 %}}{{% elsif raw_top <= 80 %}}{{% assign y_top = 80 %}}{{% elsif raw_top <= 120 %}}{{% assign y_top = 120 %}}{{% elsif raw_top <= 200 %}}{{% assign y_top = 200 %}}{{% elsif raw_top <= 320 %}}{{% assign y_top = 320 %}}{{% elsif raw_top <= 480 %}}{{% assign y_top = 480 %}}{{% elsif raw_top <= 800 %}}{{% assign y_top = 800 %}}{{% elsif raw_top <= 1200 %}}{{% assign y_top = 1200 %}}{{% elsif raw_top <= 2000 %}}{{% assign y_top = 2000 %}}{{% elsif raw_top <= 4000 %}}{{% assign y_top = 4000 %}}{{% elsif raw_top <= 8000 %}}{{% assign y_top = 8000 %}}{{% elsif raw_top <= 20000 %}}{{% assign y_top = 20000 %}}{{% elsif raw_top <= 40000 %}}{{% assign y_top = 40000 %}}{{% else %}}{{% assign y_top = raw_top | divided_by: 10000 | floor | plus: 1 | times: 10000 %}}{{% endif %}}
+{{% assign y_1 = y_top | times: 0.25 | round %}}{{% assign y_2 = y_top | times: 0.50 | round %}}{{% assign y_3 = y_top | times: 0.75 | round %}}{{% assign y_4 = y_top %}}
 {liquid_money_block("y_4", "fmt_y_4", with_decimals=False)}
 {liquid_money_block("y_3", "fmt_y_3", with_decimals=False)}
 {liquid_money_block("y_2", "fmt_y_2", with_decimals=False)}
 {liquid_money_block("y_1", "fmt_y_1", with_decimals=False)}
-
 {{% assign m_arr = "Jan,Feb,Mar,Apr,May,Jun,Jul,Aug,Sep,Oct,Nov,Dec" | split: "," %}}
 
 <div class="cb-daily-container">
   <div class="cb-daily-head">
     <div class="cb-daily-title">Cost ({{{{ unit }}}})</div>
-    <div class="cb-daily-legend">
-      {{% for itm in items %}}
-        {{% if itm != "" %}}
-  {legend_color_code}
-          <div class="cb-legend-item">
-            <span class="cb-legend-box" style="background: {{{{ item_color }}}};"></span>
-            <span class="cb-legend-label" title="{{{{ itm }}}}">{{{{ itm }}}}</span>
-          </div>
-        {{% endif %}}
-      {{% endfor %}}
-    </div>
+    <div class="cb-daily-title">{header_label}</div>
   </div>
 {{% if _total_rows > 0 %}}
   <div class="cb-daily-wrap">
@@ -1696,66 +1641,14 @@ def make_daily_cost_template(
             <div class="cb-grid-line"></div>
             <div class="cb-grid-line cb-grid-line-zero"></div>
           </div>
-          {{% assign cur_bucket = "" %}}
-          {{% assign cur_label = "" %}}
-          {{% assign b_idx = -1 %}}
-          {{% for r in rows %}}
-            {{% assign b_raw = r["day"].value | default: "" %}}
-            {{% if b_raw != cur_bucket %}}
-              {{% if cur_bucket != "" %}}
-                  </div>
-                  {{% assign show_lbl = b_idx | modulo: step_mod %}}
-                  {{% if show_lbl == 0 %}}
-                    <div class="cb-hist-date">{{{{ cur_label }}}}</div>
-                  {{% endif %}}
-                </div>
-              {{% endif %}}
-              {{% assign cur_bucket = b_raw %}}
-              {{% assign b_idx = b_idx | plus: 1 %}}
-              {{% assign time_sub = cur_bucket | slice: 11, 8 %}}
-              {{% if time_sub == "00:00:00" or time_sub == "" %}}
-                {{% assign m_idx = cur_bucket | slice: 5, 2 | plus: 0 | minus: 1 %}}
-                {{% assign m_name = m_arr[m_idx] | default: "" %}}
-                {{% assign d_num = cur_bucket | slice: 8, 2 | plus: 0 %}}
-                {{% if m_name != "" %}}
-                  {{% assign cur_label = m_name | append: " " | append: d_num %}}
-                {{% else %}}
-                  {{% assign cur_label = cur_bucket | slice: 5, 5 %}}
-                {{% endif %}}
-                {{% assign cur_tip = cur_bucket | slice: 0, 10 %}}
-              {{% else %}}
-                {{% assign cur_label = cur_bucket | slice: 11, 5 %}}
-                {{% assign cur_tip = cur_bucket | slice: 0, 16 | replace: "T", " " %}}
-              {{% endif %}}
-              {{% assign d_cost = r["day_cost"].value | default: 0.0 %}}
-              {{% assign stack_pct = d_cost | times: 100.0 | divided_by: y_top | round: 2 %}}
-              {{% if stack_pct > 100.0 %}}{{% assign stack_pct = 100.0 %}}{{% endif %}}
-              {liquid_money_block("d_cost", "fmt_d_cost", with_decimals=True)}
-              <div class="cb-hist-col" title="{{{{ cur_tip }}}}: {{{{ sym }}}}{{{{ fmt_d_cost }}}}">
-                <div class="cb-hist-stack" style="height: {{{{ stack_pct }}}}%;">
-            {{% endif %}}
-            {{% assign p_cost = r["cost"].value | default: 0.0 %}}
-            {{% assign p_name = r["{group_field}"].value | default: "unknown" %}}
-            {{% assign seg_pct = 0.0 %}}
-            {{% if d_cost > 0 %}}
-              {{% assign seg_pct = p_cost | times: 100.0 | divided_by: d_cost | round: 2 %}}
-            {{% endif %}}
-            {{% if seg_pct > 0 %}}
-  {seg_color_code}
-              {liquid_money_block("p_cost", "fmt_p_cost", with_decimals=True)}
-              <div class="cb-hist-seg" style="flex: 0 0 {{{{ seg_pct }}}}%; height: {{{{ seg_pct }}}}%; background: {{{{ item_color }}}};" title="{{{{ p_name }}}}: {{{{ sym }}}}{{{{ fmt_p_cost }}}} ({{{{ cur_tip }}}})"></div>
-            {{% endif %}}
-          {{% endfor %}}
-          {{% if cur_bucket != "" %}}
-              </div>
-              {{% assign show_lbl = b_idx | modulo: step_mod %}}
-              {{% if show_lbl == 0 %}}
-                <div class="cb-hist-date">{{{{ cur_label }}}}</div>
-              {{% endif %}}
-            </div>
-          {{% endif %}}
+          {{% assign cur_bucket = "" %}}{{% assign cur_label = "" %}}{{% assign cur_tip = "" %}}{{% assign b_idx = -1 %}}{{% assign d_seg = 0 %}}{{% assign d_cost = 0.0 %}}
+          {{% for r in rows %}}{{% assign b_raw = r["day"].value | default: "" %}}{{% if b_raw != cur_bucket %}}{{% if cur_bucket != "" %}}</div>{{% assign show_lbl = b_idx | modulo: step_mod %}}{{% if show_lbl == 0 %}}<div class="cb-hist-date">{{{{ cur_label }}}}</div>{{% endif %}}</div>{{% endif %}}{{% assign cur_bucket = b_raw %}}{{% assign b_idx = b_idx | plus: 1 %}}{{% assign d_seg = 0 %}}{{% assign cur_tip = cur_bucket | slice: 0, 10 %}}{{% assign m_idx = cur_bucket | slice: 5, 2 | plus: 0 | minus: 1 %}}{{% assign m_name = m_arr[m_idx] | default: "" %}}{{% assign d_num = cur_bucket | slice: 8, 2 | plus: 0 %}}{{% if m_name != "" %}}{{% assign cur_label = m_name | append: " " | append: d_num %}}{{% else %}}{{% assign cur_label = cur_bucket | slice: 5, 5 %}}{{% endif %}}{{% assign d_cost = r["day_cost"].value | default: 0.0 | round: 2 %}}{{% assign stack_pct = d_cost | times: 100.0 | divided_by: y_top | round: 2 %}}{{% if stack_pct > 100.0 %}}{{% assign stack_pct = 100.0 %}}{{% endif %}}<div class="cb-hist-col" title="{{{{ cur_tip }}}}: {{{{ sym }}}}{{{{ d_cost }}}}"><div class="cb-hist-stack" style="height: {{{{ stack_pct }}}}%;">{{% endif %}}{{% assign p_cost = r["cost"].value | default: 0.0 %}}{{% if p_cost > 0 and d_cost > 0 %}}{{% assign d_seg = d_seg | plus: 1 %}}{{% if d_seg <= 10 %}}{{% assign p_name = r["{group_field}"].value | default: "unknown" %}}{{% assign seg_pct = r["seg_pct"].value | default: 0.0 %}}{{% if seg_pct <= 0 %}}{{% assign seg_pct = p_cost | times: 100.0 | divided_by: d_cost | round: 2 %}}{{% endif %}}{seg_color_code}{{% assign p_fmt = p_cost | round: 2 %}}<div class="cb-hist-seg" style="flex: {{% if d_seg == 10 %}}1 1{{% else %}}0 0{{% endif %}} {{{{ seg_pct }}}}%; height: {{{{ seg_pct }}}}%; background: {{{{ item_color }}}};" title="{{{{ p_name }}}}: {{{{ sym }}}}{{{{ p_fmt }}}} ({{{{ cur_tip }}}})"></div>{{% endif %}}{{% endif %}}{{% endfor %}}
+          {{% if cur_bucket != "" %}}</div>{{% assign show_lbl = b_idx | modulo: step_mod %}}{{% if show_lbl == 0 %}}<div class="cb-hist-date">{{{{ cur_label }}}}</div>{{% endif %}}</div>{{% endif %}}
         </div>
       </div>
+    </div>
+    <div class="cb-daily-legend">
+      {{% for itm in items %}}{{% if itm != "" %}}{legend_color_code}<div class="cb-legend-item"><span class="cb-legend-box" style="background: {{{{ item_color }}}};"></span><span class="cb-legend-label" title="{{{{ itm }}}}">{{{{ itm }}}}</span></div>{{% endif %}}{{% endfor %}}
     </div>
   </div>
 {{% else %}}
@@ -1769,30 +1662,35 @@ DAILY_PROJECT_COST_TEMPLATE = make_daily_cost_template(
     "project",
     "Project",
     is_category=False,
+    plot_height=210,
 )
 
 DAILY_CATEGORY_COST_TEMPLATE = make_daily_cost_template(
     "category",
     "Cost category",
     is_category=True,
+    plot_height=210,
 )
 
 DAILY_DRIVER_COST_TEMPLATE = make_daily_cost_template(
     "driver",
     "Workload driver",
     is_category=False,
+    plot_height=294,
 )
 
 DAILY_MODEL_COST_TEMPLATE = make_daily_cost_template(
     "model_id",
     "Model",
     is_category=False,
+    plot_height=238,
 )
 
 DAILY_SYNTH_TYPE_COST_TEMPLATE = make_daily_cost_template(
     "monitor_type",
     "Synthetic type",
     is_category=False,
+    plot_height=238,
 )
 
 
@@ -3564,12 +3462,15 @@ def build_billing() -> dict:
         DAILY_PROJECT_COST_TEMPLATE,
         f"""{COST_PRELUDE}
 | STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY b = DATE_TRUNC(1 day, @timestamp), project
-| EVAL day = TO_STRING(b)
+| WHERE cost > 0
+| EVAL day = LEFT(TO_STRING(b), 10)
 | INLINE STATS day_cost = SUM(cost) BY day
 | INLINE STATS proj_total = SUM(cost) BY project
+| INLINE STATS max_day_cost = MAX(day_cost), b_count = COUNT_DISTINCT(day), item_limit = COUNT_DISTINCT(project)
+| EVAL seg_pct = ROUND(cost * 100.0 / day_cost, 2)
 | SORT day ASC, proj_total DESC, project ASC
-| LIMIT 5000
-| KEEP day, project, cost, day_cost, currency_symbol, unit""",
+| LIMIT 1500
+| KEEP day, project, cost, day_cost, seg_pct, max_day_cost, b_count, item_limit, currency_symbol, unit""",
         0,
         8,
         24,
@@ -3585,13 +3486,16 @@ def build_billing() -> dict:
         f"""{COST_PRELUDE}
 | WHERE COALESCE(sku, "none") != "none"
 | STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY b = DATE_TRUNC(1 day, @timestamp), category_label
+| WHERE cost > 0
 | RENAME category_label AS category
-| EVAL day = TO_STRING(b)
+| EVAL day = LEFT(TO_STRING(b), 10)
 | INLINE STATS day_cost = SUM(cost) BY day
+| INLINE STATS max_day_cost = MAX(day_cost), b_count = COUNT_DISTINCT(day), item_limit = COUNT_DISTINCT(category)
+| EVAL seg_pct = ROUND(cost * 100.0 / day_cost, 2)
 | EVAL cat_order = CASE(category == "data_tier", 1, category == "platform", 2, category == "transfer", 3, category == "snapshot", 4, category == "support", 5, 6)
 | SORT day ASC, cat_order ASC, cost DESC
-| LIMIT 5000
-| KEEP day, category, cost, day_cost, currency_symbol, unit""",
+| LIMIT 1500
+| KEEP day, category, cost, day_cost, seg_pct, max_day_cost, b_count, item_limit, currency_symbol, unit""",
         24,
         8,
         24,
@@ -3709,7 +3613,7 @@ def build_billing() -> dict:
 | STATS qty = SUM(qty_val), ecu = SUM(units), cost = SUM(cost), is_inactive = MAX(CASE(COALESCE(last_status, "") == "inactive" OR COALESCE(optimized_for, "") == "decommissioned", 1, 0)), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project, project_type_label, category_label, cost_type_label, sku, allocation_driver
 | RENAME project_type_label AS project_type, category_label AS category, cost_type_label AS cost_type, allocation_driver AS driver
 | SORT cost DESC, ecu DESC, qty DESC, project ASC
-| LIMIT 1000
+| LIMIT 250
 | KEEP project, project_type, category, cost_type, sku, driver, qty, ecu, cost, is_inactive, currency_symbol, unit""",
         0,
         51,
@@ -3796,12 +3700,15 @@ def build_usage() -> dict:
 | WHERE COALESCE(is_allocatable, false) == true AND allocation_driver != "none"
 | EVAL driver = CASE(cost_type_label IN ("ingest-vcu", "ingest"), "Indexing (ingest-vcu + ingest)", cost_type_label IN ("search-vcu", "search"), "Search & Query (search-vcu)", cost_type_label == "retained", "Storage (retained)", allocation_driver == "ai" OR cost_type_label IN ("inference", "ml-vcu", "agent-builder"), "AI & ML (inference + ml-vcu + agent-builder)", allocation_driver == "synthetics" OR cost_type_label == "synthetics", "Synthetics (pings + executions)", cost_type_label)
 | STATS cost = SUM(cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY b = DATE_TRUNC(1 day, @timestamp), driver
-| EVAL day = TO_STRING(b)
+| WHERE cost > 0
+| EVAL day = LEFT(TO_STRING(b), 10)
 | INLINE STATS day_cost = SUM(cost) BY day
 | INLINE STATS drv_total = SUM(cost) BY driver
+| INLINE STATS max_day_cost = MAX(day_cost), b_count = COUNT_DISTINCT(day), item_limit = COUNT_DISTINCT(driver)
+| EVAL seg_pct = ROUND(cost * 100.0 / day_cost, 2)
 | SORT day ASC, drv_total DESC, driver ASC
-| LIMIT 5000
-| KEEP day, driver, cost, day_cost, currency_symbol, unit""",
+| LIMIT 1500
+| KEEP day, driver, cost, day_cost, seg_pct, max_day_cost, b_count, item_limit, currency_symbol, unit""",
         0,
         6,
         24,
@@ -4013,12 +3920,15 @@ def build_ai() -> dict:
 | INLINE STATS day_proj_weight = SUM(model_weight), day_proj_models = COUNT(model_id) BY composite_key
 | EVAL day_model_cost = CASE(day_proj_weight > 0.0, (model_weight / day_proj_weight) * ai_pool_cost, day_proj_models > 0, ai_pool_cost / TO_DOUBLE(day_proj_models), 0.0)
 | STATS cost = SUM(day_model_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY b = DATE_TRUNC(1 day, @timestamp), model_id
-| EVAL day = TO_STRING(b)
+| WHERE cost > 0
+| EVAL day = LEFT(TO_STRING(b), 10)
 | INLINE STATS day_cost = SUM(cost) BY day
 | INLINE STATS mod_total = SUM(cost) BY model_id
+| INLINE STATS max_day_cost = MAX(day_cost), b_count = COUNT_DISTINCT(day), item_limit = COUNT_DISTINCT(model_id)
+| EVAL seg_pct = ROUND(cost * 100.0 / day_cost, 2)
 | SORT day ASC, mod_total DESC, model_id ASC
-| LIMIT 5000
-| KEEP day, model_id, cost, day_cost, currency_symbol, unit"""
+| LIMIT 1500
+| KEEP day, model_id, cost, day_cost, seg_pct, max_day_cost, b_count, item_limit, currency_symbol, unit"""
 
     p, _ = custom_panel(
         stable_uuid("cc-ai-daily-model"),
@@ -4211,12 +4121,15 @@ def build_synthetics() -> dict:
 {SYNTHETICS_JOIN_BODY}
 {SYNTHETICS_MONITOR_COST_EVAL}
 | STATS cost = SUM(day_monitor_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY b = DATE_TRUNC(1 day, @timestamp), monitor_type
-| EVAL day = TO_STRING(b)
+| WHERE cost > 0
+| EVAL day = LEFT(TO_STRING(b), 10)
 | INLINE STATS day_cost = SUM(cost) BY day
 | INLINE STATS type_total = SUM(cost) BY monitor_type
+| INLINE STATS max_day_cost = MAX(day_cost), b_count = COUNT_DISTINCT(day), item_limit = COUNT_DISTINCT(monitor_type)
+| EVAL seg_pct = ROUND(cost * 100.0 / day_cost, 2)
 | SORT day ASC, type_total DESC, monitor_type ASC
-| LIMIT 5000
-| KEEP day, monitor_type, cost, day_cost, currency_symbol, unit""",
+| LIMIT 1500
+| KEEP day, monitor_type, cost, day_cost, seg_pct, max_day_cost, b_count, item_limit, currency_symbol, unit""",
         0,
         14,
         24,
@@ -4851,6 +4764,38 @@ def write_json(path: Path, doc: dict) -> None:
     path.write_text(json.dumps(doc, indent=4, sort_keys=True) + "\n")
 
 
+def sync_dist_zips(dashboards: tuple, tags: list, alerts: list, ip: dict) -> None:
+    dist_dir = KIBANA.parent / "dist"
+    if not dist_dir.is_dir():
+        return
+    for zip_path in sorted(dist_dir.glob("chargeback_serverless-*.zip")):
+        pkg_prefix = zip_path.stem
+        replacements: dict[str, bytes] = {}
+        for doc in dashboards:
+            rel = f"{pkg_prefix}/kibana/dashboard/{doc['id']}.json"
+            replacements[rel] = (json.dumps(to_kibana_import_doc(doc), indent=4, sort_keys=True) + "\n").encode("utf-8")
+        for tag in tags:
+            rel = f"{pkg_prefix}/kibana/tag/{tag['id']}.json"
+            replacements[rel] = (json.dumps(tag, indent=4, sort_keys=True) + "\n").encode("utf-8")
+        for alert in alerts:
+            rel = f"{pkg_prefix}/kibana/alerting_rule_template/{alert['id']}.json"
+            replacements[rel] = (json.dumps(alert, indent=4, sort_keys=True) + "\n").encode("utf-8")
+        ip_rel = f"{pkg_prefix}/kibana/index_pattern/{ip['id']}.json"
+        replacements[ip_rel] = (json.dumps(ip, indent=4, sort_keys=True) + "\n").encode("utf-8")
+
+        tmp_zip = zip_path.with_suffix(".zip.tmp")
+        with zipfile.ZipFile(zip_path, "r") as zin, zipfile.ZipFile(tmp_zip, "w", compression=zipfile.ZIP_DEFLATED) as zout:
+            for item in zin.infolist():
+                data = replacements.pop(item.filename, None)
+                if data is None:
+                    data = zin.read(item.filename)
+                zout.writestr(item, data)
+            for rel, data in sorted(replacements.items()):
+                zout.writestr(rel, data)
+        tmp_zip.replace(zip_path)
+        print("Synced Kibana assets into", zip_path)
+
+
 def main() -> None:
     for sub in ("dashboard", "tag", "alerting_rule_template", "index_pattern"):
         d = KIBANA / sub
@@ -4872,11 +4817,14 @@ def main() -> None:
     for tag in tags:
         write_json(KIBANA / "tag" / f"{tag['id']}.json", tag)
 
-    for alert in build_alerts():
+    alerts = build_alerts()
+    for alert in alerts:
         write_json(KIBANA / "alerting_rule_template" / f"{alert['id']}.json", alert)
 
     ip = build_index_pattern()
     write_json(KIBANA / "index_pattern" / f"{ip['id']}.json", ip)
+
+    sync_dist_zips(dashboards, tags, alerts, ip)
 
     if len(sys.argv) > 2:
         ndjson_path = Path(sys.argv[2]).resolve()
