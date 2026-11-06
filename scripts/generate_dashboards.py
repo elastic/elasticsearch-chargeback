@@ -85,7 +85,7 @@ def build_tags() -> list[dict]:
             },
             "coreMigrationVersion": "8.8.0",
             "references": [],
-            "migrationVersion": {"tag": "8.0.0"},
+            "typeMigrationVersion": "8.0.0",
         },
         {
             "id": TAG_PKG_ID,
@@ -97,7 +97,7 @@ def build_tags() -> list[dict]:
             },
             "coreMigrationVersion": "8.8.0",
             "references": [],
-            "migrationVersion": {"tag": "8.0.0"},
+            "typeMigrationVersion": "8.0.0",
         },
     ]
 
