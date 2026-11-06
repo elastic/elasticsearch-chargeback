@@ -1339,9 +1339,11 @@ def make_daily_cost_template(
     group_field: str,
     header_label: str = "Project",
     is_category: bool = False,
-    plot_height: int = 210,
+    plot_height: int = 178,
 ) -> str:
-    container_min_height = plot_height + 32
+    col_height = plot_height - 24
+    y_axis_height = col_height + 12
+    container_min_height = plot_height + 26
     palette_colors = (
         "var(--cc-vis-0),var(--cc-vis-1),var(--cc-vis-2),var(--cc-vis-3),var(--cc-vis-4),var(--cc-vis-5),var(--cc-vis-6),var(--cc-vis-7),var(--cc-vis-8),var(--cc-vis-9)"
     )
@@ -1398,11 +1400,11 @@ def make_daily_cost_template(
     position: relative;
     display: flex;
     flex-direction: column;
-    height: 100%;
+    height: {container_min_height}px;
     min-height: {container_min_height}px;
     width: 100%;
     box-sizing: border-box;
-    padding: 4px 8px 2px 8px;
+    padding: 2px 8px 0 8px;
     overflow: hidden;
   }}
   .cb-daily-head {{
@@ -1412,9 +1414,9 @@ def make_daily_cost_template(
     font-size: 0.78rem;
     font-weight: 600;
     opacity: 0.92;
-    padding: 0 4px 5px 4px;
+    padding: 0 4px 4px 4px;
     border-bottom: 1px solid var(--cc-color-border);
-    margin-bottom: 6px;
+    margin-bottom: 4px;
     gap: 10px;
     flex-shrink: 0;
   }}
@@ -1430,11 +1432,12 @@ def make_daily_cost_template(
     display: flex;
     flex-direction: column;
     justify-content: flex-start;
-    gap: 8px;
+    gap: 7px;
     min-width: 115px;
     max-width: 170px;
+    height: {plot_height}px;
     max-height: {plot_height}px;
-    padding: 2px 2px 14px 10px;
+    padding: 2px 2px 12px 10px;
     border-left: 1px solid var(--cc-color-border);
     box-sizing: border-box;
     user-select: none;
@@ -1468,7 +1471,6 @@ def make_daily_cost_template(
     display: flex;
     flex-direction: row;
     align-items: stretch;
-    flex: 1;
     height: {plot_height}px;
     min-height: {plot_height}px;
     font-family: inherit;
@@ -1481,15 +1483,16 @@ def make_daily_cost_template(
     display: flex;
     flex: 1;
     position: relative;
-    height: 100%;
+    height: {plot_height}px;
     min-height: {plot_height}px;
-    gap: 8px;
+    gap: 6px;
     min-width: 0;
   }}
   .cb-hist-y {{
     display: flex;
     flex-direction: column;
     justify-content: space-between;
+    height: {y_axis_height}px;
     font-size: 0.72rem;
     color: var(--cc-color-text);
     opacity: 0.72;
@@ -1499,15 +1502,15 @@ def make_daily_cost_template(
     white-space: nowrap;
     border-right: 1px solid var(--cc-color-border);
     user-select: none;
-    margin-top: 1px;
-    margin-bottom: 14px;
+    margin-top: 0;
+    margin-bottom: 12px;
     box-sizing: border-box;
     font-variant-numeric: tabular-nums;
   }}
   .cb-hist-plot {{
     display: flex;
     flex: 1;
-    height: 100%;
+    height: {plot_height}px;
     min-height: {plot_height}px;
     overflow-x: auto;
     overflow-y: hidden;
@@ -1519,11 +1522,10 @@ def make_daily_cost_template(
     align-items: flex-end;
     justify-content: space-between;
     min-width: 100%;
-    height: 100%;
+    height: {plot_height}px;
     min-height: {plot_height}px;
     position: relative;
-    padding-bottom: 20px;
-    padding-top: 6px;
+    padding: 6px 10px 18px 10px;
     box-sizing: border-box;
   }}
   .cb-hist-grid {{
@@ -1531,7 +1533,7 @@ def make_daily_cost_template(
     top: 6px;
     left: 0;
     right: 0;
-    bottom: 20px;
+    bottom: 18px;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
@@ -1555,7 +1557,8 @@ def make_daily_cost_template(
     flex: 1 1 0;
     min-width: 4px;
     max-width: 38px;
-    height: 100%;
+    height: {col_height}px;
+    min-height: {col_height}px;
     justify-content: flex-end;
     position: relative;
     z-index: 1;
@@ -1579,7 +1582,7 @@ def make_daily_cost_template(
   }}
   .cb-hist-date {{
     position: absolute;
-    bottom: -18px;
+    bottom: -16px;
     font-size: 0.70rem;
     font-weight: 500;
     font-variant-numeric: tabular-nums;
@@ -1642,7 +1645,7 @@ def make_daily_cost_template(
             <div class="cb-grid-line cb-grid-line-zero"></div>
           </div>
           {{% assign cur_bucket = "" %}}{{% assign cur_label = "" %}}{{% assign cur_tip = "" %}}{{% assign b_idx = -1 %}}{{% assign d_seg = 0 %}}{{% assign d_cost = 0.0 %}}
-          {{% for r in rows %}}{{% assign b_raw = r["day"].value | default: "" %}}{{% if b_raw != cur_bucket %}}{{% if cur_bucket != "" %}}</div>{{% assign show_lbl = b_idx | modulo: step_mod %}}{{% if show_lbl == 0 %}}<div class="cb-hist-date">{{{{ cur_label }}}}</div>{{% endif %}}</div>{{% endif %}}{{% assign cur_bucket = b_raw %}}{{% assign b_idx = b_idx | plus: 1 %}}{{% assign d_seg = 0 %}}{{% assign cur_tip = cur_bucket | slice: 0, 10 %}}{{% assign m_idx = cur_bucket | slice: 5, 2 | plus: 0 | minus: 1 %}}{{% assign m_name = m_arr[m_idx] | default: "" %}}{{% assign d_num = cur_bucket | slice: 8, 2 | plus: 0 %}}{{% if m_name != "" %}}{{% assign cur_label = m_name | append: " " | append: d_num %}}{{% else %}}{{% assign cur_label = cur_bucket | slice: 5, 5 %}}{{% endif %}}{{% assign d_cost = r["day_cost"].value | default: 0.0 | round: 2 %}}{{% assign stack_pct = d_cost | times: 100.0 | divided_by: y_top | round: 2 %}}{{% if stack_pct > 100.0 %}}{{% assign stack_pct = 100.0 %}}{{% endif %}}<div class="cb-hist-col" title="{{{{ cur_tip }}}}: {{{{ sym }}}}{{{{ d_cost }}}}"><div class="cb-hist-stack" style="height: {{{{ stack_pct }}}}%;">{{% endif %}}{{% assign p_cost = r["cost"].value | default: 0.0 %}}{{% if p_cost > 0 and d_cost > 0 %}}{{% assign d_seg = d_seg | plus: 1 %}}{{% if d_seg <= 10 %}}{{% assign p_name = r["{group_field}"].value | default: "unknown" %}}{{% assign seg_pct = r["seg_pct"].value | default: 0.0 %}}{{% if seg_pct <= 0 %}}{{% assign seg_pct = p_cost | times: 100.0 | divided_by: d_cost | round: 2 %}}{{% endif %}}{seg_color_code}{{% assign p_fmt = p_cost | round: 2 %}}<div class="cb-hist-seg" style="flex: {{% if d_seg == 10 %}}1 1{{% else %}}0 0{{% endif %}} {{{{ seg_pct }}}}%; height: {{{{ seg_pct }}}}%; background: {{{{ item_color }}}};" title="{{{{ p_name }}}}: {{{{ sym }}}}{{{{ p_fmt }}}} ({{{{ cur_tip }}}})"></div>{{% endif %}}{{% endif %}}{{% endfor %}}
+          {{% for r in rows %}}{{% assign b_raw = r["day"].value | default: "" %}}{{% if b_raw != cur_bucket %}}{{% if cur_bucket != "" %}}</div>{{% assign show_lbl = b_idx | modulo: step_mod %}}{{% if show_lbl == 0 %}}<div class="cb-hist-date">{{{{ cur_label }}}}</div>{{% endif %}}</div>{{% endif %}}{{% assign cur_bucket = b_raw %}}{{% assign b_idx = b_idx | plus: 1 %}}{{% assign d_seg = 0 %}}{{% assign cur_tip = cur_bucket | slice: 0, 10 %}}{{% assign m_idx = cur_bucket | slice: 5, 2 | plus: 0 | minus: 1 %}}{{% assign m_name = m_arr[m_idx] | default: "" %}}{{% assign d_num = cur_bucket | slice: 8, 2 | plus: 0 %}}{{% if m_name != "" %}}{{% assign cur_label = m_name | append: " " | append: d_num %}}{{% else %}}{{% assign cur_label = cur_bucket | slice: 5, 5 %}}{{% endif %}}{{% assign d_cost = r["day_cost"].value | default: 0.0 | round: 2 %}}{{% assign stack_pct = d_cost | times: 100.0 | divided_by: y_top | round: 2 %}}{{% if stack_pct > 100.0 %}}{{% assign stack_pct = 100.0 %}}{{% endif %}}<div class="cb-hist-col" title="{{{{ cur_tip }}}}: {{{{ sym }}}}{{{{ d_cost }}}}"><div class="cb-hist-stack" style="flex: 0 0 {{{{ stack_pct }}}}%; height: {{{{ stack_pct }}}}%;">{{% endif %}}{{% assign p_cost = r["cost"].value | default: 0.0 %}}{{% if p_cost > 0 and d_cost > 0 %}}{{% assign d_seg = d_seg | plus: 1 %}}{{% if d_seg <= 10 %}}{{% assign p_name = r["{group_field}"].value | default: "unknown" %}}{{% assign seg_pct = r["seg_pct"].value | default: 0.0 %}}{{% if seg_pct <= 0 %}}{{% assign seg_pct = p_cost | times: 100.0 | divided_by: d_cost | round: 2 %}}{{% endif %}}{seg_color_code}{{% assign p_fmt = p_cost | round: 2 %}}<div class="cb-hist-seg" style="flex: 0 0 {{{{ seg_pct }}}}%; height: {{{{ seg_pct }}}}%; background: {{{{ item_color }}}};" title="{{{{ p_name }}}}: {{{{ sym }}}}{{{{ p_fmt }}}} ({{{{ cur_tip }}}})"></div>{{% endif %}}{{% endif %}}{{% endfor %}}
           {{% if cur_bucket != "" %}}</div>{{% assign show_lbl = b_idx | modulo: step_mod %}}{{% if show_lbl == 0 %}}<div class="cb-hist-date">{{{{ cur_label }}}}</div>{{% endif %}}</div>{{% endif %}}
         </div>
       </div>
@@ -1662,35 +1665,35 @@ DAILY_PROJECT_COST_TEMPLATE = make_daily_cost_template(
     "project",
     "Project",
     is_category=False,
-    plot_height=210,
+    plot_height=178,
 )
 
 DAILY_CATEGORY_COST_TEMPLATE = make_daily_cost_template(
     "category",
     "Cost category",
     is_category=True,
-    plot_height=210,
+    plot_height=178,
 )
 
 DAILY_DRIVER_COST_TEMPLATE = make_daily_cost_template(
     "driver",
     "Workload driver",
     is_category=False,
-    plot_height=294,
+    plot_height=248,
 )
 
 DAILY_MODEL_COST_TEMPLATE = make_daily_cost_template(
     "model_id",
     "Model",
     is_category=False,
-    plot_height=238,
+    plot_height=200,
 )
 
 DAILY_SYNTH_TYPE_COST_TEMPLATE = make_daily_cost_template(
     "monitor_type",
     "Synthetic type",
     is_category=False,
-    plot_height=238,
+    plot_height=200,
 )
 
 
