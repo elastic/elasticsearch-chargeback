@@ -4680,13 +4680,13 @@ def build_alerts() -> list[dict]:
             f"""FROM {AI_USAGE}
 | EVAL threshold_spend = 50.0, filter_model = "*"
 | INLINE STATS latest_day = MAX(@timestamp)
-| WHERE @timestamp == latest_day
 {AI_JOIN_BODY}
 | EVAL compute_time = CASE(total_inference_time_ms IS NOT NULL, TO_DOUBLE(total_inference_time_ms), 0.0)
 | EVAL model_weight = CASE(compute_time > 0.0, compute_time, TO_DOUBLE(inference_count))
 | EVAL ai_ecu_val = CASE(ai_ecu IS NOT NULL, ai_ecu, 0.0), qry_ecu_val = CASE(query_ecu IS NOT NULL, query_ecu, 0.0)
 | EVAL ded_cost = ai_ecu_val * rate
 | INLINE STATS proj_win_ded_ecu = SUM(ai_ecu_val) BY project_id
+| WHERE @timestamp == latest_day
 | INLINE STATS day_proj_weight = SUM(model_weight), day_proj_models = COUNT(model_id) BY composite_key
 | EVAL ai_pool_cost = CASE(ai_ecu_val > 0.0, ai_ecu_val, proj_win_ded_ecu == 0.0 AND day_proj_weight > 0.0, qry_ecu_val, 0.0) * rate
 | EVAL day_model_cost = CASE(day_proj_weight > 0.0, (model_weight / day_proj_weight) * ai_pool_cost, day_proj_models > 0, ai_pool_cost / TO_DOUBLE(day_proj_models), 0.0)
@@ -4740,6 +4740,7 @@ def build_alerts() -> list[dict]:
     raw_pname = MAX(project_name),
     project_type = MAX(project_type_label),
     harvest_status = COALESCE(MAX(last_status), "missing"),
+    synth_status = COALESCE(MAX(synthetics_status), "ok"),
     updated_at_str = COALESCE(TO_STRING(MAX(updated_at)), "never"),
     is_stale_time = MAX(is_stale_row),
     proj_spend = ROUND(SUM(cost), 2),
@@ -4751,7 +4752,7 @@ def build_alerts() -> list[dict]:
     sym = COALESCE(MAX(currency_symbol), "$"),
     unit = COALESCE(MAX(unit), "USD")
   BY day, project_id
-| EVAL has_harvest_issue = (harvest_status != "inactive" AND (harvest_status != "ok" OR is_stale_time == 1))
+| EVAL has_harvest_issue = (harvest_status != "inactive" AND (harvest_status != "ok" OR synth_status == "unauthorized" OR is_stale_time == 1))
 | EVAL has_missing_name = (proj_ecu > 0.0 AND (raw_pname IS NULL OR raw_pname == "" OR raw_pname == project_id))
 | EVAL unallocated_pct = CASE(org_spend > 0.0, ROUND(unallocated_spend * 100.0 / org_spend, 1), 0.0)
 | EVAL has_unalloc_issue = (unallocated_spend > thresh_unalloc AND unallocated_pct > thresh_pct)
