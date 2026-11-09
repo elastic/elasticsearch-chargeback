@@ -80,6 +80,11 @@ es() {
 : "${ES_URL:?Set ES_URL}"
 : "${ES_API_KEY:?Set ES_API_KEY (or HUB_ES_API_KEY / HUB_KIBANA_API_KEY)}"
 
+if [[ -z "$ORGANIZATION_ID" && -z "$PROJECT_ID" && -z "$CONF_RATE" && -z "$CONF_RATE_UNIT" && -z "$CONF_CURRENCY_SYMBOL" && -z "$DATA_RETENTION" ]]; then
+  echo "ERROR: ORGANIZATION_ID is required. Set ORGANIZATION_ID in environment or macOS Keychain (./scripts/keychain.sh set ORGANIZATION_ID <org_id>)." >&2
+  exit 1
+fi
+
 KIBANA_URL="${KIBANA_URL:-${KIBANA_HOST:-}}"
 if [[ -z "$KIBANA_URL" && -n "$ES_URL" && "$ES_URL" =~ \.es\. ]]; then
   KIBANA_URL="${ES_URL//.es./.kb.}"
@@ -137,6 +142,9 @@ for inp in inputs:
     vars_dict = inp.setdefault("vars", {})
     if org_id:
         vars_dict["organization_id"] = {"value": str(org_id), "type": "text"}
+    elif not (vars_dict.get("organization_id") or {}).get("value"):
+        print("ERROR: ORGANIZATION_ID is not set in environment, Keychain, or existing Fleet policy.", file=sys.stderr)
+        sys.exit(1)
     if cloud_key:
         vars_dict["cloud_api_key"] = {"value": str(cloud_key), "type": "password"}
     if hub_key:

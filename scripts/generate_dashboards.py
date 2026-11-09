@@ -182,11 +182,16 @@ SYNTHETICS_MONITOR_COST_EVAL = """| EVAL monitor_type = COALESCE(monitor_type, "
 | EVAL chk = CASE(check_count IS NOT NULL, TO_DOUBLE(check_count), 0.0)
 | EVAL b_chk = CASE(is_browser, chk, 0.0)
 | EVAL p_chk = CASE(NOT is_browser, chk, 0.0)
-| INLINE STATS day_b_checks = SUM(b_chk), day_p_checks = SUM(p_chk), day_tot_checks = SUM(chk) BY composite_key
+| EVAL b_mon = CASE(is_browser, 1, 0)
+| EVAL p_mon = CASE(NOT is_browser, 1, 0)
+| INLINE STATS day_b_checks = SUM(b_chk), day_p_checks = SUM(p_chk), day_all_checks = SUM(chk), day_b_mons = SUM(b_mon), day_p_mons = SUM(p_mon), day_all_mons = COUNT(monitor_id) BY composite_key
 | EVAL day_monitor_cost = CASE(
-    (pings_pool_cost > 0.0 OR exec_pool_cost > 0.0) AND is_browser AND day_b_checks > 0.0, (chk / day_b_checks) * exec_pool_cost,
-    (pings_pool_cost > 0.0 OR exec_pool_cost > 0.0) AND NOT is_browser AND day_p_checks > 0.0, (chk / day_p_checks) * pings_pool_cost,
-    tot_pool_cost > 0.0 AND day_tot_checks > 0.0, (chk / day_tot_checks) * tot_pool_cost,
+    is_browser AND exec_pool_cost > 0.0 AND (pings_pool_cost == 0.0 OR day_p_mons > 0),
+      CASE(day_b_checks > 0.0, (chk / day_b_checks) * exec_pool_cost, day_b_mons > 0, exec_pool_cost / TO_DOUBLE(day_b_mons), 0.0),
+    NOT is_browser AND pings_pool_cost > 0.0 AND (exec_pool_cost == 0.0 OR day_b_mons > 0),
+      CASE(day_p_checks > 0.0, (chk / day_p_checks) * pings_pool_cost, day_p_mons > 0, pings_pool_cost / TO_DOUBLE(day_p_mons), 0.0),
+    day_all_checks > 0.0, (chk / day_all_checks) * tot_pool_cost,
+    day_all_mons > 0, tot_pool_cost / TO_DOUBLE(day_all_mons),
     0.0
   )"""
 
@@ -202,11 +207,11 @@ def adhoc_id(title: str) -> str:
 def links_panel(panel_id: str, current: str) -> tuple[dict, list]:
     """Navigation links bar: all five links use dashboardLink with dashboard references."""
     nav = [
-        (DASH_BILLING, TITLE_BILLING),
-        (DASH_USAGE, TITLE_USAGE),
-        (DASH_AI, TITLE_AI),
-        (DASH_SYNTHETICS, TITLE_SYNTHETICS),
-        (DASH_CONFIG, TITLE_CONFIG),
+        (DASH_BILLING, "Billing & Cost Overview"),
+        (DASH_USAGE, "Usage & Cost Allocation"),
+        (DASH_AI, "AI & ML Attribution"),
+        (DASH_SYNTHETICS, "Synthetics Attribution"),
+        (DASH_CONFIG, "Configuration & Health"),
     ]
     links = []
     refs = []
@@ -221,7 +226,7 @@ def links_panel(panel_id: str, current: str) -> tuple[dict, list]:
                 "options": {
                     "openInNewTab": False,
                     "useCurrentDateRange": True,
-                    "useCurrentFilters": True,
+                    "useCurrentFilters": False,
                 },
                 "order": order,
                 "type": "dashboardLink",
@@ -737,7 +742,7 @@ USAGE_KPI_TEMPLATE = f"""\
   .cb-kpi-sub {{ color: var(--cc-color-text); font-size: 0.73rem; opacity: 0.68; margin-top: 3px; line-height: 1.1; }}
 </style>
 {{% assign r = rows[0] %}}
-{{% assign pool = r["pool_spend"].value | default: 0.0 %}}
+{{% assign pool = r["pool_spend"].value | default: r["alloc_spend"].value | default: 0.0 %}}
 {{% assign idx_s = r["indexing_spend"].value | default: 0.0 %}}
 {{% assign qry_s = r["query_spend"].value | default: 0.0 %}}
 {{% assign stg_s = r["storage_spend"].value | default: 0.0 %}}
@@ -971,7 +976,7 @@ AI_KPIS_TEMPLATE = f"""\
 <div class="cb-kpi-wrap">
   <div class="cb-kpis">
     <div class="cb-kpi" title="AI &amp; ML Spend: Dedicated AI SKU spend (ml-vcu, inference, agent-builder); falls back to shared search-vcu pool when built-in models run without dedicated ML SKUs.">
-      {{% if ded_spend <= 0.0 and ai_spend > 0.0 %}}
+      {{% if ai_spend > ded_spend %}}
         <div class="cb-kpi-label">AI &amp; ML Pool (Shared Search, {{{{ unit }}}})</div>
         <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_ai_spend }}}}</span></div>
         <div class="cb-kpi-sub"><span class="cb-ai-pill cb-ai-pill-shared">search-vcu fallback</span> · shared with Search pool</div>
@@ -1253,10 +1258,10 @@ SYNTHETICS_KPI_TEMPLATE = f"""\
       <div class="cb-kpi-value"><span class="cb-sym">{{{{ sym }}}}</span> <span class="cb-money">{{{{ fmt_exec_spend }}}}</span></div>
       <div class="cb-kpi-sub">{{{{ exec_pct }}}}% · Playwright browser journeys</div>
     </div>
-    <div class="cb-kpi" title="Total Check Executions: Billed check runs across lightweight pings and Playwright browser executions.">
-      <div class="cb-kpi-label">Total Check Executions</div>
+    <div class="cb-kpi" title="Billed Check Executions: Billed SKU check units across lightweight pings and Playwright browser executions.">
+      <div class="cb-kpi-label">Billed Check Executions</div>
       <div class="cb-kpi-value">{{{{ fmt_synth_runs }}}}</div>
-      <div class="cb-kpi-sub">Lightweight pings + browser runs</div>
+      <div class="cb-kpi-sub">Billed SKU check units: pings + browser</div>
     </div>
     <div class="cb-kpi" title="Unit Cost (1k Checks): Blended cost per 1,000 check executions (synthetics_spend × 1000 / synthetics_runs).">
       <div class="cb-kpi-label">Unit Cost (1k Checks)</div>
@@ -1525,7 +1530,7 @@ def make_daily_cost_template(
     height: {plot_height}px;
     min-height: {plot_height}px;
     position: relative;
-    padding: 6px 10px 18px 10px;
+    padding: 6px 28px 18px 28px;
     box-sizing: border-box;
   }}
   .cb-hist-grid {{
@@ -1611,13 +1616,25 @@ def make_daily_cost_template(
 
 {{% if b_count <= 8 %}}{{% assign step_mod = 1 %}}{{% elsif b_count <= 16 %}}{{% assign step_mod = 2 %}}{{% elsif b_count <= 24 %}}{{% assign step_mod = 3 %}}{{% elsif b_count <= 35 %}}{{% assign step_mod = 5 %}}{{% elsif b_count <= 50 %}}{{% assign step_mod = 7 %}}{{% elsif b_count <= 75 %}}{{% assign step_mod = 10 %}}{{% else %}}{{% assign step_mod = b_count | divided_by: 6 | floor %}}{{% if step_mod < 10 %}}{{% assign step_mod = 10 %}}{{% endif %}}{{% endif %}}
 
-{{% assign raw_top = max_day_cost | times: 1.15 %}}
-{{% if raw_top <= 4 %}}{{% assign y_top = 4 %}}{{% elsif raw_top <= 8 %}}{{% assign y_top = 8 %}}{{% elsif raw_top <= 16 %}}{{% assign y_top = 16 %}}{{% elsif raw_top <= 40 %}}{{% assign y_top = 40 %}}{{% elsif raw_top <= 80 %}}{{% assign y_top = 80 %}}{{% elsif raw_top <= 120 %}}{{% assign y_top = 120 %}}{{% elsif raw_top <= 200 %}}{{% assign y_top = 200 %}}{{% elsif raw_top <= 320 %}}{{% assign y_top = 320 %}}{{% elsif raw_top <= 480 %}}{{% assign y_top = 480 %}}{{% elsif raw_top <= 800 %}}{{% assign y_top = 800 %}}{{% elsif raw_top <= 1200 %}}{{% assign y_top = 1200 %}}{{% elsif raw_top <= 2000 %}}{{% assign y_top = 2000 %}}{{% elsif raw_top <= 4000 %}}{{% assign y_top = 4000 %}}{{% elsif raw_top <= 8000 %}}{{% assign y_top = 8000 %}}{{% elsif raw_top <= 20000 %}}{{% assign y_top = 20000 %}}{{% elsif raw_top <= 40000 %}}{{% assign y_top = 40000 %}}{{% else %}}{{% assign y_top = raw_top | divided_by: 10000 | floor | plus: 1 | times: 10000 %}}{{% endif %}}
-{{% assign y_1 = y_top | times: 0.25 | round %}}{{% assign y_2 = y_top | times: 0.50 | round %}}{{% assign y_3 = y_top | times: 0.75 | round %}}{{% assign y_4 = y_top %}}
-{liquid_money_block("y_4", "fmt_y_4", with_decimals=False)}
-{liquid_money_block("y_3", "fmt_y_3", with_decimals=False)}
-{liquid_money_block("y_2", "fmt_y_2", with_decimals=False)}
-{liquid_money_block("y_1", "fmt_y_1", with_decimals=False)}
+{{% assign raw_top = max_day_cost | times: 1.05 %}}
+{{% if max_day_cost < 4.0 %}}
+  {{% assign y_step_c = raw_top | times: 100.0 | divided_by: 4.0 | ceil %}}
+  {{% if y_step_c < 1 %}}{{% assign y_step_c = 1 %}}{{% endif %}}
+  {{% assign y_step = y_step_c | divided_by: 100.0 %}}
+  {{% assign y_1 = y_step %}}{{% assign y_2 = y_step | times: 2.0 %}}{{% assign y_3 = y_step | times: 3.0 %}}{{% assign y_4 = y_step | times: 4.0 %}}{{% assign y_top = y_4 %}}
+  {liquid_money_block("y_4", "fmt_y_4", with_decimals=True)}
+  {liquid_money_block("y_3", "fmt_y_3", with_decimals=True)}
+  {liquid_money_block("y_2", "fmt_y_2", with_decimals=True)}
+  {liquid_money_block("y_1", "fmt_y_1", with_decimals=True)}
+{{% else %}}
+  {{% assign y_step = raw_top | divided_by: 4.0 | ceil %}}
+  {{% if y_step < 1 %}}{{% assign y_step = 1 %}}{{% endif %}}
+  {{% assign y_1 = y_step %}}{{% assign y_2 = y_step | times: 2 %}}{{% assign y_3 = y_step | times: 3 %}}{{% assign y_4 = y_step | times: 4 %}}{{% assign y_top = y_4 %}}
+  {liquid_money_block("y_4", "fmt_y_4", with_decimals=False)}
+  {liquid_money_block("y_3", "fmt_y_3", with_decimals=False)}
+  {liquid_money_block("y_2", "fmt_y_2", with_decimals=False)}
+  {liquid_money_block("y_1", "fmt_y_1", with_decimals=False)}
+{{% endif %}}
 {{% assign m_arr = "Jan,Feb,Mar,Apr,May,Jun,Jul,Aug,Sep,Oct,Nov,Dec" | split: "," %}}
 
 <div class="cb-daily-container">
@@ -1644,8 +1661,8 @@ def make_daily_cost_template(
             <div class="cb-grid-line"></div>
             <div class="cb-grid-line cb-grid-line-zero"></div>
           </div>
-          {{% assign cur_bucket = "" %}}{{% assign cur_label = "" %}}{{% assign cur_tip = "" %}}{{% assign b_idx = -1 %}}{{% assign d_seg = 0 %}}{{% assign d_cost = 0.0 %}}
-          {{% for r in rows %}}{{% assign b_raw = r["day"].value | default: "" %}}{{% if b_raw != cur_bucket %}}{{% if cur_bucket != "" %}}</div>{{% assign show_lbl = b_idx | modulo: step_mod %}}{{% if show_lbl == 0 %}}<div class="cb-hist-date">{{{{ cur_label }}}}</div>{{% endif %}}</div>{{% endif %}}{{% assign cur_bucket = b_raw %}}{{% assign b_idx = b_idx | plus: 1 %}}{{% assign d_seg = 0 %}}{{% assign cur_tip = cur_bucket | slice: 0, 10 %}}{{% assign m_idx = cur_bucket | slice: 5, 2 | plus: 0 | minus: 1 %}}{{% assign m_name = m_arr[m_idx] | default: "" %}}{{% assign d_num = cur_bucket | slice: 8, 2 | plus: 0 %}}{{% if m_name != "" %}}{{% assign cur_label = m_name | append: " " | append: d_num %}}{{% else %}}{{% assign cur_label = cur_bucket | slice: 5, 5 %}}{{% endif %}}{{% assign d_cost = r["day_cost"].value | default: 0.0 | round: 2 %}}{{% assign stack_pct = d_cost | times: 100.0 | divided_by: y_top | round: 2 %}}{{% if stack_pct > 100.0 %}}{{% assign stack_pct = 100.0 %}}{{% endif %}}<div class="cb-hist-col" title="{{{{ cur_tip }}}}: {{{{ sym }}}}{{{{ d_cost }}}}"><div class="cb-hist-stack" style="flex: 0 0 {{{{ stack_pct }}}}%; height: {{{{ stack_pct }}}}%;">{{% endif %}}{{% assign p_cost = r["cost"].value | default: 0.0 %}}{{% if p_cost > 0 and d_cost > 0 %}}{{% assign d_seg = d_seg | plus: 1 %}}{{% if d_seg <= 10 %}}{{% assign p_name = r["{group_field}"].value | default: "unknown" %}}{{% assign seg_pct = r["seg_pct"].value | default: 0.0 %}}{{% if seg_pct <= 0 %}}{{% assign seg_pct = p_cost | times: 100.0 | divided_by: d_cost | round: 2 %}}{{% endif %}}{seg_color_code}{{% assign p_fmt = p_cost | round: 2 %}}<div class="cb-hist-seg" style="flex: 0 0 {{{{ seg_pct }}}}%; height: {{{{ seg_pct }}}}%; background: {{{{ item_color }}}};" title="{{{{ p_name }}}}: {{{{ sym }}}}{{{{ p_fmt }}}} ({{{{ cur_tip }}}})"></div>{{% endif %}}{{% endif %}}{{% endfor %}}
+          {{% assign cur_bucket = "" %}}{{% assign cur_label = "" %}}{{% assign cur_tip = "" %}}{{% assign b_idx = -1 %}}{{% assign d_seg = 0 %}}{{% assign d_cost = 0.0 %}}{{% assign used_pct = 0.0 %}}
+          {{% for r in rows %}}{{% assign b_raw = r["day"].value | default: "" %}}{{% if b_raw != cur_bucket %}}{{% if cur_bucket != "" %}}</div>{{% assign show_lbl = b_idx | modulo: step_mod %}}{{% if show_lbl == 0 %}}<div class="cb-hist-date">{{{{ cur_label }}}}</div>{{% endif %}}</div>{{% endif %}}{{% assign cur_bucket = b_raw %}}{{% assign b_idx = b_idx | plus: 1 %}}{{% assign d_seg = 0 %}}{{% assign used_pct = 0.0 %}}{{% assign cur_tip = cur_bucket | slice: 0, 10 %}}{{% assign m_idx = cur_bucket | slice: 5, 2 | plus: 0 | minus: 1 %}}{{% assign m_name = m_arr[m_idx] | default: "" %}}{{% assign d_num = cur_bucket | slice: 8, 2 | plus: 0 %}}{{% if m_name != "" %}}{{% assign cur_label = m_name | append: " " | append: d_num %}}{{% else %}}{{% assign cur_label = cur_bucket | slice: 5, 5 %}}{{% endif %}}{{% assign d_cost = r["day_cost"].value | default: 0.0 | round: 2 %}}{{% assign stack_pct = d_cost | times: 100.0 | divided_by: y_top | round: 2 %}}{{% if stack_pct > 100.0 %}}{{% assign stack_pct = 100.0 %}}{{% endif %}}<div class="cb-hist-col" title="{{{{ cur_tip }}}}: {{{{ sym }}}}{{{{ d_cost }}}}"><div class="cb-hist-stack" style="flex: 0 0 {{{{ stack_pct }}}}%; height: {{{{ stack_pct }}}}%;">{{% endif %}}{{% assign p_cost = r["cost"].value | default: 0.0 %}}{{% if p_cost > 0 and d_cost > 0 %}}{{% assign d_seg = d_seg | plus: 1 %}}{{% if d_seg <= 10 %}}{{% assign p_name = r["{group_field}"].value | default: "unknown" %}}{{% assign seg_pct = r["seg_pct"].value | default: 0.0 %}}{{% if seg_pct <= 0 %}}{{% assign seg_pct = p_cost | times: 100.0 | divided_by: d_cost | round: 2 %}}{{% endif %}}{{% if d_seg == 10 %}}{{% assign rem_pct = 100.0 | minus: used_pct | round: 2 %}}{{% if rem_pct > seg_pct %}}{{% assign seg_pct = rem_pct %}}{{% endif %}}{{% endif %}}{{% assign used_pct = used_pct | plus: seg_pct %}}{seg_color_code}{{% assign p_fmt = p_cost | round: 2 %}}<div class="cb-hist-seg" style="flex: 0 0 {{{{ seg_pct }}}}%; height: {{{{ seg_pct }}}}%; background: {{{{ item_color }}}};" title="{{{{ p_name }}}}: {{{{ sym }}}}{{{{ p_fmt }}}} ({{{{ cur_tip }}}})"></div>{{% endif %}}{{% endif %}}{{% endfor %}}
           {{% if cur_bucket != "" %}}</div>{{% assign show_lbl = b_idx | modulo: step_mod %}}{{% if show_lbl == 0 %}}<div class="cb-hist-date">{{{{ cur_label }}}}</div>{{% endif %}}</div>{{% endif %}}
         </div>
       </div>
@@ -2320,26 +2337,36 @@ DATASTREAM_COST_TABLE_TEMPLATE = f"""\
   #dscost_flt_metrics:checked ~ .cb-flt-bar-dscost .cb-flt-btn-dscost-metrics,
   #dscost_flt_traces:checked ~ .cb-flt-bar-dscost .cb-flt-btn-dscost-traces,
   #dscost_flt_synthetics:checked ~ .cb-flt-bar-dscost .cb-flt-btn-dscost-synthetics,
+  #dscost_flt_index:checked ~ .cb-flt-bar-dscost .cb-flt-btn-dscost-index,
+  #dscost_flt_system:checked ~ .cb-flt-bar-dscost .cb-flt-btn-dscost-system,
   #dscost_flt_other:checked ~ .cb-flt-bar-dscost .cb-flt-btn-dscost-other {{ background: var(--cc-color-primary); color: #ffffff !important; border-color: var(--cc-color-primary); font-weight: 700; }}
   #dscost_flt_logs:checked ~ .cb-content-wrap-dscost,
   #dscost_flt_metrics:checked ~ .cb-content-wrap-dscost,
   #dscost_flt_traces:checked ~ .cb-content-wrap-dscost,
   #dscost_flt_synthetics:checked ~ .cb-content-wrap-dscost,
+  #dscost_flt_index:checked ~ .cb-content-wrap-dscost,
+  #dscost_flt_system:checked ~ .cb-content-wrap-dscost,
   #dscost_flt_other:checked ~ .cb-content-wrap-dscost {{ overflow-y: auto !important; }}
   #dscost_flt_logs:checked ~ .cb-content-wrap-dscost .cb-pg-row-dscost,
   #dscost_flt_metrics:checked ~ .cb-content-wrap-dscost .cb-pg-row-dscost,
   #dscost_flt_traces:checked ~ .cb-content-wrap-dscost .cb-pg-row-dscost,
   #dscost_flt_synthetics:checked ~ .cb-content-wrap-dscost .cb-pg-row-dscost,
+  #dscost_flt_index:checked ~ .cb-content-wrap-dscost .cb-pg-row-dscost,
+  #dscost_flt_system:checked ~ .cb-content-wrap-dscost .cb-pg-row-dscost,
   #dscost_flt_other:checked ~ .cb-content-wrap-dscost .cb-pg-row-dscost {{ display: none !important; }}
   #dscost_flt_logs:checked ~ .cb-content-wrap-dscost .cb-pg-row-dscost.cb-dst-logs,
   #dscost_flt_metrics:checked ~ .cb-content-wrap-dscost .cb-pg-row-dscost.cb-dst-metrics,
   #dscost_flt_traces:checked ~ .cb-content-wrap-dscost .cb-pg-row-dscost.cb-dst-traces,
   #dscost_flt_synthetics:checked ~ .cb-content-wrap-dscost .cb-pg-row-dscost.cb-dst-synthetics,
+  #dscost_flt_index:checked ~ .cb-content-wrap-dscost .cb-pg-row-dscost.cb-dst-index,
+  #dscost_flt_system:checked ~ .cb-content-wrap-dscost .cb-pg-row-dscost.cb-dst-system,
   #dscost_flt_other:checked ~ .cb-content-wrap-dscost .cb-pg-row-dscost.cb-dst-other {{ display: table-row !important; }}
   #dscost_flt_logs:checked ~ .cb-pg-bar-dscost,
   #dscost_flt_metrics:checked ~ .cb-pg-bar-dscost,
   #dscost_flt_traces:checked ~ .cb-pg-bar-dscost,
   #dscost_flt_synthetics:checked ~ .cb-pg-bar-dscost,
+  #dscost_flt_index:checked ~ .cb-pg-bar-dscost,
+  #dscost_flt_system:checked ~ .cb-pg-bar-dscost,
   #dscost_flt_other:checked ~ .cb-pg-bar-dscost {{ display: none !important; }}
   table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; color: var(--cc-color-text); }}
   table.cb-t th {{
@@ -2364,6 +2391,8 @@ DATASTREAM_COST_TABLE_TEMPLATE = f"""\
   <input type="radio" name="dscost_flt" id="dscost_flt_metrics" class="cb-pg-radio-dscost">
   <input type="radio" name="dscost_flt" id="dscost_flt_traces" class="cb-pg-radio-dscost">
   <input type="radio" name="dscost_flt" id="dscost_flt_synthetics" class="cb-pg-radio-dscost">
+  <input type="radio" name="dscost_flt" id="dscost_flt_index" class="cb-pg-radio-dscost">
+  <input type="radio" name="dscost_flt" id="dscost_flt_system" class="cb-pg-radio-dscost">
   <input type="radio" name="dscost_flt" id="dscost_flt_other" class="cb-pg-radio-dscost">
 {{% for _p_i in (1.._total_pages) %}}
   <input type="radio" name="dscost_pg" id="dscost_pg_{{{{ _p_i }}}}" class="cb-pg-radio-dscost" {{% if _p_i == 1 %}}checked{{% endif %}}>
@@ -2375,6 +2404,8 @@ DATASTREAM_COST_TABLE_TEMPLATE = f"""\
   <label for="dscost_flt_metrics" class="cb-pg-btn cb-flt-btn-dscost-metrics">metrics</label>
   <label for="dscost_flt_traces" class="cb-pg-btn cb-flt-btn-dscost-traces">traces</label>
   <label for="dscost_flt_synthetics" class="cb-pg-btn cb-flt-btn-dscost-synthetics">synthetics</label>
+  <label for="dscost_flt_index" class="cb-pg-btn cb-flt-btn-dscost-index">index</label>
+  <label for="dscost_flt_system" class="cb-pg-btn cb-flt-btn-dscost-system">system</label>
   <label for="dscost_flt_other" class="cb-pg-btn cb-flt-btn-dscost-other">other</label>
 </div>
 <div class="cb-content-wrap cb-content-wrap-dscost">
@@ -2389,7 +2420,7 @@ DATASTREAM_COST_TABLE_TEMPLATE = f"""\
   {{% for row in rows %}}
     {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
     {{% assign _dst = row["ds_type"].value | default: "other" | downcase %}}
-    {{% if _dst != "logs" and _dst != "metrics" and _dst != "traces" and _dst != "synthetics" %}}{{% assign _dst = "other" %}}{{% endif %}}
+    {{% if _dst != "logs" and _dst != "metrics" and _dst != "traces" and _dst != "synthetics" and _dst != "index" and _dst != "system" %}}{{% assign _dst = "other" %}}{{% endif %}}
     {{% assign idx = row["indexing_cost"].value | default: 0.0 %}}
     {{% assign qry = row["query_cost"].value | default: 0.0 %}}
     {{% assign stg = row["storage_cost"].value | default: 0.0 %}}
@@ -2428,26 +2459,36 @@ DATASTREAM_METRICS_TABLE_TEMPLATE = f"""\
   #dsmet_flt_metrics:checked ~ .cb-flt-bar-dsmet .cb-flt-btn-dsmet-metrics,
   #dsmet_flt_traces:checked ~ .cb-flt-bar-dsmet .cb-flt-btn-dsmet-traces,
   #dsmet_flt_synthetics:checked ~ .cb-flt-bar-dsmet .cb-flt-btn-dsmet-synthetics,
+  #dsmet_flt_index:checked ~ .cb-flt-bar-dsmet .cb-flt-btn-dsmet-index,
+  #dsmet_flt_system:checked ~ .cb-flt-bar-dsmet .cb-flt-btn-dsmet-system,
   #dsmet_flt_other:checked ~ .cb-flt-bar-dsmet .cb-flt-btn-dsmet-other {{ background: var(--cc-color-primary); color: #ffffff !important; border-color: var(--cc-color-primary); font-weight: 700; }}
   #dsmet_flt_logs:checked ~ .cb-content-wrap-dsmet,
   #dsmet_flt_metrics:checked ~ .cb-content-wrap-dsmet,
   #dsmet_flt_traces:checked ~ .cb-content-wrap-dsmet,
   #dsmet_flt_synthetics:checked ~ .cb-content-wrap-dsmet,
+  #dsmet_flt_index:checked ~ .cb-content-wrap-dsmet,
+  #dsmet_flt_system:checked ~ .cb-content-wrap-dsmet,
   #dsmet_flt_other:checked ~ .cb-content-wrap-dsmet {{ overflow-y: auto !important; }}
   #dsmet_flt_logs:checked ~ .cb-content-wrap-dsmet .cb-pg-row-dsmet,
   #dsmet_flt_metrics:checked ~ .cb-content-wrap-dsmet .cb-pg-row-dsmet,
   #dsmet_flt_traces:checked ~ .cb-content-wrap-dsmet .cb-pg-row-dsmet,
   #dsmet_flt_synthetics:checked ~ .cb-content-wrap-dsmet .cb-pg-row-dsmet,
+  #dsmet_flt_index:checked ~ .cb-content-wrap-dsmet .cb-pg-row-dsmet,
+  #dsmet_flt_system:checked ~ .cb-content-wrap-dsmet .cb-pg-row-dsmet,
   #dsmet_flt_other:checked ~ .cb-content-wrap-dsmet .cb-pg-row-dsmet {{ display: none !important; }}
   #dsmet_flt_logs:checked ~ .cb-content-wrap-dsmet .cb-pg-row-dsmet.cb-dst-logs,
   #dsmet_flt_metrics:checked ~ .cb-content-wrap-dsmet .cb-pg-row-dsmet.cb-dst-metrics,
   #dsmet_flt_traces:checked ~ .cb-content-wrap-dsmet .cb-pg-row-dsmet.cb-dst-traces,
   #dsmet_flt_synthetics:checked ~ .cb-content-wrap-dsmet .cb-pg-row-dsmet.cb-dst-synthetics,
+  #dsmet_flt_index:checked ~ .cb-content-wrap-dsmet .cb-pg-row-dsmet.cb-dst-index,
+  #dsmet_flt_system:checked ~ .cb-content-wrap-dsmet .cb-pg-row-dsmet.cb-dst-system,
   #dsmet_flt_other:checked ~ .cb-content-wrap-dsmet .cb-pg-row-dsmet.cb-dst-other {{ display: table-row !important; }}
   #dsmet_flt_logs:checked ~ .cb-pg-bar-dsmet,
   #dsmet_flt_metrics:checked ~ .cb-pg-bar-dsmet,
   #dsmet_flt_traces:checked ~ .cb-pg-bar-dsmet,
   #dsmet_flt_synthetics:checked ~ .cb-pg-bar-dsmet,
+  #dsmet_flt_index:checked ~ .cb-pg-bar-dsmet,
+  #dsmet_flt_system:checked ~ .cb-pg-bar-dsmet,
   #dsmet_flt_other:checked ~ .cb-pg-bar-dsmet {{ display: none !important; }}
   table.cb-t {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; color: var(--cc-color-text); }}
   table.cb-t th {{
@@ -2469,6 +2510,8 @@ DATASTREAM_METRICS_TABLE_TEMPLATE = f"""\
   <input type="radio" name="dsmet_flt" id="dsmet_flt_metrics" class="cb-pg-radio-dsmet">
   <input type="radio" name="dsmet_flt" id="dsmet_flt_traces" class="cb-pg-radio-dsmet">
   <input type="radio" name="dsmet_flt" id="dsmet_flt_synthetics" class="cb-pg-radio-dsmet">
+  <input type="radio" name="dsmet_flt" id="dsmet_flt_index" class="cb-pg-radio-dsmet">
+  <input type="radio" name="dsmet_flt" id="dsmet_flt_system" class="cb-pg-radio-dsmet">
   <input type="radio" name="dsmet_flt" id="dsmet_flt_other" class="cb-pg-radio-dsmet">
 {{% for _p_i in (1.._total_pages) %}}
   <input type="radio" name="dsmet_pg" id="dsmet_pg_{{{{ _p_i }}}}" class="cb-pg-radio-dsmet" {{% if _p_i == 1 %}}checked{{% endif %}}>
@@ -2480,6 +2523,8 @@ DATASTREAM_METRICS_TABLE_TEMPLATE = f"""\
   <label for="dsmet_flt_metrics" class="cb-pg-btn cb-flt-btn-dsmet-metrics">metrics</label>
   <label for="dsmet_flt_traces" class="cb-pg-btn cb-flt-btn-dsmet-traces">traces</label>
   <label for="dsmet_flt_synthetics" class="cb-pg-btn cb-flt-btn-dsmet-synthetics">synthetics</label>
+  <label for="dsmet_flt_index" class="cb-pg-btn cb-flt-btn-dsmet-index">index</label>
+  <label for="dsmet_flt_system" class="cb-pg-btn cb-flt-btn-dsmet-system">system</label>
   <label for="dsmet_flt_other" class="cb-pg-btn cb-flt-btn-dsmet-other">other</label>
 </div>
 <div class="cb-content-wrap cb-content-wrap-dsmet">
@@ -2494,7 +2539,7 @@ DATASTREAM_METRICS_TABLE_TEMPLATE = f"""\
   {{% for row in rows %}}
     {{% assign _row_pg = forloop.index0 | divided_by: 10 | floor | plus: 1 %}}
     {{% assign _dst = row["ds_type"].value | default: "other" | downcase %}}
-    {{% if _dst != "logs" and _dst != "metrics" and _dst != "traces" and _dst != "synthetics" %}}{{% assign _dst = "other" %}}{{% endif %}}
+    {{% if _dst != "logs" and _dst != "metrics" and _dst != "traces" and _dst != "synthetics" and _dst != "index" and _dst != "system" %}}{{% assign _dst = "other" %}}{{% endif %}}
     {{% assign idx_ms = row["indexing_ms"].value | default: 0 %}}
     {{% assign qry_ms = row["query_ms"].value | default: 0 %}}
     {{% assign sz_mb = row["size_mb"].value | default: 0.0 %}}
@@ -3278,9 +3323,9 @@ def control_group(mode: str = "billing") -> dict:
         controls = [
             (stable_uuid("ctrl-project-type"), "project_type", "Project type", 0),
             (stable_uuid("ctrl-project-name"), "project_name", "Project name", 1),
-            (stable_uuid("ctrl-allocation-driver"), "allocation_driver", "Workload driver", 2),
-            (stable_uuid("ctrl-ds-namespace"), "ds_namespace", "Namespace", 3),
-            (stable_uuid("ctrl-ds-type"), "ds_type", "Data stream type", 4),
+            (stable_uuid("ctrl-ds-namespace"), "ds_namespace", "Namespace", 2),
+            (stable_uuid("ctrl-ds-type"), "ds_type", "Data stream type", 3),
+            (stable_uuid("ctrl-datastream"), "datastream", "Data stream", 4),
         ]
     elif mode == "ai":
         controls = [
@@ -3294,9 +3339,8 @@ def control_group(mode: str = "billing") -> dict:
             (stable_uuid("ctrl-project-type"), "project_type", "Project type", 0),
             (stable_uuid("ctrl-project-name"), "project_name", "Project name", 1),
             (stable_uuid("ctrl-monitor-type"), "monitor_type", "Synthetic type", 2),
-            (stable_uuid("ctrl-monitor-id"), "monitor_id", "Monitor", 3),
-            (stable_uuid("ctrl-ds-dataset"), "ds_dataset", "Synthetic dataset", 4),
-            (stable_uuid("ctrl-ds-namespace"), "ds_namespace", "Namespace", 5),
+            (stable_uuid("ctrl-monitor-name"), "monitor_name", "Monitor name", 3),
+            (stable_uuid("ctrl-monitor-namespace"), "monitor_namespace", "Monitor namespace", 4),
         ]
     elif mode == "config":
         controls = [
@@ -3670,14 +3714,24 @@ def build_usage() -> dict:
         stable_uuid("cc-usage-kpi"),
         "Workload Pool Summary",
         USAGE_KPI_TEMPLATE,
-        f"""{COST_PRELUDE}
-| WHERE COALESCE(is_allocatable, false) == true AND allocation_driver != "none"
-| EVAL idx_c = CASE(cost_type_label IN ("ingest-vcu", "ingest"), cost, 0.0)
-| EVAL qry_c = CASE(cost_type_label IN ("search-vcu", "search"), cost, 0.0)
-| EVAL stg_c = CASE(cost_type_label == "retained", cost, 0.0)
-| EVAL ai_c = CASE(allocation_driver == "ai" OR cost_type_label IN ("inference", "ml-vcu", "agent-builder"), cost, 0.0)
-| EVAL syn_c = CASE(allocation_driver == "synthetics" OR cost_type_label == "synthetics", cost, 0.0)
-| STATS pool_spend = SUM(cost), indexing_spend = SUM(idx_c), query_spend = SUM(qry_c), storage_spend = SUM(stg_c), ai_spend = SUM(ai_c), synthetics_spend = SUM(syn_c), currency_symbol = MAX(currency_symbol), unit = MAX(unit)""",
+        f"""FROM {USAGE}
+{TIME_FILTER_ESQL}
+{USAGE_JOIN_BODY}
+| EVAL stg_share = CASE(deployment_sum_data_set_store_size > 0, TO_DOUBLE(datastream_sum_data_set_store_size) / TO_DOUBLE(deployment_sum_data_set_store_size), 0.0)
+| EVAL idx_share = CASE(deployment_sum_indexing_time > 0, TO_DOUBLE(datastream_sum_indexing_time) / TO_DOUBLE(deployment_sum_indexing_time), stg_share)
+| EVAL qry_share = CASE(deployment_sum_query_time > 0, TO_DOUBLE(datastream_sum_query_time) / TO_DOUBLE(deployment_sum_query_time), stg_share)
+| EVAL idx_c = CASE(indexing_ecu IS NOT NULL, indexing_ecu, 0.0) * rate * idx_share
+| EVAL qry_c = CASE(query_ecu IS NOT NULL, query_ecu, 0.0) * rate * qry_share
+| EVAL stg_c = CASE(storage_ecu IS NOT NULL, storage_ecu, 0.0) * rate * stg_share
+| EVAL ds_share = CASE((idx_c + qry_c + stg_c) > 0.0 AND ((CASE(indexing_ecu IS NOT NULL, indexing_ecu, 0.0) + CASE(query_ecu IS NOT NULL, query_ecu, 0.0) + CASE(storage_ecu IS NOT NULL, storage_ecu, 0.0)) * rate) > 0.0, (idx_c + qry_c + stg_c) / ((CASE(indexing_ecu IS NOT NULL, indexing_ecu, 0.0) + CASE(query_ecu IS NOT NULL, query_ecu, 0.0) + CASE(storage_ecu IS NOT NULL, storage_ecu, 0.0)) * rate), stg_share)
+| EVAL day_ai_pool = CASE(ai_ecu IS NOT NULL, ai_ecu, 0.0) * rate
+| EVAL day_syn_pool = CASE(synthetics_ecu IS NOT NULL, synthetics_ecu, 0.0) * rate
+| EVAL day_all_pool = CASE(all_sku_ecu IS NOT NULL, all_sku_ecu, 0.0) * rate
+| STATS p_idx = SUM(idx_c), p_qry = SUM(qry_c), p_stg = SUM(stg_c), p_share = SUM(ds_share), p_ai = MAX(day_ai_pool), p_syn = MAX(day_syn_pool), p_all = MAX(day_all_pool), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY composite_key
+| EVAL p_ai_att = CASE(p_share >= 0.99, p_ai, p_ai * p_share), p_syn_att = CASE(p_share >= 0.99, p_syn, p_syn * p_share), p_all_att = CASE(p_share >= 0.99, p_all, p_idx + p_qry + p_stg + (p_ai + p_syn) * p_share)
+| STATS indexing_spend = SUM(p_idx), query_spend = SUM(p_qry), storage_spend = SUM(p_stg), ai_spend = SUM(p_ai_att), synthetics_spend = SUM(p_syn_att), total_spend = SUM(p_all_att), currency_symbol = MAX(currency_symbol), unit = MAX(unit)
+| EVAL alloc_spend = indexing_spend + query_spend + storage_spend + ai_spend + synthetics_spend, pool_spend = indexing_spend + query_spend + storage_spend + ai_spend + synthetics_spend
+| KEEP unit, currency_symbol, total_spend, alloc_spend, pool_spend, indexing_spend, query_spend, storage_spend, ai_spend, synthetics_spend""",
         0,
         0,
         48,
@@ -3884,11 +3938,17 @@ def build_ai() -> dict:
     ai_kpi_esql = f"""FROM {AI_USAGE}
 {TIME_FILTER_ESQL}
 {AI_JOIN_BODY}
+| EVAL compute_time = CASE(total_inference_time_ms IS NOT NULL, TO_DOUBLE(total_inference_time_ms), 0.0)
+| EVAL model_weight = CASE(compute_time > 0.0, compute_time, TO_DOUBLE(inference_count))
 | EVAL ai_ecu_val = CASE(ai_ecu IS NOT NULL, ai_ecu, 0.0), qry_ecu_val = CASE(query_ecu IS NOT NULL, query_ecu, 0.0)
 | EVAL ded_cost = ai_ecu_val * rate
-| EVAL ai_pool_cost = CASE(ai_ecu_val > 0.0, ai_ecu_val, qry_ecu_val) * rate
+| INLINE STATS proj_win_ded_ecu = SUM(ai_ecu_val) BY project_id
+| INLINE STATS day_proj_weight = SUM(model_weight), day_proj_models = COUNT(model_id) BY composite_key
+| EVAL ai_pool_cost = CASE(ai_ecu_val > 0.0, ai_ecu_val, proj_win_ded_ecu == 0.0 AND day_proj_weight > 0.0, qry_ecu_val, 0.0) * rate
+| EVAL day_model_cost = CASE(day_proj_weight > 0.0, (model_weight / day_proj_weight) * ai_pool_cost, day_proj_models > 0, ai_pool_cost / TO_DOUBLE(day_proj_models), 0.0)
+| EVAL day_ded_model_cost = CASE(day_proj_weight > 0.0, (model_weight / day_proj_weight) * ded_cost, day_proj_models > 0, ded_cost / TO_DOUBLE(day_proj_models), 0.0)
 | INLINE STATS total_models = COUNT_DISTINCT(model_id)
-| STATS proj_spend = MAX(ai_pool_cost), proj_ded = MAX(ded_cost), proj_inf = SUM(inference_count), proj_latency = AVG(average_inference_time_ms), model_count = MAX(total_models), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY composite_key
+| STATS proj_spend = SUM(day_model_cost), proj_ded = SUM(day_ded_model_cost), proj_inf = SUM(inference_count), proj_latency = AVG(average_inference_time_ms), model_count = MAX(total_models), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY composite_key
 | STATS ai_spend = SUM(proj_spend), dedicated_ai_spend = SUM(proj_ded), total_inferences = SUM(proj_inf), model_count = MAX(model_count), avg_latency_ms = ROUND(AVG(proj_latency), 1), currency_symbol = MAX(currency_symbol), unit = MAX(unit)
 | EVAL cost_per_1k = CASE(total_inferences > 0, ai_spend * 1000.0 / TO_DOUBLE(total_inferences), 0.0)
 | KEEP unit, currency_symbol, ai_spend, dedicated_ai_spend, total_inferences, model_count, avg_latency_ms, cost_per_1k"""
@@ -3919,8 +3979,10 @@ def build_ai() -> dict:
 | EVAL compute_time = CASE(total_inference_time_ms IS NOT NULL, TO_DOUBLE(total_inference_time_ms), 0.0)
 | EVAL model_weight = CASE(compute_time > 0.0, compute_time, TO_DOUBLE(inference_count))
 | EVAL ai_ecu_val = CASE(ai_ecu IS NOT NULL, ai_ecu, 0.0), qry_ecu_val = CASE(query_ecu IS NOT NULL, query_ecu, 0.0)
-| EVAL ai_pool_cost = CASE(ai_ecu_val > 0.0, ai_ecu_val, qry_ecu_val) * rate
+| EVAL ded_cost = ai_ecu_val * rate
+| INLINE STATS proj_win_ded_ecu = SUM(ai_ecu_val) BY project_id
 | INLINE STATS day_proj_weight = SUM(model_weight), day_proj_models = COUNT(model_id) BY composite_key
+| EVAL ai_pool_cost = CASE(ai_ecu_val > 0.0, ai_ecu_val, proj_win_ded_ecu == 0.0 AND day_proj_weight > 0.0, qry_ecu_val, 0.0) * rate
 | EVAL day_model_cost = CASE(day_proj_weight > 0.0, (model_weight / day_proj_weight) * ai_pool_cost, day_proj_models > 0, ai_pool_cost / TO_DOUBLE(day_proj_models), 0.0)
 | STATS cost = SUM(day_model_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY b = DATE_TRUNC(1 day, @timestamp), model_id
 | WHERE cost > 0
@@ -3952,8 +4014,10 @@ def build_ai() -> dict:
 | EVAL compute_time = CASE(total_inference_time_ms IS NOT NULL, TO_DOUBLE(total_inference_time_ms), 0.0)
 | EVAL model_weight = CASE(compute_time > 0.0, compute_time, TO_DOUBLE(inference_count))
 | EVAL ai_ecu_val = CASE(ai_ecu IS NOT NULL, ai_ecu, 0.0), qry_ecu_val = CASE(query_ecu IS NOT NULL, query_ecu, 0.0)
-| EVAL ai_pool_cost = CASE(ai_ecu_val > 0.0, ai_ecu_val, qry_ecu_val) * rate
+| EVAL ded_cost = ai_ecu_val * rate
+| INLINE STATS proj_win_ded_ecu = SUM(ai_ecu_val) BY project_id
 | INLINE STATS day_proj_weight = SUM(model_weight), day_proj_models = COUNT(model_id) BY composite_key
+| EVAL ai_pool_cost = CASE(ai_ecu_val > 0.0, ai_ecu_val, proj_win_ded_ecu == 0.0 AND day_proj_weight > 0.0, qry_ecu_val, 0.0) * rate
 | EVAL day_model_cost = CASE(day_proj_weight > 0.0, (model_weight / day_proj_weight) * ai_pool_cost, day_proj_models > 0, ai_pool_cost / TO_DOUBLE(day_proj_models), 0.0)
 | EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "unknown")
 | STATS cost = SUM(day_model_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project
@@ -3984,8 +4048,10 @@ def build_ai() -> dict:
 | EVAL compute_time = CASE(total_inference_time_ms IS NOT NULL, TO_DOUBLE(total_inference_time_ms), 0.0)
 | EVAL model_weight = CASE(compute_time > 0.0, compute_time, TO_DOUBLE(inference_count))
 | EVAL ai_ecu_val = CASE(ai_ecu IS NOT NULL, ai_ecu, 0.0), qry_ecu_val = CASE(query_ecu IS NOT NULL, query_ecu, 0.0)
-| EVAL ai_pool_cost = CASE(ai_ecu_val > 0.0, ai_ecu_val, qry_ecu_val) * rate
+| EVAL ded_cost = ai_ecu_val * rate
+| INLINE STATS proj_win_ded_ecu = SUM(ai_ecu_val) BY project_id
 | INLINE STATS day_proj_weight = SUM(model_weight), day_proj_models = COUNT(model_id) BY composite_key
+| EVAL ai_pool_cost = CASE(ai_ecu_val > 0.0, ai_ecu_val, proj_win_ded_ecu == 0.0 AND day_proj_weight > 0.0, qry_ecu_val, 0.0) * rate
 | EVAL day_model_cost = CASE(day_proj_weight > 0.0, (model_weight / day_proj_weight) * ai_pool_cost, day_proj_models > 0, ai_pool_cost / TO_DOUBLE(day_proj_models), 0.0)
 | EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "unknown")
 | STATS total_compute = SUM(compute_time), total_inf = SUM(inference_count), avg_latency = ROUND(AVG(average_inference_time_ms), 1), attributed_cost = SUM(day_model_cost), ai_pool = SUM(ai_pool_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY task_type, model_id, project
@@ -4619,8 +4685,10 @@ def build_alerts() -> list[dict]:
 | EVAL compute_time = CASE(total_inference_time_ms IS NOT NULL, TO_DOUBLE(total_inference_time_ms), 0.0)
 | EVAL model_weight = CASE(compute_time > 0.0, compute_time, TO_DOUBLE(inference_count))
 | EVAL ai_ecu_val = CASE(ai_ecu IS NOT NULL, ai_ecu, 0.0), qry_ecu_val = CASE(query_ecu IS NOT NULL, query_ecu, 0.0)
-| EVAL ai_pool_cost = CASE(ai_ecu_val > 0.0, ai_ecu_val, qry_ecu_val) * rate
+| EVAL ded_cost = ai_ecu_val * rate
+| INLINE STATS proj_win_ded_ecu = SUM(ai_ecu_val) BY project_id
 | INLINE STATS day_proj_weight = SUM(model_weight), day_proj_models = COUNT(model_id) BY composite_key
+| EVAL ai_pool_cost = CASE(ai_ecu_val > 0.0, ai_ecu_val, proj_win_ded_ecu == 0.0 AND day_proj_weight > 0.0, qry_ecu_val, 0.0) * rate
 | EVAL day_model_cost = CASE(day_proj_weight > 0.0, (model_weight / day_proj_weight) * ai_pool_cost, day_proj_models > 0, ai_pool_cost / TO_DOUBLE(day_proj_models), 0.0)
 | EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "unknown"), day = LEFT(TO_STRING(@timestamp), 10)
 | WHERE filter_model == "*" OR model_id == filter_model

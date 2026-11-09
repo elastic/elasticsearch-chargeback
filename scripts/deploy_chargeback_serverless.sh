@@ -384,9 +384,9 @@ fi
 # ------------------------------------------------------------------------------
 PACKAGE_DIR="$INTEGRATIONS_REPO/packages/chargeback_serverless"
 if [[ "$SKIP_BUILD" -eq 0 && -f "$PACKAGE_DIR/manifest.yml" ]]; then
-  VERSION="$(grep -E '^version:' "$PACKAGE_DIR/manifest.yml" 2>/dev/null | awk '{print $2}' | tr -d '"' || echo "0.3.15")"
+  VERSION="$(grep -E '^version:' "$PACKAGE_DIR/manifest.yml" 2>/dev/null | awk '{print $2}' | tr -d '"' || echo "0.4.0")"
 else
-  TARGET_ZIP=$(ls -1t "$DIST_DIR"/chargeback_serverless-*.zip 2>/dev/null | head -1 || echo "$DIST_DIR/chargeback_serverless-0.3.15.zip")
+  TARGET_ZIP=$(ls -1t "$DIST_DIR"/chargeback_serverless-*.zip 2>/dev/null | head -1 || echo "$DIST_DIR/chargeback_serverless-0.4.0.zip")
   VERSION="$(basename "$TARGET_ZIP" | sed -E 's/chargeback_serverless-([0-9.]+)\.zip/\1/')"
 fi
 ZIP_NAME="chargeback_serverless-${VERSION}.zip"
@@ -887,7 +887,7 @@ if [[ "$SKIP_POLICY" -eq 0 ]]; then
 import json, os, sys
 
 agent_policy_id = os.environ.get("AGENT_POLICY_ID", "")
-version = os.environ.get("VERSION", "0.3.15")
+version = os.environ.get("VERSION", "0.4.0")
 org_id = os.environ.get("ORGANIZATION_ID", "")
 cloud_api_key = os.environ.get("CLOUD_API_KEY", "") or os.environ.get("USAGE_API_KEY", "") or os.environ.get("BILLING_API_KEY", "")
 hub_es_api_key = os.environ.get("HUB_ES_API_KEY", "") or os.environ.get("ES_API_KEY", "")

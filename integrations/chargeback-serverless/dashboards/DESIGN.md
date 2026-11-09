@@ -1,10 +1,10 @@
-# Chargeback Serverless dashboard and alert design (`0.3.15`)
+# Chargeback Serverless dashboard and alert design (`0.4.0`)
 
-This reference documents the architecture, lookup index dependencies, filter controls, and Elasticsearch Query Language (ES|QL) alerting rule templates for the **Chargeback Serverless (`chargeback_serverless` `0.3.15`)** Kibana assets.
+This reference documents the architecture, lookup index dependencies, data stream and index classification rules, pool fallback logic, filter controls, and Elasticsearch Query Language (ES|QL) alerting rule templates for the **Chargeback Serverless (`chargeback_serverless` `0.4.0`)** Kibana assets.
 
 ## Architecture overview
 
-Chargeback Serverless runs on an Elastic Cloud Serverless FinOps hub project. A single unified Elastic Cloud API key (`cloud_api_key` with **Billing admin** and **Cloud resource access** set to **`Cloud, Elasticsearch, and Kibana API`**) is stored in the Fleet integration policy. Daily collection runs through native Elastic Agent Custom Enterprise Language (CEL) streams (`metrics-chargeback_serverless.billing-default` and `metrics-chargeback_serverless.usage-default`) and aggregates into seven Fleet-managed `LOOKUP`-mode indices with 365-day data retention.
+Chargeback Serverless runs on an Elastic Cloud Serverless FinOps hub project. A single unified Elastic Cloud API key (`cloud_api_key` with **Billing Admin** and **Cloud resource access** set to **`Cloud, Elasticsearch, and Kibana API`**) is stored in the Fleet integration policy. Daily collection runs through native Elastic Agent Common Expression Language (CEL) streams (`metrics-chargeback_serverless.billing-default` and `metrics-chargeback_serverless.usage-default`) and aggregates into seven Fleet-managed `LOOKUP`-mode indices with 365-day data retention.
 
 ```mermaid
 flowchart TD
@@ -30,7 +30,7 @@ All five dashboards share a top horizontal navigation bar (`useCurrentDateRange:
 | Dashboard title | Saved object ID | Purpose |
 | --- | --- | --- |
 | **`[Chargeback Serverless] Billing Components Overview`** | `chargeback_serverless-b6cecac0-ebe7-43de-bfc6-1ff287ad860a` | Displays organization spend key performance indicators (KPIs), daily stacked cost by project (including active and deleted projects) and cost category, spend flow (`cost_category` → `cost_type` → `project_type`), unallocatable and pass-through charges, and invoice line-item reconciliation. |
-| **`[Chargeback Serverless] Usage & Cost Allocation`** | `chargeback_serverless-21588d0e-fb6a-4f76-ad2f-cd7b3d7a3d7c` | Provides collapsible sections for (1) Workload drivers and project allocation and (2) Data stream cost attribution and usage across `ds_namespace`, `ds_type`, `ds_dataset`, and data streams. |
+| **`[Chargeback Serverless] Usage & Cost Allocation`** | `chargeback_serverless-21588d0e-fb6a-4f76-ad2f-cd7b3d7a3d7c` | Provides collapsible sections for (1) Workload drivers and project allocation and (2) Data stream and index cost attribution and usage across `ds_namespace`, `ds_type`, `ds_dataset`, and data streams/indices. |
 | **`[Chargeback Serverless] AI & Machine Learning`** | `chargeback_serverless-5fb3f4c6-5591-5c5c-9625-1d829944c5b2` | Tracks AI and Machine Learning (ML) FinOps KPIs (AI pool spend, inference volume, active models, average latency, unit cost per 1,000 inferences), daily attributed AI cost by model and project, and dedicated AI, Inference, and Agent Builder Stock Keeping Unit (SKU) line items. |
 | **`[Chargeback Serverless] Synthetics`** | `chargeback_serverless-c188156b-9f97-5e72-975f-022f3c862a1d` | Attributes direct Synthetics SKU spend (`observability-synthetic-executions` and `observability-synthetic-pings`) across `browser` and lightweight (`http`, `icmp`, `tcp`, `dns`) monitors, plus `synthetics-*` data stream indexing, search, and storage costs. |
 | **`[Chargeback Serverless] Configuration`** | `chargeback_serverless-7ec9743a-ccfa-43d2-8311-2f25893dadae` | Presents the unified Fleet configuration status banner, five summary KPIs, the 3-step setup guide for the single unified Elastic Cloud API key, active policy currency settings, and the paginated project harvest registry. |
@@ -52,16 +52,55 @@ Shared controls (`project_type`, `project_name`, `allocation_driver`, `ds_namesp
 | Lookup index | Source data stream or index | Grouping key (`group_by`) | Retention | Purpose |
 | --- | --- | --- | --- | --- |
 | `serverless_billing_cost_lookup` | `metrics-chargeback_serverless.billing-*` | `@timestamp` (`1d`), `project_id`, `sku` | `365d` | Daily billed Elastic Consumption Units (ECU) and quantity per project and SKU, classified by `cost_category`, `cost_type`, `allocation_driver`, and `is_allocatable`. |
-| `serverless_billing_realized_pool_lookup` | `serverless_billing_cost_lookup` | `@timestamp` (`1d`), `project_id` | `365d` | Daily allocatable ECU pools (`indexing_ecu`, `query_ecu`, `storage_ecu`, `ai_ecu`, `synthetics_browser_ecu`, `synthetics_ping_ecu`) per project with `composite_key` (`YYYY-MM-DD_project_id`). |
-| `serverless_datastream_contribution_lookup` | `metrics-chargeback_serverless.usage-*` (`doc_type: datastream`) | `@timestamp` (`1d`), `project_id`, `datastream` | `365d` | Daily indexing bytes/time, query time, and dataset size per data stream, parsed into `ds_type`, `ds_dataset`, and `ds_namespace`. |
+| `serverless_billing_realized_pool_lookup` | `serverless_billing_cost_lookup` | `@timestamp` (`1d`), `project_id` | `365d` | Daily allocatable ECU pools (`indexing_ecu`, `query_ecu`, `storage_ecu`, `ai_ecu`, `synthetics_ecu`, `synthetics_pings_ecu`, `synthetics_executions_ecu`) per project with `composite_key` (`YYYY-MM-DD_project_id`). |
+| `serverless_datastream_contribution_lookup` | `metrics-chargeback_serverless.usage-*` (`doc_type: datastream`) | `@timestamp` (`1d`), `project_id`, `datastream` | `365d` | Daily indexing bytes/time, query time, and dataset size per data stream or index, parsed into `ds_type`, `ds_dataset`, and `ds_namespace`. |
 | `serverless_project_contribution_lookup` | `serverless_datastream_contribution_lookup` | `@timestamp` (`1d`), `project_id` | `365d` | Daily project-wide denominator totals (`deployment_sum_indexing_time`, `deployment_sum_query_time`, `deployment_sum_data_set_store_size`) for `LOOKUP JOIN` attribution. |
 | `serverless_ai_model_contribution_lookup` | `metrics-chargeback_serverless.usage-*` (`doc_type: ai_model`) | `@timestamp` (`1d`), `project_id`, `model_id`, `task_type` | `365d` | Daily AI and ML model inference count, latency, and total compute time. |
 | `serverless_synthetics_monitor_contribution_lookup` | `metrics-chargeback_serverless.usage-*` (`doc_type: synthetics_monitor`) | `@timestamp` (`1d`), `project_id`, `monitor_id`, `monitor_type` | `365d` | Daily Synthetics monitor check count, availability (`up_count`, `down_count`), average duration, and location count. |
-| `serverless_project_status_lookup` | `metrics-chargeback_serverless.usage-*` (`doc_type: project_status`) | `@timestamp` (`1d`), `project_id` | `365d` | Daily project discovery and harvest health status (`ok`, `empty_or_unauthorized`, `inactive`). |
+| `serverless_project_status_lookup` | `metrics-chargeback_serverless.usage-*` (`doc_type: project_status`) | `@timestamp` (`1d`), `project_id` | `365d` | Daily project discovery and harvest health status (`last_status`: `ok`, `empty_or_unauthorized`, `inactive`; `api_key_type`: `cloud_key`, `hub_key`, `remote_key`). |
+
+## Data stream & index classification rules
+
+When the usage collector (`metrics-chargeback_serverless.usage-*` and `run_chargeback_serverless_collector.py`) harvests index stats via `GET /_cat/indices`, backing indices are normalized into `datastream`, `ds_type`, `ds_dataset`, and `ds_namespace` using three deterministic classification rules:
+
+1. **System data streams (`.ds-.kibana*`, `.ds-.alerts*`, `.ds-.fleet*`, and other dot-prefixed backing streams `.ds-.*`)**:
+   - Strip `.ds-` and the trailing generation/date suffix (for example, `.ds-.kibana-event-log-serverless-2026.04.01-000001` → `.kibana-event-log-serverless`).
+   - Classified as:
+     - `ds_type = "system"`
+     - `ds_namespace = "system"`
+     - `ds_dataset = "<stream_name>"` (leading dot stripped)
+2. **Standard Elastic data streams (`.ds-logs-*`, `.ds-metrics-*`, `.ds-traces-*`, `.ds-synthetics-*`, `.ds-profiling-*`)**:
+   - Strip `.ds-` and the trailing generation/date suffix to recover `<type>-<dataset>-<namespace>`.
+   - Classified as:
+     - `ds_type = "<type>"` (`logs`, `metrics`, `traces`, `synthetics`, `profiling`)
+     - `ds_dataset = "<dataset>"`
+     - `ds_namespace = "<namespace>"`
+3. **Standard Elasticsearch indices (non-data-stream indices such as `product-catalog-docs`, `financial-reports`, `search-products`)**:
+   - Non-hidden indices that do not start with `.ds-` are preserved as standalone Elasticsearch indices rather than force-split on hyphens.
+   - Classified as:
+     - `ds_type = "index"`
+     - `ds_dataset = "<index_name>"`
+     - `ds_namespace = "default"`
+
+## AI & ML and Synthetics pool fallback behavior
+
+### AI & Machine Learning pool attribution (`ai_ecu` vs. shared `search-vcu` fallback)
+
+- **Projects with dedicated AI SKUs (`ai_ecu > 0`)**: When a project incurs dedicated AI/ML billing SKUs (`ml-vcu`, `inference`, `agent-builder`), the AI & Machine Learning dashboard and model attribution panels allocate **strictly** the dedicated AI pool (`ai_ecu * conf_chargeable_unit_rate`) across models proportionally by `total_inference_time_ms` (falling back to `inference_count`). Shared `search-vcu` (`query_ecu`) is **never** added on top of dedicated `ai_ecu`.
+- **Shared `search-vcu` fallback (`ai_ecu == 0` with active model inferences)**: On general-purpose Elasticsearch Serverless projects where built-in ELSER or vector embedding models run inside shared Search/Query compute without a separate `ml-vcu` SKU (`ai_ecu == 0` and `inference_count > 0`), attribution falls back to `query_ecu * conf_chargeable_unit_rate` and explicitly badges the allocation source (`Dedicated AI SKUs` vs. `Shared Search VCU Fallback`) so operators know whether spend comes from dedicated AI SKUs or shared query compute.
+
+### Synthetics independent sub-pool fallback (`synthetics_pings_ecu` and `synthetics_executions_ecu`)
+
+Elastic Cloud Serverless bills Synthetics via two independent SKU pools in `serverless_billing_realized_pool_lookup`:
+- **`synthetics_pings_ecu`**: Lightweight monitor pings (`*synthetic*ping*` SKUs, covering `http`, `icmp`, `tcp`, and `dns` monitors).
+- **`synthetics_executions_ecu`**: Browser monitor executions (`*synthetic*execution*` SKUs, covering `browser` monitors).
+- **`synthetics_ecu`**: Total Synthetics ECU (`synthetics_pings_ecu + synthetics_executions_ecu`).
+
+When `.ds-synthetics-*` telemetry is harvested from a project, lightweight monitors share `synthetics_pings_ecu` and browser monitors share `synthetics_executions_ecu`. If a project has billed Synthetics SKUs for either sub-pool on a given day where direct `.ds-synthetics-*` documents were not present for that sub-pool (for example, `synthetics_pings_ecu > 0` with zero harvested lightweight monitors, or `synthetics_executions_ecu > 0` with zero harvested browser monitors), the collector synthesizes an independent fallback monitor entry (`billing-derived-lightweight` and/or `billing-derived-browser`) so 100% of both `synthetics_pings_ecu` and `synthetics_executions_ecu` is reconciled on the Synthetics dashboard.
 
 ## ES|QL alerting rule templates
 
-The generator builds 10 ES|QL alerting rule templates in [`../kibana/alerting_rule_template/`](../kibana/alerting_rule_template/):
+The generator builds 10 ES|QL alerting rule templates in [`../assets/kibana/alerting_rule_template/`](../assets/kibana/alerting_rule_template/):
 
 - **Line-2 `EVAL` parameter convention**: Every alert defines its tunable thresholds (`threshold_spend`, `threshold_budget`, `threshold_pct_increase`, `threshold_unallocated_spend`) and entity filters (`filter_category`, `filter_driver`, `filter_project`, `filter_namespace`, `filter_model`, `filter_monitor`) on **line 2** immediately after `FROM <lookup_index>`, before `LOOKUP JOIN` and currency conversion logic.
 - **Latest completed billing day scoping**: Single-day rules query a `3d` window (to accommodate Elastic Cloud Billing API latency) and filter to the latest completed billing day via `| INLINE STATS latest_day = MAX(@timestamp) | WHERE @timestamp == latest_day`.

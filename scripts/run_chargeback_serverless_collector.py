@@ -108,12 +108,19 @@ SEMVER_RE = re.compile(r"^v?\d+\.\d+(?:\.\d+.*)?$")
 
 
 def parse_datastream_parts(ds_name):
-    ds_parts = (ds_name or "").split("-")
+    ds_name = (ds_name or "").strip()
+    if ds_name.startswith(".") or ds_name == "system" or (ds_name.startswith("serverless_") and ds_name.endswith("_lookup")):
+        return ("system", "system", "system")
+    ds_parts = ds_name.split("-") if ds_name else []
     if len(ds_parts) <= 1:
-        return ("other", ds_name or "other", "default")
+        return ("index", ds_name or "index", "default")
     raw_first = ds_parts[0]
     raw_last = ds_parts[-1]
-    if SEMVER_RE.match(raw_last):
+    if raw_first in ("logs", "metrics", "traces", "synthetics", "profiling") and len(ds_parts) >= 3:
+        if SEMVER_RE.match(raw_last):
+            return (raw_first, ds_parts[1], "default")
+        return (raw_first, ds_parts[1], "-".join(ds_parts[2:]))
+    if len(ds_parts) >= 2 and SEMVER_RE.match(raw_last):
         # Beat or versioned index name (e.g. metricbeat-8.11.3, filebeat-7.17.22, apm-8.12.0)
         if raw_first == "metricbeat" or raw_first.startswith("metrics"):
             ds_type = "metrics"
@@ -124,21 +131,17 @@ def parse_datastream_parts(ds_name):
         elif raw_first == "apm" or raw_first.startswith("traces"):
             ds_type = "traces"
         else:
-            ds_type = "other"
+            ds_type = "index"
         ds_dataset = "-".join(ds_parts[:-1]) if len(ds_parts) >= 2 else ds_name
-        ds_namespace = "default"
-        return (ds_type, ds_dataset, ds_namespace)
-    else:
-        ds_type = raw_first
-        ds_dataset = "-".join(ds_parts[1:-1]) if len(ds_parts) >= 3 else (ds_parts[0] if len(ds_parts) == 2 else ds_name)
-        ds_namespace = raw_last
-        return (ds_type, ds_dataset, ds_namespace)
+        return (ds_type, ds_dataset, "default")
+    return ("index", ds_name or "index", "default")
 
 
 LOOKUP_INDEX_SCHEMAS = {
     "serverless_billing_cost_lookup": {
         "@timestamp": {"type": "date"},
         "period_start": {"type": "date"},
+        "event": {"properties": {"ingested": {"type": "date"}}},
         "composite_key": {"type": "keyword"},
         "project_id": {"type": "keyword"},
         "project_name": {"type": "keyword"},
@@ -158,22 +161,17 @@ LOOKUP_INDEX_SCHEMAS = {
     "serverless_billing_realized_pool_lookup": {
         "@timestamp": {"type": "date"},
         "period_start": {"type": "date"},
+        "event": {"properties": {"ingested": {"type": "date"}}},
         "composite_key": {"type": "keyword"},
         "project_id": {"type": "keyword"},
-        "project_name": {"type": "keyword"},
-        "project_type": {"type": "keyword"},
-        "indexing_pool_ecu": {"type": "double"},
-        "query_pool_ecu": {"type": "double"},
-        "storage_pool_ecu": {"type": "double"},
-        "ai_pool_ecu": {"type": "double"},
-        "synthetics_pool_ecu": {"type": "double"},
-        "synthetics_pings_pool_ecu": {"type": "double"},
-        "synthetics_exec_pool_ecu": {"type": "double"},
-        "synthetics_pings_qty": {"type": "double"},
-        "synthetics_exec_qty": {"type": "double"},
-        "total_allocatable_ecu": {"type": "double"},
-        "unallocatable_ecu": {"type": "double"},
-        "total_project_ecu": {"type": "double"},
+        "indexing_ecu": {"type": "double"},
+        "query_ecu": {"type": "double"},
+        "storage_ecu": {"type": "double"},
+        "ai_ecu": {"type": "double"},
+        "synthetics_ecu": {"type": "double"},
+        "synthetics_pings_ecu": {"type": "double"},
+        "synthetics_executions_ecu": {"type": "double"},
+        "all_sku_ecu": {"type": "double"},
         "conf_chargeable_unit_rate": {"type": "double"},
         "conf_chargeable_unit_rate_unit": {"type": "keyword"},
         "conf_currency_symbol": {"type": "keyword"},
@@ -181,6 +179,7 @@ LOOKUP_INDEX_SCHEMAS = {
     "serverless_datastream_contribution_lookup": {
         "@timestamp": {"type": "date"},
         "period_start": {"type": "date"},
+        "event": {"properties": {"ingested": {"type": "date"}}},
         "composite_key": {"type": "keyword"},
         "project_id": {"type": "keyword"},
         "project_name": {"type": "keyword"},
@@ -189,9 +188,9 @@ LOOKUP_INDEX_SCHEMAS = {
         "ds_type": {"type": "keyword"},
         "ds_dataset": {"type": "keyword"},
         "ds_namespace": {"type": "keyword"},
-        "datastream_sum_indexing_time": {"type": "double"},
-        "datastream_sum_query_time": {"type": "double"},
-        "datastream_sum_data_set_store_size": {"type": "double"},
+        "datastream_sum_indexing_time": {"type": "long"},
+        "datastream_sum_query_time": {"type": "long"},
+        "datastream_sum_data_set_store_size": {"type": "long"},
         "conf_chargeable_unit_rate": {"type": "double"},
         "conf_chargeable_unit_rate_unit": {"type": "keyword"},
         "conf_currency_symbol": {"type": "keyword"},
@@ -199,27 +198,28 @@ LOOKUP_INDEX_SCHEMAS = {
     "serverless_project_contribution_lookup": {
         "@timestamp": {"type": "date"},
         "period_start": {"type": "date"},
+        "event": {"properties": {"ingested": {"type": "date"}}},
         "composite_key": {"type": "keyword"},
         "project_id": {"type": "keyword"},
         "project_name": {"type": "keyword"},
         "project_type": {"type": "keyword"},
-        "project_sum_indexing_time": {"type": "double"},
-        "project_sum_query_time": {"type": "double"},
-        "project_sum_data_set_store_size": {"type": "double"},
-        "project_datastream_count": {"type": "long"},
+        "deployment_sum_indexing_time": {"type": "long"},
+        "deployment_sum_query_time": {"type": "long"},
+        "deployment_sum_data_set_store_size": {"type": "long"},
     },
     "serverless_ai_model_contribution_lookup": {
         "@timestamp": {"type": "date"},
         "period_start": {"type": "date"},
+        "event": {"properties": {"ingested": {"type": "date"}}},
         "composite_key": {"type": "keyword"},
         "project_id": {"type": "keyword"},
         "project_name": {"type": "keyword"},
         "project_type": {"type": "keyword"},
         "model_id": {"type": "keyword"},
         "task_type": {"type": "keyword"},
-        "inference_count": {"type": "double"},
+        "inference_count": {"type": "long"},
         "average_inference_time_ms": {"type": "double"},
-        "total_inference_time_ms": {"type": "double"},
+        "total_inference_time_ms": {"type": "long"},
         "conf_chargeable_unit_rate": {"type": "double"},
         "conf_chargeable_unit_rate_unit": {"type": "keyword"},
         "conf_currency_symbol": {"type": "keyword"},
@@ -227,6 +227,7 @@ LOOKUP_INDEX_SCHEMAS = {
     "serverless_synthetics_monitor_contribution_lookup": {
         "@timestamp": {"type": "date"},
         "period_start": {"type": "date"},
+        "event": {"properties": {"ingested": {"type": "date"}}},
         "composite_key": {"type": "keyword"},
         "project_id": {"type": "keyword"},
         "project_name": {"type": "keyword"},
@@ -235,10 +236,10 @@ LOOKUP_INDEX_SCHEMAS = {
         "monitor_name": {"type": "keyword"},
         "monitor_type": {"type": "keyword"},
         "monitor_namespace": {"type": "keyword"},
-        "check_count": {"type": "double"},
-        "up_count": {"type": "double"},
-        "down_count": {"type": "double"},
-        "locations_count": {"type": "double"},
+        "check_count": {"type": "long"},
+        "up_count": {"type": "long"},
+        "down_count": {"type": "long"},
+        "locations_count": {"type": "long"},
         "average_duration_ms": {"type": "double"},
         "conf_chargeable_unit_rate": {"type": "double"},
         "conf_chargeable_unit_rate_unit": {"type": "keyword"},
@@ -247,6 +248,7 @@ LOOKUP_INDEX_SCHEMAS = {
     "serverless_project_status_lookup": {
         "@timestamp": {"type": "date"},
         "period_start": {"type": "date"},
+        "event": {"properties": {"ingested": {"type": "date"}}},
         "composite_key": {"type": "keyword"},
         "project_id": {"type": "keyword"},
         "project_name": {"type": "keyword"},
@@ -272,10 +274,10 @@ def ensure_lookup_index(es_url, api_key, index_name, properties=None):
     base = es_url.rstrip("/")
     hdrs = {"Authorization": f"ApiKey {api_key}", "Content-Type": "application/json"}
     props = properties or LOOKUP_INDEX_SCHEMAS.get(index_name, {})
-    # Install persistent index template so transform resets always recreate in mode: lookup
+    # Install persistent fallback index template so transform resets always recreate in mode: lookup
     tmpl_body = json.dumps({
         "index_patterns": [index_name],
-        "priority": 500,
+        "priority": 400,
         "template": {
             "settings": {"index": {"mode": "lookup"}},
             "mappings": {"properties": props}
@@ -1131,7 +1133,7 @@ def main():
                 status, inf_data = http_get(inf_url, headers, timeout=15)
                 for ep in (inf_data.get("endpoints") or []):
                     mid = ep.get("inference_id") or ep.get("model_id")
-                    if mid and mid not in seen_model_ids:
+                    if mid and not str(mid).startswith(".") and mid not in seen_model_ids:
                         seen_model_ids.add(mid)
                         ml_models.append({
                             "model_id": mid,
@@ -1234,6 +1236,8 @@ def main():
             ds_name = m_ds.group(1) if m_ds else idx_name
 
             ds_type, ds_dataset, ds_namespace = parse_datastream_parts(ds_name)
+            if ds_type == "system":
+                ds_name = "system"
 
             size_b = int(row.get("dataset.size") or 0)
             idx_time = int(row.get("indexing.index_time") or 0)
@@ -1271,10 +1275,16 @@ def main():
                     if not ds_name:
                         continue
                     p_type, p_dataset, p_ns = parse_datastream_parts(ds_name)
-                    ds_type = cdoc.get("ds_type") or p_type
-                    ds_dataset = cdoc.get("ds_dataset") or p_dataset
-                    raw_cached_ns = cdoc.get("ds_namespace") or p_ns
-                    ds_namespace = "default" if SEMVER_RE.match(str(raw_cached_ns)) else raw_cached_ns
+                    if p_type == "system":
+                        ds_name = "system"
+                        ds_type, ds_dataset, ds_namespace = "system", "system", "system"
+                    elif p_type == "index" or p_type in ("logs", "metrics", "traces", "synthetics", "profiling"):
+                        ds_type, ds_dataset, ds_namespace = p_type, p_dataset, p_ns
+                    else:
+                        ds_type = cdoc.get("ds_type") or p_type
+                        ds_dataset = cdoc.get("ds_dataset") or p_dataset
+                        raw_cached_ns = cdoc.get("ds_namespace") or p_ns
+                        ds_namespace = "default" if SEMVER_RE.match(str(raw_cached_ns)) else raw_cached_ns
                     if ds_name not in ds_map:
                         ds_map[ds_name] = {
                             "ds": ds_name,
@@ -1406,43 +1416,45 @@ def main():
                 usage_docs.append(doc)
 
             # Emit Synthetics monitors for this day (exact daily harvest, or project monitors / billing SKU fallback)
-            day_monitors = list(synth_monitors_by_day.get(usage_day_str, []))
-            if not day_monitors and usage_day_str in proj_day_synth:
-                if all_discovered_monitors:
-                    day_monitors = list(all_discovered_monitors.values())
-                else:
-                    s_info = proj_day_synth[usage_day_str]
-                    exec_runs = int(round(s_info["exec_qty"]))
-                    raw_p = s_info["pings_qty"]
-                    ping_runs = int(round(raw_p * 1000.0)) if (0 < raw_p < 100 and s_info["pings_ecu"] > raw_p) else int(round(raw_p))
-                    if exec_runs > 0 or s_info["exec_ecu"] > 0:
-                        runs_val = max(1, exec_runs)
-                        day_monitors.append({
-                            "monitor_id": "billing-derived-browser",
-                            "monitor_name": "Browser Monitors (Billing SKU)",
-                            "monitor_type": "browser",
-                            "monitor_namespace": "default",
-                            "check_count": runs_val,
-                            "up_count": runs_val,
-                            "down_count": 0,
-                            "locations_count": 1,
-                            "average_duration_ms": 0.0,
-                        })
-                    if ping_runs > 0 or s_info["pings_ecu"] > 0:
-                        runs_val = max(1, ping_runs)
-                        day_monitors.append({
-                            "monitor_id": "billing-derived-lightweight",
-                            "monitor_name": "Lightweight Monitors (Billing SKU)",
-                            "monitor_type": "http",
-                            "monitor_namespace": "default",
-                            "check_count": runs_val,
-                            "up_count": runs_val,
-                            "down_count": 0,
-                            "locations_count": 1,
-                            "average_duration_ms": 0.0,
-                        })
+            day_monitors = [dict(m) for m in synth_monitors_by_day.get(usage_day_str, [])]
+            if not day_monitors and usage_day_str in proj_day_synth and all_discovered_monitors:
+                day_monitors = [dict(m) for m in all_discovered_monitors.values()]
+            if usage_day_str in proj_day_synth:
+                s_info = proj_day_synth[usage_day_str]
+                has_browser = any(m.get("monitor_type") == "browser" for m in day_monitors)
+                has_lightweight = any(m.get("monitor_type") != "browser" for m in day_monitors)
+                exec_runs = int(round(s_info["exec_qty"]))
+                raw_p = s_info["pings_qty"]
+                ping_runs = int(round(raw_p * 1000.0)) if (0 < raw_p < 100 and s_info["pings_ecu"] > raw_p) else int(round(raw_p))
+                if (exec_runs > 0 or s_info["exec_ecu"] > 0) and not has_browser:
+                    runs_val = max(1, exec_runs)
+                    day_monitors.append({
+                        "monitor_id": "billing-derived-browser",
+                        "monitor_name": "Browser Monitors (Billing SKU)",
+                        "monitor_type": "browser",
+                        "monitor_namespace": "default",
+                        "check_count": runs_val,
+                        "up_count": runs_val,
+                        "down_count": 0,
+                        "locations_count": 1,
+                        "average_duration_ms": 0.0,
+                    })
+                if (ping_runs > 0 or s_info["pings_ecu"] > 0) and not has_lightweight:
+                    runs_val = max(1, ping_runs)
+                    day_monitors.append({
+                        "monitor_id": "billing-derived-lightweight",
+                        "monitor_name": "Lightweight Monitors (Billing SKU)",
+                        "monitor_type": "http",
+                        "monitor_namespace": "default",
+                        "check_count": runs_val,
+                        "up_count": runs_val,
+                        "down_count": 0,
+                        "locations_count": 1,
+                        "average_duration_ms": 0.0,
+                    })
 
             for sm in day_monitors:
+                all_discovered_monitors.setdefault(sm["monitor_id"], sm)
                 doc = {
                     "@timestamp": usage_day_ts,
                     "period_start": usage_day_ts,
@@ -1523,6 +1535,17 @@ def main():
             continue
         seen_preserved_usage_keys.add(ukey)
         preserved_copy = dict(p_u_doc)
+        if preserved_copy.get("doc_type") == "datastream":
+            raw_ds = preserved_copy.get("datastream") or ""
+            m_ds = DS_INDEX_RE.match(raw_ds)
+            ds_name = m_ds.group(1) if m_ds else raw_ds
+            if ds_name:
+                p_type, p_dataset, p_ns = parse_datastream_parts(ds_name)
+                if p_type == "system":
+                    preserved_copy["datastream"] = "system"
+                preserved_copy["ds_type"] = p_type
+                preserved_copy["ds_dataset"] = p_dataset
+                preserved_copy["ds_namespace"] = p_ns
         preserved_copy["event"] = {"ingested": ingested_str_inactive}
         usage_docs.append(preserved_copy)
 

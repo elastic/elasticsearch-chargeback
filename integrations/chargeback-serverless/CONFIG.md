@@ -1,6 +1,6 @@
 # Chargeback Serverless configuration reference
 
-Use this reference to configure the **Chargeback Serverless (`chargeback_serverless` `0.3.15`)** Fleet integration policy, create the required Elastic Cloud API key, customize currency conversion settings, and tune FinOps alerting thresholds.
+Use this reference to configure the **Chargeback Serverless (`chargeback_serverless` `0.4.0`)** Fleet integration policy, create the required Elastic Cloud API key, customize currency conversion settings, and tune FinOps alerting thresholds.
 
 ## Single unified Elastic Cloud API key
 
@@ -11,48 +11,58 @@ Chargeback Serverless requires **one** Elastic Cloud API key (`cloud_api_key`) i
 1. Sign in to the [Elastic Cloud Console API keys page](https://cloud.elastic.co/deployment-features/keys) (**Organization → API keys**) and click **Create API key**.
 2. Enter a descriptive name (for example, `chargeback-serverless-collector`) and select an expiration period.
 3. Configure both organization and project-level access:
-   - **Organization role**: Select **`Billing Admin`**. This grants access to organization invoices, hourly SKU costs, and `/api/v1/billing/organization/{organization_id}/history` so the collector captures costs from both active and deleted Serverless projects.
-   - **Enable access to Cloud resources**: Toggle **ON**, select **All projects** (or the specific Serverless projects you want to monitor), and in the separate per-project-type **Roles / API Access** dropdowns configure **`Elasticsearch`**, **`Observability`**, and **`Security`** (`Admin`) so the same key can list Serverless projects and read `_resolve/index/*`, `_cat/indices`, `_ml/trained_models/_stats`, `_inference`, and `.ds-synthetics-*` across projects.
+   - **Organization role**: Select **`Billing Admin`**. This grants access to organization invoices, hourly SKU costs, and `GET /api/v2/billing/organizations/{org_id}/costs/instances` so the collector captures costs from both active and deleted Serverless projects.
+   - **Enable access to Cloud resources**: Toggle **ON**, select **All projects** (or the specific Serverless projects you want to monitor), and in the separate per-project-type **Roles / API Access** dropdowns configure **`Cloud, Elasticsearch, and Kibana API`** (`Admin`) across **`Elasticsearch`**, **`Observability`**, and **`Security`** so the same key can list Serverless projects and read `GET /_cat/indices`, `_ml/trained_models/_stats`, `_inference`, and `.ds-synthetics-*` across projects.
 4. Click **Create API key** and copy the key value.
 
-### Hub project API keys for the deployment & backfill scripts
+### Hub project API keys for optional backfill & developer CLI scripts
 
-When running [`scripts/deploy_chargeback_serverless.sh`](../../scripts/deploy_chargeback_serverless.sh) or [`scripts/run_chargeback_serverless_collector.py`](../../scripts/run_chargeback_serverless_collector.py) from the CLI, the scripts also authenticate directly to your Serverless FinOps hub project's Elasticsearch (`ES_URL`) and Kibana (`KIBANA_URL`) endpoints using `ES_API_KEY` and `KIBANA_API_KEY`:
+For **Customer Fleet-Only Installations**, you only configure `cloud_api_key` in the Kibana Fleet policy UI.
+
+When running the optional historical backfill collector ([`scripts/run_chargeback_serverless_collector.py`](../../scripts/run_chargeback_serverless_collector.py)) or the developer/maintainer automated deployment script ([`scripts/deploy_chargeback_serverless.sh`](../../scripts/deploy_chargeback_serverless.sh)) from the CLI, the scripts also authenticate directly to your Serverless FinOps hub project's Elasticsearch (`ES_URL`) and Kibana (`KIBANA_URL`) endpoints using `ES_API_KEY` and `KIBANA_API_KEY` (or `HUB_ES_API_KEY`):
 - In Kibana on your Serverless hub project, navigate to **Management → Security → API keys → Create API key** and copy the encoded Base64 API key.
-- Store it in macOS Keychain for both `ES_API_KEY` and `KIBANA_API_KEY`:
+- Export it in your shell or `.env` file (cross-platform on Linux, Windows/WSL, and macOS):
   ```bash
-  ./scripts/keychain.sh set ES_API_KEY
-  ./scripts/keychain.sh set KIBANA_API_KEY
+  export ORGANIZATION_ID="<YOUR_ORGANIZATION_ID>"
+  export CLOUD_API_KEY="<YOUR_UNIFIED_CLOUD_API_KEY>"
+  export ES_URL="https://<your-hub-project>.es.<region>.<csp>.elastic.cloud"
+  export KIBANA_URL="https://<your-hub-project>.kb.<region>.<csp>.elastic.cloud"
+  export HUB_ES_API_KEY="<YOUR_HUB_PROJECT_API_KEY>"
+  export ES_API_KEY="$HUB_ES_API_KEY"
+  export KIBANA_API_KEY="$HUB_ES_API_KEY"
   ```
+- *(Optional on macOS)* Local developers on macOS can alternatively store these variables in the macOS Keychain via `./scripts/keychain.sh set <VAR_NAME>`.
 
 ---
 
 ## Fleet integration policy parameters
 
-Configure these fields in Kibana under **Management → Integrations → Chargeback Serverless → Configure integration** (or automate them with [`scripts/configure_chargeback_serverless.sh`](../../../scripts/configure_chargeback_serverless.sh)):
+Configure these user-facing fields in Kibana under **Management → Integrations → Chargeback Serverless → Configure integration** (or automate them with [`scripts/configure_chargeback_serverless.sh`](../../scripts/configure_chargeback_serverless.sh)):
 
 | Policy parameter | Variable name | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| **Elastic Cloud Organization ID** | `organization_id` | Yes | — | Your numeric Elastic Cloud organization identifier (found in the [Elastic Cloud Console](https://cloud.elastic.co) URL or **Organization → Settings**). |
-| **Elastic Cloud API Key** | `cloud_api_key` | Yes | — | Unified Elastic Cloud API key (`secret: true`) with **Billing admin** and **Cloud resource access** (`Cloud, Elasticsearch, and Kibana API`). |
-| **Elastic Cloud API Base URL** | `api_url` | No | `https://api.elastic-cloud.com` | Base URL for the Elastic Cloud Billing and Serverless Control Plane APIs. |
-| **Currency Unit** | `currency_unit` | No | `USD` | Three-letter currency code displayed across dashboards and alerts (for example, `USD`, `EUR`, `GBP`). |
-| **Currency Symbol** | `currency_symbol` | No | `$` | Currency symbol displayed on KPI scorecards and tables (for example, `$`, `€`, `£`). |
-| **Chargeable Unit Rate** | `unit_rate` | No | `1.0` | Monetary value of 1.0 ECU in your contract currency. |
-| **Initial Billing Lookbehind Days** | `initial_lookbehind_days` | No | `60` | Number of historical UTC days (`1`–`90`) to backfill on the first billing collection run. |
+| **Organization ID** | `organization_id` | Yes | — | Your numeric Elastic Cloud organization identifier (`<YOUR_ORGANIZATION_ID>`, found in the [Elastic Cloud Console](https://cloud.elastic.co) URL or **Organization → Settings**). |
+| **Elastic Cloud API Key** | `cloud_api_key` | Yes | — | Unified Elastic Cloud API key (`secret: true`) with **Billing Admin** and **Cloud resource access** (`Cloud, Elasticsearch, and Kibana API`). |
+| **Billing Lookbehind Days** | `lookbehind` | Yes | `60` | Number of historical UTC days of billing data to backfill on initial install. |
+| **Currency Unit** | `currency_unit` | No | `USD` | Target display currency unit code across dashboards and alerts (for example, `USD`, `EUR`, `ZAR`, `GBP`, `ECU`). |
+| **Currency Symbol** | `currency_symbol` | No | `$` | Target display currency symbol on KPI scorecards and tables (for example, `$`, `€`, `R`, `£`, `ECU`). |
+| **Chargeable Unit Rate** | `unit_rate` | No | `1.0` | Multiplier from `1.0` chargeable unit (ECU) to your target contract currency (for example, `1.0`, `0.85`, `18.5`). |
 
 > [!NOTE]
-> - **Hidden override fields (`hub_es_api_key` and `project_api_keys`)**: Hidden by default (`show_user: false`, `multi: false` comma-separated string in `manifest.yml`) because `cloud_api_key` handles both organization billing and per-project usage harvesting when created with **Billing Admin** and **Cloud resource access** across `Elasticsearch`, `Observability`, and `Security` projects.
+> - **Collection schedule & daily cursor gating**: The Elastic Agent CEL `billing` and `usage` streams poll hourly (`interval: 1h`) and use daily UTC cursor gating to ingest completed calendar days once per day after `02:00 UTC`.
+> - **Advanced hidden variables (`show_user: false` in `manifest.yml`)**:
+>   - `billing_api_base` (default `https://billing.elastic-cloud.com`) and `cloud_api_base` (default `https://api.elastic-cloud.com`) define the Elastic Cloud Billing and Serverless Control Plane API base URLs.
+>   - `hub_es_api_key` and `project_api_keys` (`<project_id>:<encoded_api_key>` comma-separated string) are optional credential overrides; they remain hidden by default because a single unified `cloud_api_key` handles both organization billing and per-project usage harvesting across `Elasticsearch`, `Observability`, and `Security` projects.
 > - **Serverless-only billing scope**: Both the Elastic Agent CEL streams and `run_chargeback_serverless_collector.py` automatically filter out Elastic Cloud Hosted (ECH) deployment SKUs (`Cloud-Enterprise_*`, `.es.datahot`, `.es.kibana`, etc.) so Hosted deployments do not inflate unallocatable `other` spend on Serverless dashboards. For Elastic Cloud Hosted clusters, use the [Hosted Chargeback integration](../chargeback/README.md) (or set `INCLUDE_HOSTED_BILLING=1` when running `run_chargeback_serverless_collector.py` if you intentionally want Hosted line items included).
 
 ---
 
 ## Currency conversion configuration
 
-In Chargeback Serverless 0.3.15, currency conversion rates and symbols are managed directly through Fleet policy variables (`unit_rate`, `currency_unit`, `currency_symbol`) without requiring manual Elasticsearch lookup index seeding.
+In Chargeback Serverless `0.4.0`, currency conversion rates and symbols are managed directly through Fleet policy variables (`unit_rate`, `currency_unit`, `currency_symbol`) without requiring manual Elasticsearch lookup index seeding.
 
 - **Dynamic stamping**: The Elastic Agent CEL streams stamp `conf_chargeable_unit_rate`, `conf_chargeable_unit_rate_unit`, and `conf_currency_symbol` directly onto every ingested billing and usage record.
-- **Continuous aggregation**: Fleet-managed continuous transforms propagate these values into all `serverless_*_lookup` indices (`max` aggregation).
+- **Continuous aggregation**: Fleet-managed continuous transforms propagate these values into all `serverless_*_lookup` indices (`max` / `terms` aggregation).
 - **ES|QL evaluation**: Dashboards and alerting rules read `conf_chargeable_unit_rate` and `conf_currency_symbol` directly from the lookup indices (`LOOKUP JOIN serverless_project_status_lookup ON composite_key`) to evaluate monetary spend (`cost = units * conf_chargeable_unit_rate`).
 
 To update currency rates or change your contract currency, edit the Fleet integration policy settings in Kibana (**Management → Integrations → Installed → Chargeback Serverless → Policies**). The next collection pass automatically applies the updated currency settings.
@@ -74,7 +84,7 @@ To override the retention period when running the automated deployment script, s
 
 ## FinOps alerting rule thresholds
 
-Each of the 10 prebuilt ES|QL alerting rule templates in [`kibana/alerting_rule_template/`](kibana/alerting_rule_template/) (**Stack Management → Rules**) defines its threshold and optional entity filter on **line 2** of the ES|QL query using an `EVAL` statement so you can adjust thresholds without rewriting the query logic:
+Each of the 10 prebuilt ES|QL alerting rule templates in [`assets/kibana/alerting_rule_template/`](assets/kibana/alerting_rule_template/) (**Stack Management → Rules → Create rule**, search `[Chargeback Serverless]`) defines its threshold and optional entity filter on **line 2** of the ES|QL query using an `EVAL` statement so you can adjust thresholds without rewriting the query logic:
 
 | Alert rule title | Line-2 `EVAL` parameters | Default values |
 | --- | --- | --- |
