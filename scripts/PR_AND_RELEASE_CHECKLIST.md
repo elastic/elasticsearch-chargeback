@@ -34,7 +34,7 @@ The chargeback repo does **not** block integrations merge. It ships the **downlo
 
 1. On integrations branch: merge-ready package commit.
 2. Run `./scripts/release_chargeback.sh --cleanup-first --replace-dashboard` from `elasticsearch-chargeback`.
-3. Open chargeback PR: `integration/assets/<version>/chargeback-<version>.zip`, `CHANGELOG.md`, `integration/README.md`, `integration/Instructions.md`, `integration/docs/troubleshooting.md`, scripts.
+3. Open chargeback PR: `integrations/chargeback/assets/dist/<version>/chargeback-<version>.zip`, `CHANGELOG.md`, `integrations/chargeback/README.md`, `integrations/chargeback/Instructions.md`, `integrations/chargeback/docs/troubleshooting.md`, scripts.
 4. Paste E2E output (Steps 12–15) into the PR description.
 
 ---
@@ -56,7 +56,7 @@ From **elasticsearch-chargeback** repo root:
 
 Steps performed:
 
-1. `scripts/sync_chargeback_from_integrations.sh` — `elastic-package build` in `integrations/packages/chargeback`, copy to `integration/assets/<version>/chargeback-<version>.zip`, print SHA-256.
+1. `scripts/sync_chargeback_from_integrations.sh` — `elastic-package build` in `integrations/packages/chargeback`, copy to `integrations/chargeback/assets/dist/<version>/chargeback-<version>.zip`, print SHA-256.
 2. `scripts/run_e2e_tests.sh` — install integrations + E2E; **step 12** = proof for [#99](https://github.com/elastic/elasticsearch-chargeback/issues/99) (legacy aliases + dashboard COALESCE ES|QL).
 
 Prerequisites: [scripts/README.md](README.md) (Docker, `elastic-package`, stack `9.2.2`).
@@ -101,7 +101,7 @@ Convention (matches existing releases):
 
 - Tag: `integration-<version>` (for example `integration-0.5.0`)
 - Title: `Chargeback Integration <version>`
-- Asset: `integration/assets/<version>/chargeback-<version>.zip`
+- Asset: `integrations/chargeback/assets/dist/<version>/chargeback-<version>.zip`
 - Marked as a pre-release until Chargeback is generally available
 
 **Automatic:** after the chargeback PR merges to `main` with a new (or updated) zip, [`.github/workflows/release.yml`](../.github/workflows/release.yml) creates the tag and Release from `CHANGELOG.md`.

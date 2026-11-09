@@ -22,7 +22,7 @@ STACK_VERSION="${STACK_VERSION:-9.2.2}"
 # Prefer env, else integrations manifest, else 0.5.0
 CHARGEBACK_VERSION="${CHARGEBACK_VERSION:-}"
 # package = build+install from INTEGRATIONS_REPO/packages/chargeback
-# zip     = install committed artifact integration/assets/<ver>/chargeback-<ver>.zip
+# zip     = install committed artifact integrations/chargeback/assets/dist/<ver>/chargeback-<ver>.zip
 CHARGEBACK_INSTALL_FROM="${CHARGEBACK_INSTALL_FROM:-package}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -305,7 +305,8 @@ if [[ "$ONPREM_INSTALLED" == "true" ]]; then
   sleep "$SLEEP_ENRICH"
 
   # 6e. Create calculate_cost ingest pipeline (mERU/ERU/RAM -> ESS Billing total_ecu)
-  PIPELINE_JSON="$SCRIPT_DIR/onprem_billing_calculate_cost_pipeline.json"
+  PIPELINE_JSON="$CHARGEBACK_REPO/integrations/onprem-billing/assets/pipelines/onprem_billing_calculate_cost_pipeline.json"
+  [[ -f "$PIPELINE_JSON" ]] || PIPELINE_JSON="$SCRIPT_DIR/onprem_billing_calculate_cost_pipeline.json"
   if [[ -f "$PIPELINE_JSON" ]]; then
     echo "  Create ingest pipeline: calculate_cost"
     curl_es -X PUT "$ES_HOST/_ingest/pipeline/calculate_cost" -d @"$PIPELINE_JSON" >/dev/null 2>&1 || true
@@ -340,7 +341,7 @@ if [[ "$REPLACE_CHARGEBACK_DASHBOARD" == "1" ]]; then
   curl_kibana -X DELETE "$KIBANA_HOST/api/saved_objects/index-pattern/chargeback_integration" >/dev/null 2>&1 && echo "  Deleted Chargeback index pattern." || true
 fi
 if [[ "$CHARGEBACK_INSTALL_FROM" == "zip" ]]; then
-  CHARGEBACK_ZIP="$CHARGEBACK_REPO/integration/assets/${CHARGEBACK_VERSION}/chargeback-${CHARGEBACK_VERSION}.zip"
+  CHARGEBACK_ZIP="$CHARGEBACK_REPO/integrations/chargeback/assets/dist/${CHARGEBACK_VERSION}/chargeback-${CHARGEBACK_VERSION}.zip"
   if [[ ! -f "$CHARGEBACK_ZIP" ]]; then
     echo "CHARGEBACK_INSTALL_FROM=zip but zip missing: $CHARGEBACK_ZIP" >&2
     echo "Run ./scripts/sync_chargeback_from_integrations.sh first, or use --from-package." >&2
@@ -865,7 +866,7 @@ else
   echo "  Chargeback 0.5.0 proofs: PASS"
 fi
 
-# 14. Serverless usage collector add-on (integration/assets/serverless/)
+# 14. Serverless usage collector add-on (integrations/chargeback/addons/serverless-usage-collector/)
 echo ""
 echo "--- 14. Serverless usage collector add-on ---"
 ADDON_OK=1
@@ -933,7 +934,7 @@ else
   fi
 fi
 
-# 15. Chargeback companion Agent Builder add-on (integration/assets/agent/)
+# 15. Chargeback companion Agent Builder add-on (agents/companion-agent/)
 echo ""
 echo "--- 15. Chargeback companion agent add-on ---"
 if [[ "$(printf '%s\n' "$CHARGEBACK_VERSION" "0.5.0" | sort -V | head -1)" != "0.5.0" && "$CHARGEBACK_VERSION" != "0.5.0" ]]; then

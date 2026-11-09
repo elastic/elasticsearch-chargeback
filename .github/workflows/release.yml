@@ -9,7 +9,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "integration/assets/**/chargeback-*.zip"
+      - "integrations/chargeback/assets/**/chargeback-*.zip"
   workflow_dispatch:
     inputs:
       version:

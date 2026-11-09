@@ -19,11 +19,18 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "$SCRIPT_DIR/keychain.sh" ]]; then
+  # shellcheck source=scripts/keychain.sh
+  source "$SCRIPT_DIR/keychain.sh"
+  keychain_load_env
+fi
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-ASSETS="$ROOT/integration/assets/serverless/assets"
+ASSETS="$ROOT/integrations/chargeback/addons/serverless-usage-collector/assets"
 WF_NAME="Chargeback - Serverless usage collector"
 
-ES_URL="${ES_URL:-${ES_HOST:-https://127.0.0.1:9200}}"
+ES_URL="${ES_URL:-${sl_url:-${ES_HOST:-https://127.0.0.1:9200}}}"
 KIBANA_URL="${KIBANA_URL:-${KIBANA_HOST:-https://127.0.0.1:5601}}"
 ALLOW_MISSING_WORKFLOWS="${ALLOW_MISSING_WORKFLOWS:-0}"
 
@@ -213,4 +220,4 @@ fi
 
 echo "Done. Run the workflow once from Kibana Workflows, then check:"
 echo "  GET monitoring-indices-serverless/_count"
-echo "See integration/assets/serverless/Instructions.md for RBAC and verification."
+echo "See integrations/chargeback/addons/serverless-usage-collector/Instructions.md for RBAC and verification."

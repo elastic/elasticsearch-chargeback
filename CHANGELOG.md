@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Chargeback Serverless Minor Release (`0.4.0`)**:
+  - **System Data Stream & Standard Index Classification**: Classify dot-prefixed system data streams (`.ds-.kibana*`, `.ds-.alerts*`, `.ds-.fleet*`) into `ds_type = "system"`, `ds_namespace = "system"`, `ds_dataset = "<stream_name>"` and preserve standalone non-data-stream Elasticsearch indices as `ds_type = "index"`, `ds_dataset = "<index_name>"`, `ds_namespace = "default"` across the usage ingest pipeline, Elastic Agent CEL stream, and Python collector.
+  - **Strict Dedicated AI Pool Attribution & Synthetics Sub-Pool Reconciliation**: Prevent double-counting on projects with dedicated AI SKUs (`ai_ecu > 0`) by attributing strictly `ai_ecu * conf_chargeable_unit_rate` across models while restricting shared `search-vcu` (`query_ecu`) fallback to projects with `ai_ecu == 0` and active model inferences (explicitly badged on the AI & ML dashboard); reconcile `synthetics_pings_ecu` and `synthetics_executions_ecu` independently via `billing-derived-lightweight` and `billing-derived-browser` fallback monitors; and cap data-trust alert `Unallocated %` at `100.0%`.
+  - **Hardened Collector, Deployment Automation & Customer Documentation**: Enforce HTTP timeouts, retry/backoff, and URL-encoded path segments in `run_chargeback_serverless_collector.py`; dynamically resolve package version and remove temporary files via `trap` in `deploy_chargeback_serverless.sh`; clearly separate Customer Fleet UI installation (with pre-created `mode: lookup` index templates) from Developer/Maintainer CLI workflows; and bump companion package to `0.4.0`.
+- **Chargeback Serverless Data Stream & Transform Retention (`0.3.15`)**: Implement 365-day Serverless retention across raw data streams (`lifecycle.yml` with `data_retention: "365d"` on `metrics-chargeback_serverless.billing-*` and `metrics-chargeback_serverless.usage-*`) and all 7 lookup transforms (`retention_policy.time.max_age: 365d` on `@timestamp` for `serverless_*_lookup`); add `DATA_RETENTION` override and lifecycle verification to `deploy_chargeback_serverless.sh` and `configure_chargeback_serverless.sh`; and update companion package to `0.3.15`.
+- **Chargeback Serverless Dynamic Project Discovery & Billing Overview (`0.3.14`)**: Support any current or future Serverless project type dynamically in agent CEL streams, Control Plane discovery, and collector backfill; emit 0-ECU placeholder records across all lookbehind days for idle and decommissioned projects to ensure all organization projects appear in `Daily cost by project`; expand dashboard limits with pagination; and update companion package to `0.3.14`.
+- **Native Chargeback Serverless hub (`0.3.13`)** ([#123](https://github.com/elastic/elasticsearch-chargeback/issues/123)): [`integrations/chargeback-serverless/`](integrations/chargeback-serverless/README.md) with native Elastic Agent CEL streams (`billing` and `usage`, daily collection after 02:00 UTC for completed days up to `D-1`, 60-day initial billing lookbehind), 7 Fleet-managed Elasticsearch Transforms and lookup indices (including `serverless_synthetics_monitor_contribution_lookup`), 100% Fleet Integration Policy secret management (zero plaintext secrets in indices), and [`scripts/deploy_chargeback_serverless.sh`](scripts/deploy_chargeback_serverless.sh). Companion Fleet package `chargeback_serverless` (`0.3.13`) lives on integrations branch `wip-johannes-chargeback-serverless`.
+- **Chargeback Serverless Dashboards & Alerts (`0.3.13`)**: Five linked dashboards (**Billing Components Overview** with interactive `i` definition popover on Unallocatable Spend, **Usage & Cost Allocation** with collapsible Workload and Data Stream sections reconciling Indexing, Query, Storage, AI & Synthetics pools, **AI & Machine Learning**, **Synthetics** with synthetic type breakdown (`http`, `browser`, `icmp`, `tcp`, `dns`) and per-monitor cost attribution, and a unified **Configuration** dashboard with policy guide and project harvest registry) exported with `elastic-package export dashboards`, resolving missing `project_name` values via `LOOKUP JOIN serverless_project_status_lookup`, plus 10 FinOps Spend & Data Trust ES|QL alerting rule templates (total daily spend, rolling 30-day budget, per cost category, per workload driver, per project, 7-day project spike, per namespace, per AI model, per Synthetics monitor, and consolidated Data Trust & Harvest Health) with Line-2 `EVAL` threshold customization.
+- **Serverless Namespace, Data Type, and Synthetics Monitor Partitioning**: Parse data stream names into `ds_type`, `ds_dataset`, and `ds_namespace` in the usage ingest pipeline and lookup mappings; harvest Synthetics monitor check telemetry (`monitor_id`, `monitor_name`, `monitor_type`, `monitor_namespace`, `check_count`, `up_count`, `down_count`, `locations_count`, `average_duration_ms`) and attribute `observability-synthetic-pings` and `observability-synthetic-executions` SKU pools across lightweight (`http`, `icmp`, `tcp`, `dns`) and `browser` monitors.
+
 ---
 
 ## Integration Releases
@@ -25,8 +37,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 #### Added (this repo — add-ons, not in the Fleet zip)
 
 - **Pure Chargeback vs add-ons** documented in the root README.
-- **[`integration/assets/serverless/`](integration/assets/serverless/README.md)** — looping Serverless usage collector and [`scripts/install_serverless_usage.sh`](scripts/install_serverless_usage.sh).
-- **[`integration/assets/agent/`](integration/assets/agent/README.md)** — optional Chargeback companion (Agent Builder) and [`scripts/install_chargeback_agent.sh`](scripts/install_chargeback_agent.sh).
+- **[`integrations/chargeback/addons/serverless-usage-collector/`](integrations/chargeback/addons/serverless-usage-collector/README.md)** — looping Serverless usage collector and [`scripts/install_serverless_usage.sh`](scripts/install_serverless_usage.sh).
+- **[`agents/companion-agent/`](agents/companion-agent/README.md)** — optional Chargeback companion (Agent Builder) and [`scripts/install_chargeback_agent.sh`](scripts/install_chargeback_agent.sh).
 
 #### Fixed (this repo — add-ons / E2E)
 
@@ -43,7 +55,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 #### Changed
 
-- Package **0.5.0** keeps Kibana `^9.2.0`. Asset: [`integration/assets/0.5.0/chargeback-0.5.0.zip`](integration/assets/0.5.0/chargeback-0.5.0.zip). Source: [elastic/integrations#22057](https://github.com/elastic/integrations/pull/22057) + [elastic/integrations#22061](https://github.com/elastic/integrations/pull/22061). Zip SHA-256 `5ee3dc4419d9d448480199f41da2be606795863225a920f993d2bcdfcb634168`.
+- Package **0.5.0** keeps Kibana `^9.2.0`. Asset: [`integrations/chargeback/assets/dist/0.5.0/chargeback-0.5.0.zip`](integrations/chargeback/assets/dist/0.5.0/chargeback-0.5.0.zip). Source: [elastic/integrations#22057](https://github.com/elastic/integrations/pull/22057) + [elastic/integrations#22061](https://github.com/elastic/integrations/pull/22061). Zip SHA-256 `5ee3dc4419d9d448480199f41da2be606795863225a920f993d2bcdfcb634168`.
 
 ### [0.4.7] - 2026-09-23
 
@@ -54,7 +66,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 #### Changed
 
-- Package **0.4.7** keeps Kibana `^9.2.0`. Asset: [`integration/assets/0.4.7/chargeback-0.4.7.zip`](integration/assets/0.4.7/chargeback-0.4.7.zip). Source: [elastic/integrations#21568](https://github.com/elastic/integrations/pull/21568).
+- Package **0.4.7** keeps Kibana `^9.2.0`. Asset: [`integrations/chargeback/assets/dist/0.4.7/chargeback-0.4.7.zip`](integrations/chargeback/assets/dist/0.4.7/chargeback-0.4.7.zip). Source: [elastic/integrations#21568](https://github.com/elastic/integrations/pull/21568).
 
 ### [0.4.6] - 2026-09-22
 
@@ -74,7 +86,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 #### Changed
 
-- Package **0.4.5** keeps Kibana `^9.2.0`. Asset: [`integration/assets/0.4.5/chargeback-0.4.5.zip`](integration/assets/0.4.5/chargeback-0.4.5.zip). Source: [elastic/integrations#21560](https://github.com/elastic/integrations/pull/21560).
+- Package **0.4.5** keeps Kibana `^9.2.0`. Asset: [`integrations/chargeback/assets/dist/0.4.5/chargeback-0.4.5.zip`](integrations/chargeback/assets/dist/0.4.5/chargeback-0.4.5.zip). Source: [elastic/integrations#21560](https://github.com/elastic/integrations/pull/21560).
 
 ### [0.4.4] - 2026-09-15
 
@@ -84,7 +96,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 #### Changed
 
-- Package **0.4.4** keeps Kibana `^9.2.0`. Asset: [`integration/assets/0.4.4/chargeback-0.4.4.zip`](integration/assets/0.4.4/chargeback-0.4.4.zip). Source: [elastic/integrations#21263](https://github.com/elastic/integrations/pull/21263).
+- Package **0.4.4** keeps Kibana `^9.2.0`. Asset: [`integrations/chargeback/assets/dist/0.4.4/chargeback-0.4.4.zip`](integrations/chargeback/assets/dist/0.4.4/chargeback-0.4.4.zip). Source: [elastic/integrations#21263](https://github.com/elastic/integrations/pull/21263).
 
 ### [0.4.3] - 2026-08-12
 
@@ -94,7 +106,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 #### Changed
 
-- Package **0.4.3** keeps Kibana `^9.2.0`. Asset: [`integration/assets/0.4.3/chargeback-0.4.3.zip`](integration/assets/0.4.3/chargeback-0.4.3.zip). Source: [elastic/integrations#20682](https://github.com/elastic/integrations/pull/20682).
+- Package **0.4.3** keeps Kibana `^9.2.0`. Asset: [`integrations/chargeback/assets/dist/0.4.3/chargeback-0.4.3.zip`](integrations/chargeback/assets/dist/0.4.3/chargeback-0.4.3.zip). Source: [elastic/integrations#20682](https://github.com/elastic/integrations/pull/20682).
 
 ### [0.4.2] - 2026-08-12
 
@@ -105,7 +117,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 #### Changed
 
-- Package **0.4.2** keeps Kibana `^9.2.0`. Asset: [`integration/assets/0.4.2/chargeback-0.4.2.zip`](integration/assets/0.4.2/chargeback-0.4.2.zip). Source: [elastic/integrations#20661](https://github.com/elastic/integrations/pull/20661) (merged into `wip-johannes-chargeback`).
+- Package **0.4.2** keeps Kibana `^9.2.0`. Asset: [`integrations/chargeback/assets/dist/0.4.2/chargeback-0.4.2.zip`](integrations/chargeback/assets/dist/0.4.2/chargeback-0.4.2.zip). Source: [elastic/integrations#20661](https://github.com/elastic/integrations/pull/20661) (merged into `wip-johannes-chargeback`).
 
 ### [0.4.1] - 2026-08-03
 
@@ -117,7 +129,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 #### Changed
 
-- Package **0.4.1** keeps Kibana `^9.2.0`. Asset: [`integration/assets/0.4.1/chargeback-0.4.1.zip`](integration/assets/0.4.1/chargeback-0.4.1.zip). Source: [elastic/integrations#20602](https://github.com/elastic/integrations/pull/20602) (merged into `wip-johannes-chargeback`).
+- Package **0.4.1** keeps Kibana `^9.2.0`. Asset: [`integrations/chargeback/assets/dist/0.4.1/chargeback-0.4.1.zip`](integrations/chargeback/assets/dist/0.4.1/chargeback-0.4.1.zip). Source: [elastic/integrations#20602](https://github.com/elastic/integrations/pull/20602) (merged into `wip-johannes-chargeback`).
 - Refresh Billing Components Overview, Usage and Cost Allocation, and Configuration dashboard screenshots in the repo README and `integration/README.md` (real PNG assets for Fleet).
 - **Bugfix:** `billing_cluster_cost` and `billing_realized_pool` sync on `@timestamp` instead of `event.ingested` so On-Prem Billing sources (often without a mapped `event.ingested`) still populate `billing_realized_pool_lookup` and the Usage & Cost Allocation dashboard.
 

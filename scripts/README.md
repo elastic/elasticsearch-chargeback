@@ -1,13 +1,102 @@
-# Local Testing Scripts
+# Deployment, Backfill, and Testing Scripts
 
-Scripts for running Chargeback integration tests locally. **Use the automated E2E script** for full install and verification.
+Scripts for deploying Chargeback integrations, backfilling historical Serverless billing and usage data, and running local E2E developer tests.
 
-## Prerequisites
+## Customer Installation vs. Developer / Maintainer Workflows
 
-- **elastic-package** (e.g. `go install github.com/elastic/elastic-package` or use from the integrations repo: `go run github.com/elastic/elastic-package`)
-- **integrations** repo (sibling of `elasticsearch-chargeback`, or set `INTEGRATIONS_REPO`)
-- **jq** (for billing doc patch so `total_ecu` and `deployment_tags` are correct in evidence)
-- **Docker** (4GB+ memory). Stack: Elasticsearch 9.2+ (for ES|QL LOOKUP JOIN), Kibana, Package Registry
+### 1. Customer Installation & Optional Backfill (No `elastic/integrations` or Docker Required)
+Customers installing Chargeback Serverless via the Kibana Fleet UI (see **Part 1** of [`../integrations/chargeback-serverless/Instructions.md`](../integrations/chargeback-serverless/Instructions.md)) do **not** need the `elastic/integrations` repository, `elastic-package`, or Docker:
+- **Prebuilt package `.zip`**: Included in the repository at [`../integrations/chargeback-serverless/assets/dist/chargeback_serverless-0.4.0.zip`](../integrations/chargeback-serverless/assets/dist/chargeback_serverless-0.4.0.zip).
+- **Optional historical usage backfill (`run_chargeback_serverless_collector.py`)**: Uses only the Python `3.9+` standard library (`urllib`, `json`, `datetime`) and works across Linux, Windows/WSL, and macOS via standard environment variables or a `.env` file.
+
+### 2. Automated CLI Deployment (`deploy_chargeback_serverless.sh`)
+Developers, maintainers, and operators automating end-to-end deployment from the CLI (see **Part 2** of [`../integrations/chargeback-serverless/Instructions.md`](../integrations/chargeback-serverless/Instructions.md)) require:
+- **`curl`**, **`jq`**, and **`python3` (`3.9+`) with `PyYAML`**:
+  - On macOS with Homebrew Python (PEP 668 `externally-managed-environment`), create a virtual environment before running `deploy_chargeback_serverless.sh`:
+    ```bash
+    python3 -m venv .venv
+    source .venv/bin/activate
+    pip install pyyaml
+    ```
+
+### 3. Package Maintainers (Rebuilding `.zip` Packages & Running Local Stack E2E Tests)
+Required **only** when editing integration package templates and building new `.zip` archives (`--build`) or running `run_e2e_tests.sh`:
+- **`elastic/integrations` repo** (sibling of `elasticsearch-chargeback`, or set `INTEGRATIONS_REPO`)
+- **`elastic-package`** (`go install github.com/elastic/elastic-package@latest`)
+- **Docker** (4GB+ memory) for local stack E2E tests (`run_e2e_tests.sh`)
+
+---
+
+## Chargeback Serverless (`0.4.0` — Backfill & Automated Deployment)
+
+### Cross-Platform Environment Variables (Linux, Windows/WSL, CI/CD, macOS)
+
+Both `run_chargeback_serverless_collector.py` and `deploy_chargeback_serverless.sh` read standard environment variables (or a `.env` file in the repository root):
+
+```bash
+export ORGANIZATION_ID="<YOUR_ORGANIZATION_ID>"
+export CLOUD_API_KEY="<YOUR_UNIFIED_CLOUD_API_KEY>"
+export ES_URL="https://<your-hub-project>.es.<region>.<csp>.elastic.cloud"
+export KIBANA_URL="https://<your-hub-project>.kb.<region>.<csp>.elastic.cloud"
+export HUB_ES_API_KEY="<YOUR_HUB_PROJECT_API_KEY>"
+export ES_API_KEY="$HUB_ES_API_KEY"
+export KIBANA_API_KEY="$HUB_ES_API_KEY"
+```
+
+### Running the Standalone Backfill or Full Automated Deployment
+
+```bash
+# Option A (Customer optional backfill after Fleet UI install — stdlib Python only):
+python3 scripts/run_chargeback_serverless_collector.py
+
+# Option B (Developer / Maintainer full E2E automated deployment — requires PyYAML):
+python3 -m venv .venv
+source .venv/bin/activate
+pip install pyyaml
+
+# Deploy prebuilt dist/chargeback_serverless-0.4.0.zip, create dedicated Fleet policy,
+# provision lookup-mode index templates & 7 transforms, and run the Python backfill collector:
+./scripts/deploy_chargeback_serverless.sh
+
+# Upload package without creating/updating Fleet package policy
+./scripts/deploy_chargeback_serverless.sh --skip-policy
+
+# Verification and health check only (prints data stream & lookup counts + ES|QL checks)
+./scripts/deploy_chargeback_serverless.sh --verify-only
+
+# MAINTAINER ONLY: Rebuild package zip from elastic/integrations before deploying
+./scripts/deploy_chargeback_serverless.sh --build
+```
+
+Modular components:
+- [`run_chargeback_serverless_collector.py`](run_chargeback_serverless_collector.py): Cross-platform standalone Python collector (stdlib only) that backfills up to 60 days of Serverless billing and per-project data stream, index, AI model, and Synthetics telemetry and refreshes the 7 `serverless_*_lookup` indices.
+- [`deploy_chargeback_serverless.sh`](deploy_chargeback_serverless.sh): Installs the prebuilt `chargeback_serverless-0.4.0.zip` (unless `--build` is passed), installs persistent `mode: lookup` index templates and starts all 7 Fleet transforms, creates/updates a dedicated `'Chargeback Serverless Policy'` in Fleet, runs `run_chargeback_serverless_collector.py`, and verifies all lookup indices and dashboards.
+- [`configure_chargeback_serverless.sh`](configure_chargeback_serverless.sh): Updates the Fleet package policy settings (Cloud Org ID, unified Cloud API key, optional overrides, currency rates) on a dedicated `'Chargeback Serverless Policy'` via Kibana Fleet API with zero plaintext secret indices.
+- [`keychain.sh`](keychain.sh): Optional macOS Keychain credential manager for local macOS developers. Securely stores, loads, lists, and manages environment variables in Keychain (`elasticsearch-chargeback` service) instead of a plaintext `.env`.
+- [`install_chargeback_serverless.sh`](install_chargeback_serverless.sh): Legacy installer (deprecated in favor of native Fleet EPM and `deploy_chargeback_serverless.sh`).
+
+### Optional: Managing Credentials with macOS Keychain (macOS Local Developers)
+
+On macOS, local developers can optionally store credentials in the macOS Keychain instead of exporting environment variables or using a `.env` file:
+
+```bash
+# Store required credentials for Chargeback Serverless (prompts securely when value is omitted)
+./scripts/keychain.sh set ORGANIZATION_ID <YOUR_ORGANIZATION_ID>
+./scripts/keychain.sh set CLOUD_API_KEY
+./scripts/keychain.sh set ES_URL "https://<your-hub-project>.es.<region>.<csp>.elastic.cloud"
+./scripts/keychain.sh set ES_API_KEY
+./scripts/keychain.sh set KIBANA_URL "https://<your-hub-project>.kb.<region>.<csp>.elastic.cloud"
+./scripts/keychain.sh set KIBANA_API_KEY
+
+# List stored credentials
+./scripts/keychain.sh list
+
+# Inspect a credential
+./scripts/keychain.sh get ORGANIZATION_ID
+
+# Load credentials into your current shell session
+source scripts/keychain.sh
+```
 
 ---
 
@@ -20,7 +109,7 @@ After editing `packages/chargeback` in **elastic/integrations**:
 ./scripts/release_chargeback.sh --cleanup-first --replace-dashboard
 ```
 
-This runs: **build** (`elastic-package build`) → **copy zip** to `integration/assets/<version>/` → **E2E** (including step 12 proof for [issue #99](https://github.com/elastic/elasticsearch-chargeback/issues/99)).
+This runs: **build** (`elastic-package build`) → **copy zip** to `integrations/chargeback/assets/dist/<version>/` → **E2E** (including step 12 proof for [issue #99](https://github.com/elastic/elasticsearch-chargeback/issues/99)).
 
 After that PR merges to `main`, GitHub Actions creates the `integration-<version>` tag and a GitHub Release (zip attached, pre-release). To backfill versions that already have a zip but no release:
 
@@ -39,7 +128,7 @@ From the **elasticsearch-chargeback** repo root, with the stack already running:
 
 ```bash
 ./scripts/run_e2e_tests.sh
-# Install the committed zip under integration/assets/<version>/ instead of building packages/chargeback:
+# Install the committed zip under integrations/chargeback/assets/dist/<version>/ instead of building packages/chargeback:
 ./scripts/run_e2e_tests.sh --from-zip
 # Or: CHARGEBACK_INSTALL_FROM=zip CHARGEBACK_VERSION=0.5.0 ./scripts/run_e2e_tests.sh
 ```
@@ -119,7 +208,7 @@ Use when you already have a monitoring cluster or can’t use the script. **Orde
 
 1. **Install Elasticsearch integration** (version from integrations repo), then start the transform `logs-elasticsearch.index_pivot-default-*` in **Stack Management → Transforms**.
 2. **Install On-Prem Billing** or **ESS Billing**; run post-install steps; ensure billing data in `metrics-ess_billing.billing-*`.
-3. **Install Chargeback** (e.g. **Integrations → Create new integration → Upload it as a .zip**). Use the built zip from the integrations repo (`cd packages/chargeback && elastic-package build`) or a zip from this repo’s `integration/assets/<version>/chargeback-<version>.zip` (use the version you built or the one under `integration/assets/`).
+3. **Install Chargeback** (e.g. **Integrations → Create new integration → Upload it as a .zip**). Use the built zip from the integrations repo (`cd packages/chargeback && elastic-package build`) or a zip from this repo’s `integrations/chargeback/assets/dist/<version>/chargeback-<version>.zip` (use the version you built or the one under `integrations/chargeback/assets/dist/`).
 
 Chargeback will create `chargeback_conf_lookup` and start its transforms. Verify in **Stack Management → Transforms** (filter `chargeback`).
 

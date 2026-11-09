@@ -5,5 +5,5 @@ scripts/evidence_lookup_indices.txt
 scripts/e2e_issue_99_proof.log
 
 # Agent/IDE guidance — not part of shipped integration
-integration/AGENTS.md
+integrations/chargeback/AGENTS.md
 __pycache__/

@@ -3,7 +3,7 @@
 #
 # Tag convention:  integration-<version>   (matches existing releases)
 # Release title:   Chargeback Integration <version>
-# Release asset:   integration/assets/<version>/chargeback-<version>.zip
+# Release asset:   integrations/chargeback/assets/dist/<version>/chargeback-<version>.zip
 #
 # Usage:
 #   ./scripts/create_github_release.sh --version 0.4.3
@@ -88,7 +88,7 @@ is_semver() {
 
 zip_path_for() {
   local version="$1"
-  echo "$REPO/integration/assets/${version}/chargeback-${version}.zip"
+  echo "$REPO/integrations/chargeback/assets/dist/${version}/chargeback-${version}.zip"
 }
 
 # Skip 0.0.x and versions before the first GitHub Release (integration-0.1.5).
@@ -104,13 +104,13 @@ should_skip_version() {
 
 list_all_versions() {
   local zip version
-  for zip in "$REPO"/integration/assets/[0-9]*/chargeback-*.zip; do
+  for zip in "$REPO"/integrations/chargeback/assets/dist/[0-9]*/chargeback-*.zip; do
     [[ -f "$zip" ]] || continue
     version="$(basename "$(dirname "$zip")")"
     is_semver "$version" || continue
     should_skip_version "$version" && continue
     [[ "$(basename "$zip")" == "chargeback-${version}.zip" ]] || continue
-    git ls-files --error-unmatch "integration/assets/${version}/chargeback-${version}.zip" >/dev/null 2>&1 || continue
+    git ls-files --error-unmatch "integrations/chargeback/assets/dist/${version}/chargeback-${version}.zip" >/dev/null 2>&1 || continue
     echo "$version"
   done | sort -t. -k1,1n -k2,2n -k3,3n
 }
@@ -120,9 +120,9 @@ list_changed_versions() {
   after="${AFTER_SHA:-HEAD}"
   before="${SINCE_SHA:-}"
   if [[ -z "$before" || "$before" =~ ^0+$ ]]; then
-    files="$(git diff-tree --no-commit-id --name-only -r "$after" -- 'integration/assets/*/chargeback-*.zip' || true)"
+    files="$(git diff-tree --no-commit-id --name-only -r "$after" -- 'integrations/chargeback/assets/dist/*/chargeback-*.zip' || true)"
   else
-    files="$(git diff --name-only --diff-filter=AM "$before" "$after" -- 'integration/assets/*/chargeback-*.zip' || true)"
+    files="$(git diff --name-only --diff-filter=AM "$before" "$after" -- 'integrations/chargeback/assets/dist/*/chargeback-*.zip' || true)"
   fi
   while IFS= read -r zip; do
     [[ -n "$zip" ]] || continue
@@ -166,7 +166,7 @@ EOF
 
 target_sha_for() {
   local version="$1"
-  local zip="integration/assets/${version}/chargeback-${version}.zip"
+  local zip="integrations/chargeback/assets/dist/${version}/chargeback-${version}.zip"
   local sha
   sha="$(git log -1 --format=%H -- "$zip" 2>/dev/null || true)"
   if [[ -n "$sha" ]]; then
@@ -188,7 +188,7 @@ create_release() {
     return 1
   fi
 
-  rel_zip="integration/assets/${version}/chargeback-${version}.zip"
+  rel_zip="integrations/chargeback/assets/dist/${version}/chargeback-${version}.zip"
   if [[ "$FORCE" -eq 0 ]] && ! git ls-files --error-unmatch "$rel_zip" >/dev/null 2>&1; then
     echo "Skip ${version}: ${rel_zip} is not tracked in git."
     return 0
