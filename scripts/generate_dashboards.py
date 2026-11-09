@@ -4752,8 +4752,9 @@ def build_alerts() -> list[dict]:
     sym = COALESCE(MAX(currency_symbol), "$"),
     unit = COALESCE(MAX(unit), "USD")
   BY day, project_id
-| EVAL has_harvest_issue = (harvest_status != "inactive" AND (harvest_status != "ok" OR synth_status == "unauthorized" OR is_stale_time == 1))
-| EVAL has_missing_name = (proj_ecu > 0.0 AND (raw_pname IS NULL OR raw_pname == "" OR raw_pname == project_id))
+| EVAL is_synthetic_bucket = (STARTS_WITH(project_id, "deleted_or_unassociated") OR project_id == "org_level" OR project_id == "organization")
+| EVAL has_harvest_issue = (NOT is_synthetic_bucket AND harvest_status != "inactive" AND (harvest_status != "ok" OR synth_status == "unauthorized" OR is_stale_time == 1))
+| EVAL has_missing_name = (NOT is_synthetic_bucket AND proj_ecu > 0.0 AND (raw_pname IS NULL OR raw_pname == "" OR raw_pname == project_id))
 | EVAL unallocated_pct = CASE(org_spend > 0.0, ROUND(unallocated_spend * 100.0 / org_spend, 1), 0.0)
 | EVAL has_unalloc_issue = (unallocated_spend > thresh_unalloc AND unallocated_pct > thresh_pct)
 | WHERE has_harvest_issue OR has_missing_name OR has_unalloc_issue
