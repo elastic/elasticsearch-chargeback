@@ -70,7 +70,7 @@ PUT _index_template/chargeback_serverless_lookup_billing_cost
         "rate": { "type": "double" },
         "total_ecu": { "type": "double" },
         "total_chargeable_units": { "type": "double" },
-        "total_quantity": { "type": "double" },
+        "quantity_value": { "type": "double" },
         "conf_chargeable_unit_rate": { "type": "double" },
         "conf_chargeable_unit_rate_unit": { "type": "keyword" },
         "conf_currency_symbol": { "type": "keyword" },

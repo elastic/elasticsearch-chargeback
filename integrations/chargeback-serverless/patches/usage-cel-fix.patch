@@ -1,0 +1,79 @@
+--- /tmp/diffa/chargeback_serverless-0.4.0/data_stream/usage/agent/stream/cel.yml.hbs	2026-11-09 06:03:40
++++ /tmp/diffb/chargeback_serverless-0.4.3/data_stream/usage/agent/stream/cel.yml.hbs	2026-11-10 11:03:10
+@@ -32,7 +32,7 @@
+                 []
+               )
+             )
+-          ).map(k, k.trim()).filter(k, k != "" && k != "null" && !k.startsWith("$co.elastic.secret")).as(all_pkeys,
++          ).filter(k, k != "" && k != "null" && !k.startsWith("$co.elastic.secret")).as(all_pkeys,
+           state.?cursor.ml_baselines.orValue([]).as(prev_ml_baselines,
+           (state.?cursor.last_day.orValue("") == day_ts) ?
+             {
+@@ -246,8 +246,8 @@
+                                                                                     (has(inst.product_line_items) && inst.product_line_items != null) ?
+                                                                                       inst.product_line_items.filter(li,
+                                                                                         has(li.sku) && li.sku != null &&
+-                                                                                        string(li.sku).lowerAscii().contains("synthetic") &&
+-                                                                                        string(li.sku).lowerAscii().contains("ping") &&
++                                                                                        string(li.sku).contains("synthetic") &&
++                                                                                        string(li.sku).contains("ping") &&
+                                                                                         (!has(li.total_ecu) || li.total_ecu == null || double(li.total_ecu) > 0.0 || (has(li.quantity) && li.quantity != null && has(li.quantity.value) && li.quantity.value != null && double(li.quantity.value) > 0.0))
+                                                                                       ).map(li, (has(li.quantity) && li.quantity != null && has(li.quantity.value) && li.quantity.value != null) ? double(li.quantity.value) : 0.0)
+                                                                                     : []
+@@ -256,8 +256,8 @@
+                                                                                       (has(inst.product_line_items) && inst.product_line_items != null) ?
+                                                                                         inst.product_line_items.filter(li,
+                                                                                           has(li.sku) && li.sku != null &&
+-                                                                                          string(li.sku).lowerAscii().contains("synthetic") &&
+-                                                                                          !string(li.sku).lowerAscii().contains("ping") &&
++                                                                                          string(li.sku).contains("synthetic") &&
++                                                                                          !string(li.sku).contains("ping") &&
+                                                                                           (!has(li.total_ecu) || li.total_ecu == null || double(li.total_ecu) > 0.0 || (has(li.quantity) && li.quantity != null && has(li.quantity.value) && li.quantity.value != null && double(li.quantity.value) > 0.0))
+                                                                                         ).map(li, (has(li.quantity) && li.quantity != null && has(li.quantity.value) && li.quantity.value != null) ? double(li.quantity.value) : 0.0)
+                                                                                       : []
+@@ -455,6 +455,7 @@
+                                                                       )
+                                                                     )
+                                                                   )
++                                                                )
+                                                                 :
+                                                                   [
+                                                                     {
+@@ -479,7 +480,6 @@
+                                                                       "conf_currency_symbol": state.conf_currency_symbol,
+                                                                     }
+                                                                   ]
+-                                                              )
+                                                             )
+                                                           )
+                                                         )
+@@ -497,7 +497,7 @@
+                                             size(projects.filter(p, p.id == inst.id)) == 0 &&
+                                             has(inst.product_line_items) && inst.product_line_items != null &&
+                                             inst.product_line_items.exists(li,
+-                                              has(li.sku) && li.sku != null && string(li.sku).lowerAscii().as(s,
++                                              has(li.sku) && li.sku != null && string(li.sku).as(s,
+                                                 (s.contains("serverless") || s.contains("-vcu") || s.contains(".ecu") || s.contains("retained") || s.contains("synthetic") || s.contains("agent-builder") || s.contains("inference") || s.contains("llm") || s.contains("workflow") || s.contains("cross-project")) &&
+                                                 !(s.contains("cloud-enterprise") || s.contains("cloud-platinum") || s.contains("cloud-standard") || s.contains("cloud-gold") || s.contains(".es.data") || s.contains(".es.ml") || s.contains(".es.master") || s.contains(".es.coordinating") || s.contains(".kibana.") || s.contains(".apm.") || s.contains(".enterprise_search.") || s.contains(".integrations_server."))
+                                               )
+@@ -506,17 +506,17 @@
+                                             ((has(inst.name) && inst.name != null && string(inst.name) != "") ? string(inst.name) : string(inst.id)).as(del_pname,
+                                               ((has(inst.type) && inst.type != null && string(inst.type) != "" && string(inst.type) != "serverless" && string(inst.type) != "deployment") ? string(inst.type) : "elasticsearch").as(del_ptype,
+                                                 inst.product_line_items.filter(li,
+-                                                  has(li.sku) && li.sku != null && string(li.sku).lowerAscii().as(s,
++                                                  has(li.sku) && li.sku != null && string(li.sku).as(s,
+                                                     (s.contains("retained") || s.contains("storage") || s.contains("retention")) && !s.contains("snapshot")
+                                                   )
+                                                 ).map(li, (has(li.quantity) && li.quantity != null && has(li.quantity.value) && li.quantity.value != null) ? double(li.quantity.value) : 0.0).as(del_store_qtys,
+                                                   inst.product_line_items.filter(li,
+-                                                    has(li.sku) && li.sku != null && string(li.sku).lowerAscii().as(s,
++                                                    has(li.sku) && li.sku != null && string(li.sku).as(s,
+                                                       s.contains("synthetic") && s.contains("ping") && (!has(li.total_ecu) || li.total_ecu == null || double(li.total_ecu) > 0.0 || (has(li.quantity) && li.quantity != null && has(li.quantity.value) && li.quantity.value != null && double(li.quantity.value) > 0.0))
+                                                     )
+                                                   ).map(li, (has(li.quantity) && li.quantity != null && has(li.quantity.value) && li.quantity.value != null) ? double(li.quantity.value) : 0.0).as(del_ping_qtys,
+                                                     inst.product_line_items.filter(li,
+-                                                      has(li.sku) && li.sku != null && string(li.sku).lowerAscii().as(s,
++                                                      has(li.sku) && li.sku != null && string(li.sku).as(s,
+                                                         s.contains("synthetic") && !s.contains("ping") && (!has(li.total_ecu) || li.total_ecu == null || double(li.total_ecu) > 0.0 || (has(li.quantity) && li.quantity != null && has(li.quantity.value) && li.quantity.value != null && double(li.quantity.value) > 0.0))
+                                                       )
+                                                     ).map(li, (has(li.quantity) && li.quantity != null && has(li.quantity.value) && li.quantity.value != null) ? double(li.quantity.value) : 0.0).as(del_browser_qtys,
