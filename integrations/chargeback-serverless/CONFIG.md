@@ -1,6 +1,6 @@
 # Chargeback Serverless configuration reference
 
-Use this reference to configure the **Chargeback Serverless (`chargeback_serverless` `0.4.0`)** Fleet integration policy, create the required Elastic Cloud API key, customize currency conversion settings, and tune FinOps alerting thresholds.
+Use this reference to configure the **Chargeback Serverless (`chargeback_serverless` `0.4.1`)** Fleet integration policy, create the required Elastic Cloud API key, customize currency conversion settings, and tune FinOps alerting thresholds.
 
 ## Single unified Elastic Cloud API key
 
@@ -59,7 +59,7 @@ Configure these user-facing fields in Kibana under **Management → Integrations
 
 ## Currency conversion configuration
 
-In Chargeback Serverless `0.4.0`, currency conversion rates and symbols are managed directly through Fleet policy variables (`unit_rate`, `currency_unit`, `currency_symbol`) without requiring manual Elasticsearch lookup index seeding.
+In Chargeback Serverless `0.4.1`, currency conversion rates and symbols are managed directly through Fleet policy variables (`unit_rate`, `currency_unit`, `currency_symbol`) without requiring manual Elasticsearch lookup index seeding.
 
 - **Dynamic stamping**: The Elastic Agent CEL streams stamp `conf_chargeable_unit_rate`, `conf_chargeable_unit_rate_unit`, and `conf_currency_symbol` directly onto every ingested billing and usage record.
 - **Continuous aggregation**: Fleet-managed continuous transforms propagate these values into all `serverless_*_lookup` indices (`max` / `terms` aggregation).
@@ -84,19 +84,13 @@ To override the retention period when running the automated deployment script, s
 
 ## FinOps alerting rule thresholds
 
-Each of the 10 prebuilt ES|QL alerting rule templates in [`assets/kibana/alerting_rule_template/`](assets/kibana/alerting_rule_template/) (**Stack Management → Rules → Create rule**, search `[Chargeback Serverless]`) defines its threshold and optional entity filter on **line 2** of the ES|QL query using an `EVAL` statement so you can adjust thresholds without rewriting the query logic:
+Each of the 4 prebuilt ES|QL alerting rule templates in [`assets/kibana/alerting_rule_template/`](assets/kibana/alerting_rule_template/) (**Stack Management → Rules → Create rule**, search `[Chargeback Serverless]`) defines its threshold and optional entity filter on **line 2** of the ES|QL query using an `EVAL` statement so you can adjust thresholds without rewriting the query logic:
 
 | Alert rule title | Line-2 `EVAL` parameters | Default values |
 | --- | --- | --- |
-| **`[Chargeback Serverless] Total daily spend threshold exceeded`** | `EVAL threshold_spend = 1000.0` | `1000.0` |
-| **`[Chargeback Serverless] Rolling 30-day total spend budget exceeded`** | `EVAL threshold_budget = 25000.0` | `25000.0` |
-| **`[Chargeback Serverless] Cost category daily spend threshold exceeded`** | `EVAL threshold_spend = 300.0, filter_category = "*"` | `300.0`, all categories |
-| **`[Chargeback Serverless] Workload driver daily spend threshold exceeded`** | `EVAL threshold_spend = 250.0, filter_driver = "*"` | `250.0`, all drivers |
-| **`[Chargeback Serverless] Project daily spend threshold exceeded`** | `EVAL threshold_spend = 200.0, filter_project = "*"` | `200.0`, all projects |
+| **`[Chargeback Serverless] Rolling 30-day total spend budget exceeded`** | `EVAL threshold_budget = 25000.0, threshold_pct = 80.0, alert_on_projected = true` | `25000.0` budget, `80.0%` watermark, projected overrun enabled |
+| **`[Chargeback Serverless] Project daily spend threshold exceeded`** | `EVAL threshold_spend = 200.0, filter_project = "*", filter_driver = "*"` | `200.0`, all projects, all workload drivers |
 | **`[Chargeback Serverless] Project daily spend spike vs. 7-day baseline`** | `EVAL threshold_pct_increase = 50.0, min_daily_spend = 25.0, filter_project = "*"` | `+50.0%`, `25.0` min, all projects |
-| **`[Chargeback Serverless] Namespace attributed daily spend threshold exceeded`** | `EVAL threshold_spend = 100.0, filter_namespace = "*"` | `100.0`, all namespaces |
-| **`[Chargeback Serverless] AI model attributed daily spend threshold exceeded`** | `EVAL threshold_spend = 50.0, filter_model = "*"` | `50.0`, all models |
-| **`[Chargeback Serverless] Synthetics monitor attributed daily spend threshold exceeded`** | `EVAL threshold_spend = 25.0, filter_monitor = "*"` | `25.0`, all monitors |
 | **`[Chargeback Serverless] Data trust & project harvest health issue`** | `EVAL threshold_unallocated_spend = 100.0, threshold_unallocated_pct = 25.0` | `100.0` and `25.0%` |
 
 ## Related pages

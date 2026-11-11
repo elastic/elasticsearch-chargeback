@@ -319,7 +319,7 @@ run_verification() {
   ds_lk_cnt=$(es_curl -sS "${ES_URL%/}/serverless_datastream_contribution_lookup/_count" -H "Authorization: ApiKey ${ES_API_KEY}" | jq -r '.count // 0' 2>/dev/null || echo "0")
   proj_lk_cnt=$(es_curl -sS "${ES_URL%/}/serverless_project_contribution_lookup/_count" -H "Authorization: ApiKey ${ES_API_KEY}" | jq -r '.count // 0' 2>/dev/null || echo "0")
   if [[ "${ds_lk_cnt:-0}" -gt 50 && "${proj_lk_cnt:-0}" -lt 10 ]]; then
-    proj_tf_id=$(echo "$tf_json" | jq -r '(.transforms // []) | map(select(.dest.index == "serverless_project_contribution_lookup")) | .[0].id // empty' 2>/dev/null || true)
+    proj_tf_id=$(echo "$tf_json" | jq -r '(.transforms // []) | map(select(.dest.index == "serverless_project_contribution_lookup" or (.dest.index | startswith("serverless_project_contribution_lookup")))) | .[0].id // empty' 2>/dev/null || true)
     if [[ -n "$proj_tf_id" ]]; then
       es_curl -sS -X POST "${ES_URL%/}/_transform/${proj_tf_id}/_stop?force=true&wait_for_completion=true" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
       es_curl -sS -X POST "${ES_URL%/}/_transform/${proj_tf_id}/_reset?force=true" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
@@ -334,7 +334,7 @@ run_verification() {
   for lk in "${lookups[@]}"; do
     local cnt tf_ret
     cnt=$(es_curl -sS "${ES_URL%/}/${lk}/_count" -H "Authorization: ApiKey ${ES_API_KEY}" | jq -r '._shards.successful as $s | if $s > 0 then .count else "error" end' 2>/dev/null || echo "not yet created")
-    tf_ret=$(echo "$tf_json" | jq -r --arg idx "$lk" '(.transforms // []) | map(select(.dest.index == $idx)) | .[0].retention_policy.time | if . then (.max_age + " (" + .field + ")") else "none" end' 2>/dev/null || echo "none")
+    tf_ret=$(echo "$tf_json" | jq -r --arg idx "$lk" '(.transforms // []) | map(select(.dest.index == $idx or (.dest.index | startswith($idx)))) | .[0].retention_policy.time | if . then (.max_age + " (" + .field + ")") else "none" end' 2>/dev/null || echo "none")
     printf "%-50s | %-12s | %-20s\n" "$lk" "$cnt" "$tf_ret"
   done
   echo ""
@@ -384,9 +384,9 @@ fi
 # ------------------------------------------------------------------------------
 PACKAGE_DIR="$INTEGRATIONS_REPO/packages/chargeback_serverless"
 if [[ "$SKIP_BUILD" -eq 0 && -f "$PACKAGE_DIR/manifest.yml" ]]; then
-  VERSION="$(grep -E '^version:' "$PACKAGE_DIR/manifest.yml" 2>/dev/null | awk '{print $2}' | tr -d '"' || echo "0.4.0")"
+  VERSION="$(grep -E '^version:' "$PACKAGE_DIR/manifest.yml" 2>/dev/null | awk '{print $2}' | tr -d '"' || echo "0.4.1")"
 else
-  TARGET_ZIP=$(ls -1t "$DIST_DIR"/chargeback_serverless-*.zip 2>/dev/null | head -1 || echo "$DIST_DIR/chargeback_serverless-0.4.0.zip")
+  TARGET_ZIP=$(ls -1t "$DIST_DIR"/chargeback_serverless-*.zip 2>/dev/null | head -1 || echo "$DIST_DIR/chargeback_serverless-0.4.1.zip")
   VERSION="$(basename "$TARGET_ZIP" | sed -E 's/chargeback_serverless-([0-9.]+)\.zip/\1/')"
 fi
 ZIP_NAME="chargeback_serverless-${VERSION}.zip"
@@ -666,6 +666,11 @@ with zipfile.ZipFile(zip_path, "r") as z:
         fields_file = f"{base_dir}/fields/fields.yml"
         dest_idx = tf_cfg.get("dest", {}).get("index")
         dest_pipe = tf_cfg.get("dest", {}).get("pipeline")
+        dest_aliases = [
+            a.get("alias")
+            for a in (tf_cfg.get("dest", {}).get("aliases") or [])
+            if isinstance(a, dict) and a.get("alias")
+        ]
         tf_id = f"logs-chargeback_serverless.{tf_name}-default-{version}"
 
         # Stop and remove older versioned transforms for this transform name so stale pipelines do not overwrite lookup docs
@@ -680,11 +685,25 @@ with zipfile.ZipFile(zip_path, "r") as z:
         if dest_idx and fields_file in names:
             fields_cfg = yaml.safe_load(z.read(fields_file).decode("utf-8"))
             mapping_body = fields_to_mappings(fields_cfg, default_pipeline=dest_pipe)
+            if dest_aliases:
+                mapping_body["aliases"] = {
+                    al: {"is_write_index": True}
+                    for al in dest_aliases
+                    if al != dest_idx
+                }
+                for al in dest_aliases:
+                    if al != dest_idx:
+                        c_al, al_body = es_req("GET", f"/{al}")
+                        if c_al == 200 and isinstance(al_body, dict) and al in al_body:
+                            print(f"  • Removing legacy unversioned lookup index {al} before attaching alias to {dest_idx}...")
+                            es_req("DELETE", f"/{al}")
             # Install persistent index template so transform _reset / _start always recreates in lookup mode with exact mappings
+            tpl_patterns = list(dict.fromkeys([f"{al}*" for al in dest_aliases] + [dest_idx]))
+            tpl_template = {k: v for k, v in mapping_body.items() if k in ("settings", "mappings")}
             tpl_body = {
-                "index_patterns": [dest_idx],
+                "index_patterns": tpl_patterns,
                 "priority": 500,
-                "template": mapping_body,
+                "template": tpl_template,
             }
             es_req("PUT", f"/_index_template/chargeback_serverless_lookup_{tf_name}", tpl_body)
 
@@ -706,6 +725,9 @@ with zipfile.ZipFile(zip_path, "r") as z:
                 es_req("PUT", f"/{dest_idx}/_mapping", mapping_body["mappings"])
                 if dest_pipe:
                     es_req("PUT", f"/{dest_idx}/_settings", {"index": {"default_pipeline": dest_pipe}})
+                for al in dest_aliases:
+                    if al != dest_idx:
+                        es_req("POST", "/_aliases", {"actions": [{"add": {"index": dest_idx, "alias": al, "is_write_index": True}}]})
 
         code, existing_tf = es_req("GET", f"/_transform/{tf_id}")
         if code == 404:
@@ -717,6 +739,7 @@ with zipfile.ZipFile(zip_path, "r") as z:
             cur_doc = (existing_tf.get("transforms") or [{}])[0]
             if (
                 cur_doc.get("source", {}) != tf_cfg.get("source", {})
+                or cur_doc.get("dest", {}) != tf_cfg.get("dest", {})
                 or cur_doc.get("pivot", {}) != tf_cfg.get("pivot", {})
                 or cur_doc.get("sync", {}) != tf_cfg.get("sync", {})
                 or cur_doc.get("retention_policy") != tf_cfg.get("retention_policy")
@@ -887,7 +910,7 @@ if [[ "$SKIP_POLICY" -eq 0 ]]; then
 import json, os, sys
 
 agent_policy_id = os.environ.get("AGENT_POLICY_ID", "")
-version = os.environ.get("VERSION", "0.4.0")
+version = os.environ.get("VERSION", "0.4.1")
 org_id = os.environ.get("ORGANIZATION_ID", "")
 cloud_api_key = os.environ.get("CLOUD_API_KEY", "") or os.environ.get("USAGE_API_KEY", "") or os.environ.get("BILLING_API_KEY", "")
 hub_es_api_key = os.environ.get("HUB_ES_API_KEY", "") or os.environ.get("ES_API_KEY", "")

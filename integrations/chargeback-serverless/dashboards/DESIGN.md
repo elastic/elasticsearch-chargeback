@@ -1,6 +1,6 @@
-# Chargeback Serverless dashboard and alert design (`0.4.0`)
+# Chargeback Serverless dashboard and alert design (`0.4.1`)
 
-This reference documents the architecture, lookup index dependencies, data stream and index classification rules, pool fallback logic, filter controls, and Elasticsearch Query Language (ES|QL) alerting rule templates for the **Chargeback Serverless (`chargeback_serverless` `0.4.0`)** Kibana assets.
+This reference documents the architecture, lookup index dependencies, data stream and index classification rules, pool fallback logic, filter controls, and Elasticsearch Query Language (ES|QL) alerting rule templates for the **Chargeback Serverless (`chargeback_serverless` `0.4.1`)** Kibana assets.
 
 ## Architecture overview
 
@@ -100,24 +100,18 @@ When `.ds-synthetics-*` telemetry is harvested from a project, lightweight monit
 
 ## ES|QL alerting rule templates
 
-The generator builds 10 ES|QL alerting rule templates in [`../assets/kibana/alerting_rule_template/`](../assets/kibana/alerting_rule_template/):
+The generator builds 4 ES|QL alerting rule templates in [`../assets/kibana/alerting_rule_template/`](../assets/kibana/alerting_rule_template/):
 
-- **Line-2 `EVAL` parameter convention**: Every alert defines its tunable thresholds (`threshold_spend`, `threshold_budget`, `threshold_pct_increase`, `threshold_unallocated_spend`) and entity filters (`filter_category`, `filter_driver`, `filter_project`, `filter_namespace`, `filter_model`, `filter_monitor`) on **line 2** immediately after `FROM <lookup_index>`, before `LOOKUP JOIN` and currency conversion logic.
+- **Line-2 `EVAL` parameter convention**: Every alert defines its tunable thresholds (`threshold_budget`, `threshold_pct`, `alert_on_projected`, `threshold_spend`, `threshold_pct_increase`, `threshold_unallocated_spend`) and entity filters (`filter_project`, `filter_driver`) on **line 2** immediately after `FROM serverless_billing_cost_lookup`, before `LOOKUP JOIN` and currency conversion logic.
 - **Latest completed billing day scoping**: Single-day rules query a `3d` window (to accommodate Elastic Cloud Billing API latency) and filter to the latest completed billing day via `| INLINE STATS latest_day = MAX(@timestamp) | WHERE @timestamp == latest_day`.
 - **Structured row output**: Each rule finishes with `| KEEP result, ...` to preserve both the human-readable `result` summary and structured columns (`day`, `spend`, `ecu`, `threshold`, `unit`) for action connectors.
 
 | Alert template ID | Rule title | Window | Source lookup index | Line-2 `EVAL` defaults |
 | --- | --- | --- | --- | --- |
-| `chargeback_serverless-alert-total-daily-spend` | `[Chargeback Serverless] Total daily spend threshold exceeded` | `3d` | `serverless_billing_cost_lookup` | `threshold_spend = 1000.0` |
-| `chargeback_serverless-alert-total-monthly-spend` | `[Chargeback Serverless] Rolling 30-day total spend budget exceeded` | `30d` | `serverless_billing_cost_lookup` | `threshold_budget = 25000.0` |
-| `chargeback_serverless-alert-category-spend` | `[Chargeback Serverless] Cost category daily spend threshold exceeded` | `3d` | `serverless_billing_cost_lookup` | `threshold_spend = 300.0, filter_category = "*"` |
-| `chargeback_serverless-alert-workload-driver-spend` | `[Chargeback Serverless] Workload driver daily spend threshold exceeded` | `3d` | `serverless_billing_cost_lookup` | `threshold_spend = 250.0, filter_driver = "*"` |
-| `chargeback_serverless-alert-project-spend` | `[Chargeback Serverless] Project daily spend threshold exceeded` | `3d` | `serverless_billing_cost_lookup` | `threshold_spend = 200.0, filter_project = "*"` |
+| `chargeback_serverless-alert-total-monthly-spend` | `[Chargeback Serverless] Rolling 30-day total spend budget exceeded` | `35d` | `serverless_billing_cost_lookup` | `threshold_budget = 25000.0, threshold_pct = 80.0, alert_on_projected = true` |
+| `chargeback_serverless-alert-project-spend` | `[Chargeback Serverless] Project daily spend threshold exceeded` | `3d` | `serverless_billing_cost_lookup` | `threshold_spend = 200.0, filter_project = "*", filter_driver = "*"` |
 | `chargeback_serverless-alert-project-spend-spike` | `[Chargeback Serverless] Project daily spend spike vs. 7-day baseline` | `10d` | `serverless_billing_cost_lookup` | `threshold_pct_increase = 50.0, min_daily_spend = 25.0, filter_project = "*"` |
-| `chargeback_serverless-alert-namespace-spend` | `[Chargeback Serverless] Namespace attributed daily spend threshold exceeded` | `3d` | `serverless_datastream_contribution_lookup` | `threshold_spend = 100.0, filter_namespace = "*"` |
-| `chargeback_serverless-alert-ai-model-spend` | `[Chargeback Serverless] AI model attributed daily spend threshold exceeded` | `3d` | `serverless_ai_model_contribution_lookup` | `threshold_spend = 50.0, filter_model = "*"` |
-| `chargeback_serverless-alert-synthetics-monitor-spend` | `[Chargeback Serverless] Synthetics monitor attributed daily spend threshold exceeded` | `3d` | `serverless_synthetics_monitor_contribution_lookup` | `threshold_spend = 25.0, filter_monitor = "*"` |
-| `chargeback_serverless-alert-data-trust-health` | `[Chargeback Serverless] Data trust & project harvest health issue` | `3d` | `serverless_billing_cost_lookup` | `threshold_unallocated_spend = 100.0, threshold_unallocated_pct = 25.0` |
+| `chargeback_serverless-alert-data-trust-health` | `[Chargeback Serverless] Data trust & project harvest health issue` | `35d` | `serverless_billing_cost_lookup, serverless_project_status_lookup` | `threshold_unallocated_spend = 100.0, threshold_unallocated_pct = 25.0` |
 
 ## Regenerate saved objects
 
