@@ -35,7 +35,7 @@ Create a single unified Elastic Cloud API key (`cloud_api_key`) in the [Elastic 
 
 ### Step 2: Pre-Create Lookup Index Templates (Required for Fleet-Only Installations)
 
-Chargeback Serverless dashboards and alerting rules use ES|QL `LOOKUP JOIN`, which requires the lookup indices (`serverless_billing_cost_lookup`, `serverless_project_status_lookup`, `serverless_billing_realized_pool_lookup`, and `serverless_project_contribution_lookup`) to be created with `"index.mode": "lookup"` and their corresponding `default_pipeline` (`0.4.1-chargeback_serverless_billing`, `0.4.1-chargeback_serverless_realized_pool`, and `0.4.1-chargeback_serverless_usage`) **before** the Fleet transforms first run and auto-create their versioned destination indices (`serverless_*_lookup-1` with alias `serverless_*_lookup`).
+Chargeback Serverless dashboards and alerting rules use ES|QL `LOOKUP JOIN`, which requires the lookup indices (`serverless_billing_cost_lookup`, `serverless_project_status_lookup`, `serverless_billing_realized_pool_lookup`, and `serverless_project_contribution_lookup`) to be created with `"index.mode": "lookup"` and their corresponding `default_pipeline` (`metrics-chargeback_serverless.billing-0.4.1-lookup_billing`, `metrics-chargeback_serverless.billing-0.4.1-lookup_realized_pool`, and `metrics-chargeback_serverless.usage-0.4.1-lookup_usage`) **before** the Fleet transforms first run and auto-create their versioned destination indices (`serverless_*_lookup-1` with alias `serverless_*_lookup`).
 
 In Kibana on your Serverless hub project, open **Management → Dev Tools** and run the following requests before uploading the integration package:
 
@@ -49,7 +49,7 @@ PUT _index_template/chargeback_serverless_lookup_billing_cost
       "index": {
         "mode": "lookup",
         "codec": "best_compression",
-        "default_pipeline": "0.4.1-chargeback_serverless_billing"
+        "default_pipeline": "metrics-chargeback_serverless.billing-0.4.1-lookup_billing"
       }
     },
     "mappings": {
@@ -89,7 +89,7 @@ PUT _index_template/chargeback_serverless_lookup_realized_pool
       "index": {
         "mode": "lookup",
         "codec": "best_compression",
-        "default_pipeline": "0.4.1-chargeback_serverless_realized_pool"
+        "default_pipeline": "metrics-chargeback_serverless.billing-0.4.1-lookup_realized_pool"
       }
     },
     "mappings": {
@@ -128,7 +128,7 @@ PUT _index_template/chargeback_serverless_lookup_proj_contrib
       "index": {
         "mode": "lookup",
         "codec": "best_compression",
-        "default_pipeline": "0.4.1-chargeback_serverless_usage"
+        "default_pipeline": "metrics-chargeback_serverless.usage-0.4.1-lookup_usage"
       }
     },
     "mappings": {
@@ -155,7 +155,7 @@ PUT _index_template/chargeback_serverless_lookup_project_status
       "index": {
         "mode": "lookup",
         "codec": "best_compression",
-        "default_pipeline": "0.4.1-chargeback_serverless_usage"
+        "default_pipeline": "metrics-chargeback_serverless.usage-0.4.1-lookup_usage"
       }
     },
     "mappings": {

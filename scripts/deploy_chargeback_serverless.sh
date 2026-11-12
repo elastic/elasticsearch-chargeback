@@ -647,6 +647,15 @@ with zipfile.ZipFile(zip_path, "r") as z:
                 {"pipeline": {"name": "metrics-chargeback_serverless.billing@custom", "ignore_missing_pipeline": True}},
             ])
             es_req("PUT", f"/_ingest/pipeline/metrics-chargeback_serverless.billing-{version}", pipe_cfg)
+        elif "/data_stream/billing/elasticsearch/ingest_pipeline/" in n and n.endswith(".yml"):
+            fname = n.rsplit("/", 1)[-1]
+            stem = fname[:-4]
+            pipe_id = f"metrics-chargeback_serverless.billing-{version}-{stem}"
+            pipe_cfg = yaml.safe_load(z.read(n).decode("utf-8"))
+            code, resp = es_req("PUT", f"/_ingest/pipeline/{pipe_id}", pipe_cfg)
+            if code >= 300:
+                print(f"ERROR: Failed to install pipeline {pipe_id} (HTTP {code}): {resp}", file=sys.stderr)
+                sys.exit(1)
         elif n.endswith("/data_stream/usage/elasticsearch/ingest_pipeline/default.yml"):
             pipe_cfg = yaml.safe_load(z.read(n).decode("utf-8"))
             procs = pipe_cfg.setdefault("processors", [])
@@ -657,6 +666,15 @@ with zipfile.ZipFile(zip_path, "r") as z:
                 {"pipeline": {"name": "metrics-chargeback_serverless.usage@custom", "ignore_missing_pipeline": True}},
             ])
             es_req("PUT", f"/_ingest/pipeline/metrics-chargeback_serverless.usage-{version}", pipe_cfg)
+        elif "/data_stream/usage/elasticsearch/ingest_pipeline/" in n and n.endswith(".yml"):
+            fname = n.rsplit("/", 1)[-1]
+            stem = fname[:-4]
+            pipe_id = f"metrics-chargeback_serverless.usage-{version}-{stem}"
+            pipe_cfg = yaml.safe_load(z.read(n).decode("utf-8"))
+            code, resp = es_req("PUT", f"/_ingest/pipeline/{pipe_id}", pipe_cfg)
+            if code >= 300:
+                print(f"ERROR: Failed to install pipeline {pipe_id} (HTTP {code}): {resp}", file=sys.stderr)
+                sys.exit(1)
 
     tf_files = [n for n in names if "/elasticsearch/transform/" in n and n.endswith("/transform.yml")]
     # Install primary transforms before dependent ones (realized_pool, proj_contrib)
