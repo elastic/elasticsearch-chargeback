@@ -12,7 +12,8 @@ Deploy the **Chargeback Serverless (`chargeback_serverless` `0.4.1`)** integrati
 Make sure you have the following before installing Chargeback Serverless:
 
 1. **Target Elastic Cloud Serverless hub project**:
-   - An Elastic Cloud Serverless project (`elasticsearch`, `observability`, or `security`) where the dashboards, `LOOKUP`-mode indices, transforms, and Fleet policy will run.
+   - An Elastic Cloud Serverless **Elasticsearch** project (`general_purpose` or `vector`) or **Observability Complete** project where the dashboards, `LOOKUP`-mode indices, transforms, and Fleet policy will run.
+   - Note: **Observability Logs Essentials** projects exclude `metrics` data streams in Kibana Fleet (`Installation package: chargeback_serverless is not allowed due to data stream type exclusions`) and cannot host the central FinOps hub, though the hub still monitors and attributes costs across all **Observability Logs Essentials**, **Observability Complete**, **Elasticsearch**, and **Security** projects in your organization.
    - Note your project's **Elasticsearch endpoint (`ES_URL`)** and **Kibana endpoint (`KIBANA_URL`)**.
 2. **Elastic Cloud Organization ID (`ORGANIZATION_ID`)**:
    - Your numeric organization ID (`<YOUR_ORGANIZATION_ID>`) from the [Elastic Cloud Console](https://cloud.elastic.co).
