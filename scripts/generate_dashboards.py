@@ -59,11 +59,6 @@ TAG_REFS = [
         "name": f"tag-ref-{TAG_CHARGEBACK_ID}",
         "type": "tag",
     },
-    {
-        "id": TAG_PKG_ID,
-        "name": f"tag-ref-{TAG_PKG_ID}",
-        "type": "tag",
-    },
 ]
 
 
@@ -76,18 +71,6 @@ def build_tags() -> list[dict]:
                 "name": "Chargeback",
                 "description": "Elasticsearch Chargeback & FinOps Solutions",
                 "color": "#FEC514",
-            },
-            "coreMigrationVersion": "8.8.0",
-            "references": [],
-            "typeMigrationVersion": "8.0.0",
-        },
-        {
-            "id": TAG_PKG_ID,
-            "type": "tag",
-            "attributes": {
-                "name": "Chargeback Serverless",
-                "description": "Elastic Cloud Serverless Chargeback integration dashboards",
-                "color": "#0B64DD",
             },
             "coreMigrationVersion": "8.8.0",
             "references": [],
@@ -3212,7 +3195,7 @@ CONFIG_UNIFIED_TEMPLATE = f"""\
       <pre class="cb-cfg-code"># Configured in Kibana Fleet UI:
 Organization ID:  &lt;YOUR_ORG_ID&gt;
 Cloud API Key:    ••••••••••••••••
-Lookbehind Days:  60
+Lookbehind Days:  60 (up to 365)
 Currency Unit:    {{{{ _active_unit }}}} (e.g. USD, EUR, ZAR)
 Currency Symbol:  {{{{ _active_sym }}}} (e.g. $, €, R, £)
 Unit Rate:        {{{{ _active_rate }}}}</pre>
@@ -4477,7 +4460,21 @@ def alert_template(
     interval: str = "24h",
     time_window_size: int = 3,
     time_window_unit: str = "d",
+    group_by: str | None = None,
 ) -> dict:
+    params: dict = {
+        "searchType": "esqlQuery",
+        "timeWindowSize": time_window_size,
+        "timeWindowUnit": time_window_unit,
+        "esqlQuery": {"esql": esql},
+        "size": 100,
+        "threshold": [0],
+        "thresholdComparator": ">",
+        "timeField": "@timestamp",
+        "excludeHitsFromPreviousRun": True,
+    }
+    if group_by is not None:
+        params["groupBy"] = group_by
     return {
         "id": alert_id,
         "type": "alerting_rule_template",
@@ -4486,19 +4483,31 @@ def alert_template(
             "tags": ["Chargeback", "Chargeback Serverless"],
             "ruleTypeId": ".es-query",
             "schedule": {"interval": interval},
-            "params": {
-                "searchType": "esqlQuery",
-                "timeWindowSize": time_window_size,
-                "timeWindowUnit": time_window_unit,
-                "esqlQuery": {"esql": esql},
-                "size": 100,
-                "threshold": [0],
-                "thresholdComparator": ">",
-                "timeField": "@timestamp",
-                "excludeHitsFromPreviousRun": True,
-            },
+            "params": params,
         },
     }
+
+
+MULTI_DAY_COST_PRELUDE_BODY = f"""| EVAL ts = @timestamp
+| RENAME project_id AS _b_pid, project_name AS _b_pname, project_type AS _b_ptype, conf_chargeable_unit_rate AS _b_rate, conf_chargeable_unit_rate_unit AS _b_unit, conf_currency_symbol AS _b_sym
+| LOOKUP JOIN {PROJECT_STATUS} ON composite_key
+| EVAL @timestamp = ts
+| EVAL project_id = COALESCE(_b_pid, project_id)
+| EVAL project_name = CASE(_b_pname IS NOT NULL AND _b_pname != "" AND _b_pname != project_id, _b_pname, project_name IS NOT NULL AND project_name != "" AND project_name != project_id, project_name, _b_pname IS NOT NULL AND _b_pname != "", _b_pname, project_name IS NOT NULL AND project_name != "", project_name, project_id)
+| EVAL project_type = CASE(_b_ptype IS NOT NULL AND _b_ptype != "" AND _b_ptype != "unknown", _b_ptype, project_type IS NOT NULL AND project_type != "", project_type, _b_ptype)
+| EVAL conf_chargeable_unit_rate = CASE(_b_rate IS NOT NULL, _b_rate, conf_chargeable_unit_rate IS NOT NULL, conf_chargeable_unit_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(_b_unit, conf_chargeable_unit_rate_unit, "USD"), conf_currency_symbol = COALESCE(_b_sym, conf_currency_symbol, "$")
+{CURRENCY_RESOLVE_ESQL}
+| EVAL is_latest_ts = (ts == latest_ts)
+| EVAL _latest_rate = CASE(is_latest_ts, conf_chargeable_unit_rate, null), _latest_unit = CASE(is_latest_ts, unit, null), _latest_sym = CASE(is_latest_ts, currency_symbol, null)
+| INLINE STATS active_rate = MAX(_latest_rate), active_unit = MAX(_latest_unit), active_sym = MAX(_latest_sym)
+| EVAL norm_rate = CASE(active_rate IS NOT NULL, active_rate, conf_chargeable_unit_rate IS NOT NULL, conf_chargeable_unit_rate, 1.0), unit = COALESCE(active_unit, unit, "USD"), currency_symbol = COALESCE(active_sym, currency_symbol, "$")
+| EVAL units = CASE(total_ecu IS NOT NULL, total_ecu, 0.0)
+| EVAL cost = units * norm_rate
+| EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "organization")
+| EVAL project_type_label = CASE(project_type IS NOT NULL AND project_type != "", project_type, "organization")
+| EVAL category_label = COALESCE(cost_category, "other")
+| EVAL cost_type_label = COALESCE(cost_type, "other")
+| WHERE ts IS NOT NULL"""
 
 
 def build_alerts() -> list[dict]:
@@ -4511,7 +4520,7 @@ def build_alerts() -> list[dict]:
 | EVAL threshold_budget = 25000.0, threshold_pct = 80.0, alert_on_projected = true
 | INLINE STATS latest_ts = MAX(@timestamp)
 | WHERE @timestamp > latest_ts - 30 days
-{COST_PRELUDE_BODY}
+{MULTI_DAY_COST_PRELUDE_BODY}
 | EVAL bill_day = DATE_TRUNC(1 day, ts)
 | EVAL active_pid = CASE(cost > 0 AND COALESCE(last_status, "") != "inactive", project_id, null)
 | STATS
@@ -4585,6 +4594,7 @@ def build_alerts() -> list[dict]:
             interval="24h",
             time_window_size=3,
             time_window_unit="d",
+            group_by="row",
         ),
         # 3. Project Daily Spend Spike vs. 7-Day Baseline
         alert_template(
@@ -4594,7 +4604,7 @@ def build_alerts() -> list[dict]:
 | EVAL threshold_pct_increase = 50.0, min_daily_spend = 25.0, filter_project = "*"
 | INLINE STATS latest_ts = MAX(@timestamp)
 | WHERE @timestamp >= latest_ts - 7 days
-{COST_PRELUDE_BODY}
+{MULTI_DAY_COST_PRELUDE_BODY}
 | EVAL project_type = project_type_label
 | EVAL day_ts = DATE_TRUNC(1 day, @timestamp)
 | STATS day_spend = SUM(cost), day_ecu = SUM(units), day_project = MAX(project), day_project_type = MAX(project_type), filter_project = MAX(filter_project), threshold_pct = MAX(threshold_pct_increase), min_spend = MAX(min_daily_spend), sym = COALESCE(MAX(currency_symbol), "$"), unit = COALESCE(MAX(unit), "USD") BY day_ts, project_id
@@ -4612,6 +4622,7 @@ def build_alerts() -> list[dict]:
             interval="24h",
             time_window_size=10,
             time_window_unit="d",
+            group_by="row",
         ),
         # 4. Consolidated Data Trust & Harvest Health Alert
         alert_template(
@@ -4623,7 +4634,7 @@ def build_alerts() -> list[dict]:
 | INLINE STATS latest_bill_day = MAX(bill_ts), latest_status_day = MAX(status_ts)
 | EVAL expected_latest_day = DATE_TRUNC(1 day, NOW() - 6 hours) - 1 day
 | EVAL is_billing_stale = (latest_bill_day IS NULL OR latest_bill_day < expected_latest_day)
-| EVAL target_day = CASE(is_billing_stale, COALESCE(latest_status_day, latest_bill_day), COALESCE(latest_bill_day, latest_status_day))
+| EVAL target_day = CASE(is_billing_stale, CASE(latest_status_day IS NOT NULL, latest_status_day, latest_bill_day), CASE(latest_bill_day IS NOT NULL, latest_bill_day, latest_status_day))
 | WHERE @timestamp == target_day
 | EVAL ts = @timestamp
 | EVAL clean_pname = CASE(project_name IS NOT NULL AND project_name != "" AND project_name != project_id, project_name, null), fallback_pname = CASE(project_name IS NOT NULL AND project_name != "", project_name, null), clean_ptype = CASE(project_type IS NOT NULL AND project_type != "" AND project_type != "unknown", project_type, null)
@@ -4655,24 +4666,22 @@ def build_alerts() -> list[dict]:
   BY day, project_id
 | EVAL is_stale_time = CASE(max_updated_at IS NULL OR max_updated_at < NOW() - 26 hours, 1, 0)
 | EVAL is_synthetic_bucket = (STARTS_WITH(project_id, "deleted_or_unassociated") OR STARTS_WITH(project_id, "unassociated_") OR project_id == "org_level" OR project_id == "organization")
-| EVAL has_billing_outage = (billing_stale == 1)
 | EVAL has_harvest_issue = (NOT is_synthetic_bucket AND harvest_status != "inactive" AND (harvest_status != "ok" OR synth_status == "unauthorized" OR is_stale_time == 1))
 | EVAL has_missing_name = (NOT is_synthetic_bucket AND proj_ecu > 0.0 AND (raw_pname IS NULL OR raw_pname == "" OR raw_pname == project_id))
-| EVAL unallocated_pct = CASE(org_spend > 0.0, LEAST(ROUND(unallocated_spend * 100.0 / org_spend, 1), 100.0), 0.0)
+| EVAL unallocated_pct = CASE(org_spend > 0.0, ROUND(unallocated_spend * 100.0 / org_spend, 1), 0.0)
 | EVAL has_unalloc_issue = (unallocated_spend > thresh_unalloc AND unallocated_pct > thresh_pct)
-| EVAL has_any_issue = (has_billing_outage OR has_harvest_issue OR has_missing_name OR has_unalloc_issue)
+| EVAL has_any_issue = (has_harvest_issue OR has_missing_name OR has_unalloc_issue)
 | EVAL issue_type = CASE(
-    has_billing_outage, "missing_or_stale_billing_data",
     has_harvest_issue, "stale_or_unauthorized_harvest",
     has_missing_name, "missing_project_name",
     "high_unallocated_spend"
   )
 | EVAL result = CONCAT("[", day, "] Project `", COALESCE(project, project_id), "` (", project_id, ") issue=", issue_type, ": latest_billing_day=", latest_bill_day_str, ", harvest_status=", harvest_status, " (last updated ", updated_at_str, "), unallocated=", sym, TO_STRING(unallocated_spend), " ", unit, " (", TO_STRING(unallocated_pct), "% of org spend).")
 | EVAL issue_entry = CASE(has_any_issue, CONCAT(day, "\\t", COALESCE(project, project_id), "\\t", project_id, "\\t", project_type, "\\t", issue_type, "\\t", harvest_status, "\\t", TO_STRING(unallocated_spend), "\\t", TO_STRING(unallocated_pct), "\\t", unit, "\\t", result), null)
-| STATS project_rows = COUNT(*), issue_entries = VALUES(issue_entry)
+| STATS project_rows = COUNT(*), any_billing_stale = MAX(billing_stale), latest_bill_str = COALESCE(MAX(latest_bill_day_str), "none"), issue_entries = VALUES(issue_entry)
 | EVAL expected_day_str = LEFT(TO_STRING(DATE_TRUNC(1 day, NOW() - 6 hours) - 1 day), 10)
-| EVAL no_data_entry = CONCAT(expected_day_str, "\\torganization\\torganization\\torganization\\tmissing_or_stale_billing_data\\tmissing\\t0.0\\t0.0\\tUSD\\t[", expected_day_str, "] Project `organization` (organization) issue=missing_or_stale_billing_data: latest_billing_day=none, harvest_status=missing (last updated never), unallocated=$0.0 USD (0.0% of org spend).")
-| EVAL active_entry = CASE(project_rows == 0, no_data_entry, issue_entries)
+| EVAL billing_outage_entry = CASE(project_rows == 0 OR COALESCE(any_billing_stale, 1) == 1, CONCAT(expected_day_str, "\\torganization\\torganization\\torganization\\tmissing_or_stale_billing_data\\tmissing\\t0.0\\t0.0\\tUSD\\t[", expected_day_str, "] Project `organization` (organization) issue=missing_or_stale_billing_data: latest_billing_day=", COALESCE(latest_bill_str, "none"), ", harvest_status=missing (last updated never), unallocated=$0.0 USD (0.0% of org spend)."), null)
+| EVAL active_entry = COALESCE(MV_APPEND(issue_entries, billing_outage_entry), issue_entries, billing_outage_entry)
 | WHERE active_entry IS NOT NULL
 | MV_EXPAND active_entry
 | DISSECT active_entry "%{{day}}\\t%{{project}}\\t%{{project_id}}\\t%{{project_type}}\\t%{{issue_type}}\\t%{{harvest_status}}\\t%{{unallocated_spend_str}}\\t%{{unallocated_pct_str}}\\t%{{unit}}\\t%{{result}}"
@@ -4681,6 +4690,7 @@ def build_alerts() -> list[dict]:
             interval="24h",
             time_window_size=35,
             time_window_unit="d",
+            group_by="row",
         ),
     ]
 
@@ -4815,8 +4825,6 @@ def main() -> None:
 
     ip = build_index_pattern()
     write_json(KIBANA / "index_pattern" / f"{ip['id']}.json", ip)
-
-    sync_dist_zips(dashboards, tags, alerts, ip)
 
     if len(sys.argv) > 2:
         ndjson_path = Path(sys.argv[2]).resolve()

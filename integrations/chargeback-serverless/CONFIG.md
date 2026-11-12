@@ -84,7 +84,7 @@ To override the retention period when running the automated deployment script, s
 
 ## FinOps alerting rule thresholds
 
-Each of the 4 prebuilt ES|QL alerting rule templates in [`assets/kibana/alerting_rule_template/`](assets/kibana/alerting_rule_template/) (**Stack Management → Rules → Create rule**, search `[Chargeback Serverless]`) defines its threshold and optional entity filter on **line 2** of the ES|QL query using an `EVAL` statement so you can adjust thresholds without rewriting the query logic:
+Each of the 4 prebuilt ES|QL alerting rule templates in [`assets/kibana/alerting_rule_template/`](assets/kibana/alerting_rule_template/) (**Management → Integrations → Installed integrations → Chargeback Serverless → Assets → Alerting rule templates**, or **Stack Management → Rules → Create rule → Classic** tab, search `[Chargeback Serverless]`) defines its threshold and optional entity filter on **line 2** of the ES|QL query using an `EVAL` statement so you can adjust thresholds without rewriting the query logic:
 
 | Alert rule title | Line-2 `EVAL` parameters | Default values |
 | --- | --- | --- |

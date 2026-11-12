@@ -41,7 +41,7 @@ flowchart LR
 
     subgraph Kibana["Kibana FinOps Experience"]
         Dash["5 Linked ES|QL Dashboards"]:::pink
-        Rules["10 FinOps Spend & Data Trust<br/>ES|QL Alerting Rules"]:::pink
+        Rules["4 FinOps Spend & Data Trust<br/>ES|QL Alerting Rules"]:::pink
     end
 
     BillingAPI --> BStream
@@ -89,7 +89,7 @@ The package installs five linked Kibana dashboards with a shared top navigation 
 
 ## Prebuilt FinOps alerting rules
 
-Chargeback Serverless includes 4 ES|QL alerting rule templates in [`assets/kibana/alerting_rule_template/`](assets/kibana/alerting_rule_template/) with second-line `EVAL` threshold and filter variables that you can instantiate in Kibana (**Stack Management → Rules → Create rule**, searching for `[Chargeback Serverless]`):
+Chargeback Serverless includes 4 ES|QL alerting rule templates in [`assets/kibana/alerting_rule_template/`](assets/kibana/alerting_rule_template/) with second-line `EVAL` threshold and filter variables that you can instantiate in Kibana directly from **Management → Integrations → Installed integrations → Chargeback Serverless → Assets → Alerting rule templates** (or via **Stack Management → Rules → Create rule → Classic** tab, searching for `[Chargeback Serverless]`):
 
 1. **`[Chargeback Serverless] Rolling 30-day total spend budget exceeded`**: Alerts when cumulative 30-day organization spend reaches the budget watermark `threshold_pct` (default `80.0%` of `threshold_budget = 25000.0`) or when `alert_on_projected` (`true`) detects a projected 30-day overrun after at least 3 billed days.
 2. **`[Chargeback Serverless] Project daily spend threshold exceeded`**: Alerts when any single project matching `filter_project` and optional `filter_driver` (`indexing`, `search`, `storage`, `ai`, `synthetics`) exceeds `threshold_spend` (default `200.0`), reporting the per-driver spend breakdown.

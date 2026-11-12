@@ -35,7 +35,7 @@ Create a single unified Elastic Cloud API key (`cloud_api_key`) in the [Elastic 
 
 ### Step 2: Pre-Create Lookup Index Templates (Required for Fleet-Only Installations)
 
-Chargeback Serverless dashboards and alerting rules use ES|QL `LOOKUP JOIN`, which requires the three right-hand lookup indices (`serverless_project_status_lookup`, `serverless_billing_realized_pool_lookup`, and `serverless_project_contribution_lookup`) to be created with `"index.mode": "lookup"` and their corresponding `default_pipeline` (`logs-chargeback_serverless.lookup-0.4.1-billing`, `logs-chargeback_serverless.lookup-0.4.1-realized_pool`, and `logs-chargeback_serverless.lookup-0.4.1-usage`) **before** the Fleet transforms first run and auto-create their versioned destination indices (`serverless_*_lookup-v1` with alias `serverless_*_lookup`).
+Chargeback Serverless dashboards and alerting rules use ES|QL `LOOKUP JOIN`, which requires the lookup indices (`serverless_billing_cost_lookup`, `serverless_project_status_lookup`, `serverless_billing_realized_pool_lookup`, and `serverless_project_contribution_lookup`) to be created with `"index.mode": "lookup"` and their corresponding `default_pipeline` (`0.4.1-chargeback_serverless_billing`, `0.4.1-chargeback_serverless_realized_pool`, and `0.4.1-chargeback_serverless_usage`) **before** the Fleet transforms first run and auto-create their versioned destination indices (`serverless_*_lookup-1` with alias `serverless_*_lookup`).
 
 In Kibana on your Serverless hub project, open **Management → Dev Tools** and run the following requests before uploading the integration package:
 
@@ -49,7 +49,7 @@ PUT _index_template/chargeback_serverless_lookup_billing_cost
       "index": {
         "mode": "lookup",
         "codec": "best_compression",
-        "default_pipeline": "logs-chargeback_serverless.lookup-0.4.1-billing"
+        "default_pipeline": "0.4.1-chargeback_serverless_billing"
       }
     },
     "mappings": {
@@ -89,7 +89,7 @@ PUT _index_template/chargeback_serverless_lookup_realized_pool
       "index": {
         "mode": "lookup",
         "codec": "best_compression",
-        "default_pipeline": "logs-chargeback_serverless.lookup-0.4.1-realized_pool"
+        "default_pipeline": "0.4.1-chargeback_serverless_realized_pool"
       }
     },
     "mappings": {
@@ -128,7 +128,7 @@ PUT _index_template/chargeback_serverless_lookup_proj_contrib
       "index": {
         "mode": "lookup",
         "codec": "best_compression",
-        "default_pipeline": "logs-chargeback_serverless.lookup-0.4.1-usage"
+        "default_pipeline": "0.4.1-chargeback_serverless_usage"
       }
     },
     "mappings": {
@@ -155,7 +155,7 @@ PUT _index_template/chargeback_serverless_lookup_project_status
       "index": {
         "mode": "lookup",
         "codec": "best_compression",
-        "default_pipeline": "logs-chargeback_serverless.lookup-0.4.1-usage"
+        "default_pipeline": "0.4.1-chargeback_serverless_usage"
       }
     },
     "mappings": {
@@ -186,6 +186,17 @@ PUT _index_template/chargeback_serverless_lookup_project_status
 }
 ```
 
+> [!TIP]
+> **Upgrading from an older `0.4.0` template (`Unknown column [quantity_value]`)**: If `serverless_billing_cost_lookup` was created using an earlier template that mapped `total_quantity` instead of `quantity_value`, add the `quantity_value` mapping in Dev Tools without recreating the index:
+> ```json
+> PUT serverless_billing_cost_lookup/_mapping
+> {
+>   "properties": {
+>     "quantity_value": { "type": "double" }
+>   }
+> }
+> ```
+
 ### Step 3: Install Integration Package in Kibana & Configure Policy Settings
 
 1. In Kibana on your Serverless hub project, open **Management → Integrations**, and select **Upload integration** (or **Create new integration → Upload it as a .zip**).
@@ -204,6 +215,16 @@ PUT _index_template/chargeback_serverless_lookup_project_status
    > [!WARNING]
    > Always use a dedicated Agent Policy (`Chargeback Serverless Policy`) with a single enrolled Elastic Agent rather than attaching Chargeback Serverless to an existing multi-agent policy. Attaching to a policy with multiple agents causes duplicate organization-wide collection across every agent in that policy.
 6. Click **Save and continue** and enroll a single Elastic Agent (`v9.2+`) into **`Chargeback Serverless Policy`**.
+   - **Enrolling Elastic Agent via Docker (Optional)**: Because Kibana's **Add agent → Enroll in Fleet** flyout only displays tabs for **Linux Tar**, **Mac**, **Windows**, **DEB**, **RPM**, and **Kubernetes**, you can copy the `--url` and `--enrollment-token` values from the **Linux Tar** tab and start a containerized Elastic Agent directly with Docker:
+     ```bash
+     docker run -d \
+       --name elastic-agent-chargeback \
+       --restart unless-stopped \
+       -e FLEET_ENROLL=1 \
+       -e FLEET_URL="https://<your-fleet-host>:443" \
+       -e FLEET_ENROLLMENT_TOKEN="<your-enrollment-token>" \
+       docker.elastic.co/beats/elastic-agent:9.2.0
+     ```
 
 ### Step 4: Optional Historical Usage Backfill (Cross-Platform `.env` / Environment Variables)
 
@@ -226,12 +247,16 @@ python3 scripts/run_chargeback_serverless_collector.py
 
 ### Step 5: Activating Packaged Alerting Rule Templates in Kibana
 
-The integration package installs 4 pre-configured ES|QL FinOps alerting rule templates into Kibana:
+The integration package installs 4 pre-configured ES|QL FinOps alerting rule templates into Kibana. You can instantiate them using either method below:
 
-1. In Kibana, navigate to **Stack Management → Rules**.
-2. Click **Create rule** and search for **`[Chargeback Serverless]`** under rule types/templates.
-3. Select any of the 4 pre-configured ES|QL rule templates (such as **`[Chargeback Serverless] Rolling 30-day total spend budget exceeded`** or **`[Chargeback Serverless] Data trust & project harvest health issue`**).
-4. Customize the threshold or entity filter on **line 2** of the ES|QL query (`EVAL threshold_...`), choose your notification connector (Slack, Email, Webhook, PagerDuty, or Index), and click **Save**.
+1. **Direct from the Integration Assets tab (Recommended — pre-populates the rule flyout)**:
+   - Navigate to **Management → Integrations → Installed integrations → Chargeback Serverless → Assets**.
+   - Expand **Alerting rule templates** and click any of the 4 **`[Chargeback Serverless]`** rule templates to open the pre-populated **Create rule** flyout directly.
+2. **From Stack Management → Rules**:
+   - Navigate to **Stack Management → Rules** and click **Create rule**.
+   - Select the **Classic** tab (next to **Universal**) and search for **`[Chargeback Serverless]`** under rule types/templates.
+   - Select any of the 4 pre-configured ES|QL rule templates (such as **`[Chargeback Serverless] Rolling 30-day total spend budget exceeded`** or **`[Chargeback Serverless] Data trust & project harvest health issue`**).
+3. Customize the threshold or entity filter on **line 2** of the ES|QL query (`EVAL threshold_...`), choose your notification connector (Slack, Email, Webhook, PagerDuty, or Index), and click **Save**.
 
 ---
 

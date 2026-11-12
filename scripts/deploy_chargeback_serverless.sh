@@ -505,15 +505,15 @@ UPLOAD_HTTP=$(kbn_curl -o /tmp/cbs-upload.json -w '%{http_code}' \
   -H "Content-Type: application/zip" \
   --data-binary @"$TARGET_ZIP" || true)
 
-if [[ "$UPLOAD_HTTP" == "403" ]] && grep -q "Cannot install transforms from a upload package" /tmp/cbs-upload.json 2>/dev/null; then
-  echo "  • API Key upload detected (Kibana blocks secondary API key grant for upload transforms)."
-  echo "  • Uploading Fleet package assets via EPM and provisioning transforms directly via ES API..."
+if [[ "$UPLOAD_HTTP" == "403" || "$UPLOAD_HTTP" == "400" ]] && grep -Eq "Cannot install transforms from a upload package|Uploaded package contains a forbidden asset" /tmp/cbs-upload.json 2>/dev/null; then
+  echo "  • Upload package restriction detected (Kibana blocks package-level transforms/pipelines on direct zip upload)."
+  echo "  • Uploading Fleet package assets via EPM and provisioning pipelines & transforms directly via ES API..."
   python3 -c '
 import sys, zipfile
 src, dst = sys.argv[1], sys.argv[2]
 with zipfile.ZipFile(src, "r") as zin, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
     for item in zin.infolist():
-        if "/elasticsearch/transform/" not in item.filename:
+        if "/elasticsearch/transform/" not in item.filename and not ("/elasticsearch/ingest_pipeline/" in item.filename and "/data_stream/" not in item.filename):
             zout.writestr(item, zin.read(item.filename))
 ' "$TARGET_ZIP" "/tmp/cbs-epm-notf.zip"
 
@@ -619,7 +619,16 @@ with zipfile.ZipFile(zip_path, "r") as z:
         "usage.yml": f"logs-chargeback_serverless.lookup-{version}-usage",
     }
     for n in names:
-        if "/data_stream/lookup/elasticsearch/ingest_pipeline/" in n and n.endswith(".yml"):
+        if "/elasticsearch/ingest_pipeline/" in n and "/data_stream/" not in n and n.endswith(".yml"):
+            fname = n.rsplit("/", 1)[-1]
+            stem = fname[:-4]
+            pipe_id = f"{version}-{stem}"
+            pipe_cfg = yaml.safe_load(z.read(n).decode("utf-8"))
+            code, resp = es_req("PUT", f"/_ingest/pipeline/{pipe_id}", pipe_cfg)
+            if code >= 300:
+                print(f"ERROR: Failed to install pipeline {pipe_id} (HTTP {code}): {resp}", file=sys.stderr)
+                sys.exit(1)
+        elif "/data_stream/lookup/elasticsearch/ingest_pipeline/" in n and n.endswith(".yml"):
             fname = n.rsplit("/", 1)[-1]
             pipe_id = pipe_map.get(fname)
             if pipe_id:
@@ -946,6 +955,12 @@ if existing_pkg_id and os.path.exists(existing_json_file):
                     for inp in old_inputs:
                         old_vars = inp.get("vars", {})
                         old_keys = old_vars.get("project_api_keys", {}).get("value")
+                        if not old_keys:
+                            for st in inp.get("streams", []) or []:
+                                st_keys = (st.get("vars") or {}).get("project_api_keys", {}).get("value")
+                                if st_keys:
+                                    old_keys = st_keys
+                                    break
                         # Only merge non-secret-ref plain strings/lists; never forward stale isSecretRef objects
                         if old_keys and not isinstance(old_keys, dict) and not os.environ.get("FORCE_PROJECT_KEYS"):
                             existing_list = [k.strip() for k in (old_keys if isinstance(old_keys, list) else str(old_keys).split(",")) if str(k).strip()]
@@ -1000,9 +1015,6 @@ payload = {
             "vars": {
                 "organization_id": { "value": str(org_id), "type": "text" },
                 "cloud_api_key": cloud_secret_val,
-                "hub_es_api_key": hub_secret_val,
-                "project_api_keys": proj_secret_val,
-                "lookbehind": { "value": lookbehind, "type": "integer" },
                 "currency_unit": { "value": str(currency_unit), "type": "text" },
                 "currency_symbol": { "value": str(currency_symbol), "type": "text" },
                 "unit_rate": { "value": str(unit_rate), "type": "text" },
@@ -1020,7 +1032,10 @@ payload = {
                 {
                     "data_stream": { "type": "metrics", "dataset": "chargeback_serverless.usage" },
                     "enabled": True,
-                    "vars": {}
+                    "vars": {
+                        "hub_es_api_key": hub_secret_val,
+                        "project_api_keys": proj_secret_val
+                    }
                 }
             ]
         }

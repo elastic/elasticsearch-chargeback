@@ -11,7 +11,7 @@ flowchart TD
     Policy["Fleet Integration Policy<br/>(organization_id + unified cloud_api_key + currency settings)"]:::navy
     Streams["Raw Metrics Data Streams (365d DLM retention)<br/>metrics-chargeback_serverless.billing-*<br/>metrics-chargeback_serverless.usage-*"]:::blue
     Lookups["7 Transform Lookup Indices (365d transform retention)<br/>serverless_billing_cost_lookup<br/>serverless_billing_realized_pool_lookup<br/>serverless_project_contribution_lookup<br/>serverless_datastream_contribution_lookup<br/>serverless_ai_model_contribution_lookup<br/>serverless_synthetics_monitor_contribution_lookup<br/>serverless_project_status_lookup"]:::mint
-    Assets["Kibana Saved Objects<br/>5 Linked ES|QL Dashboards + 10 Alerting Rule Templates"]:::pink
+    Assets["Kibana Saved Objects<br/>5 Linked ES|QL Dashboards + 4 Alerting Rule Templates"]:::pink
 
     Policy --> Streams --> Lookups
     Lookups --> Assets
