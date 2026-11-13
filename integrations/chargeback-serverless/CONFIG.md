@@ -1,6 +1,6 @@
 # Chargeback Serverless configuration reference
 
-Use this reference to configure the **Chargeback Serverless (`chargeback_serverless` `0.4.1`)** Fleet integration policy, create the required Elastic Cloud API key, customize currency conversion settings, and tune FinOps alerting thresholds.
+Use this reference to configure the **Chargeback Serverless (`chargeback_serverless` `0.1.0`)** Fleet integration policy, create the required Elastic Cloud API key, customize currency conversion settings, and tune FinOps alerting thresholds.
 
 ## Single unified Elastic Cloud API key
 
@@ -59,7 +59,7 @@ Configure these user-facing fields in Kibana under **Management → Integrations
 
 ## Currency conversion configuration
 
-In Chargeback Serverless `0.4.1`, currency conversion rates and symbols are managed directly through Fleet policy variables (`unit_rate`, `currency_unit`, `currency_symbol`) without requiring manual Elasticsearch lookup index seeding.
+In Chargeback Serverless `0.1.0`, currency conversion rates and symbols are managed directly through Fleet policy variables (`unit_rate`, `currency_unit`, `currency_symbol`) without requiring manual Elasticsearch lookup index seeding.
 
 - **Dynamic stamping**: The Elastic Agent CEL streams stamp `conf_chargeable_unit_rate`, `conf_chargeable_unit_rate_unit`, and `conf_currency_symbol` directly onto every ingested billing and usage record.
 - **Continuous aggregation**: Fleet-managed continuous transforms propagate these values into all `serverless_*_lookup` indices (`max` / `terms` aggregation).

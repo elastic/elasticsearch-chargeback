@@ -1,6 +1,6 @@
-# Chargeback Serverless dashboard and alert design (`0.4.1`)
+# Chargeback Serverless dashboard and alert design (`0.1.0`)
 
-This reference documents the architecture, lookup index dependencies, data stream and index classification rules, pool fallback logic, filter controls, and Elasticsearch Query Language (ES|QL) alerting rule templates for the **Chargeback Serverless (`chargeback_serverless` `0.4.1`)** Kibana assets.
+This reference documents the architecture, lookup index dependencies, data stream and index classification rules, pool fallback logic, filter controls, and Elasticsearch Query Language (ES|QL) alerting rule templates for the **Chargeback Serverless (`chargeback_serverless` `0.1.0`)** Kibana assets.
 
 ## Architecture overview
 

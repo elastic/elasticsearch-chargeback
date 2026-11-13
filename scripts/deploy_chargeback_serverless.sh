@@ -384,9 +384,9 @@ fi
 # ------------------------------------------------------------------------------
 PACKAGE_DIR="$INTEGRATIONS_REPO/packages/chargeback_serverless"
 if [[ "$SKIP_BUILD" -eq 0 && -f "$PACKAGE_DIR/manifest.yml" ]]; then
-  VERSION="$(grep -E '^version:' "$PACKAGE_DIR/manifest.yml" 2>/dev/null | awk '{print $2}' | tr -d '"' || echo "0.4.1")"
+  VERSION="$(grep -E '^version:' "$PACKAGE_DIR/manifest.yml" 2>/dev/null | awk '{print $2}' | tr -d '"' || echo "0.1.0")"
 else
-  TARGET_ZIP=$(ls -1t "$DIST_DIR"/chargeback_serverless-*.zip 2>/dev/null | head -1 || echo "$DIST_DIR/chargeback_serverless-0.4.1.zip")
+  TARGET_ZIP=$(ls -1t "$DIST_DIR"/chargeback_serverless-*.zip 2>/dev/null | head -1 || echo "$DIST_DIR/chargeback_serverless-0.1.0.zip")
   VERSION="$(basename "$TARGET_ZIP" | sed -E 's/chargeback_serverless-([0-9.]+)\.zip/\1/')"
 fi
 ZIP_NAME="chargeback_serverless-${VERSION}.zip"
@@ -448,6 +448,40 @@ if [[ "$SKIP_BUILD" -eq 0 ]]; then
   mkdir -p "$DIST_DIR"
   rm -f "$DIST_DIR"/chargeback_serverless-*.zip
   cp "$BUILT_ZIP" "$TARGET_ZIP"
+  # Scope any EPR package-level lookup pipelines under data_stream/{billing,usage} so Kibana custom .zip upload accepts the archive
+  python3 -c '
+import sys, zipfile
+zip_path, ver = sys.argv[1], sys.argv[2]
+with zipfile.ZipFile(zip_path, "r") as zin:
+    names = zin.namelist()
+    has_top = any("/elasticsearch/ingest_pipeline/" in n and "/data_stream/" not in n for n in names)
+    if not has_top:
+        sys.exit(0)
+    entries = [(item, zin.read(item.filename)) for item in zin.infolist()]
+remap = {
+    f"chargeback_serverless-{ver}/elasticsearch/ingest_pipeline/chargeback_serverless-lookup_billing.yml": f"chargeback_serverless-{ver}/data_stream/billing/elasticsearch/ingest_pipeline/lookup_billing.yml",
+    f"chargeback_serverless-{ver}/elasticsearch/ingest_pipeline/chargeback_serverless-lookup_realized_pool.yml": f"chargeback_serverless-{ver}/data_stream/billing/elasticsearch/ingest_pipeline/lookup_realized_pool.yml",
+    f"chargeback_serverless-{ver}/elasticsearch/ingest_pipeline/chargeback_serverless-lookup_usage.yml": f"chargeback_serverless-{ver}/data_stream/usage/elasticsearch/ingest_pipeline/lookup_usage.yml",
+}
+repl = {
+    "\x27{{ ingestPipelineName \"chargeback_serverless-lookup_billing\" }}\x27": f"metrics-chargeback_serverless.billing-{ver}-lookup_billing",
+    "\x27{{ ingestPipelineName \"chargeback_serverless-lookup_realized_pool\" }}\x27": f"metrics-chargeback_serverless.billing-{ver}-lookup_realized_pool",
+    "\x27{{ ingestPipelineName \"chargeback_serverless-lookup_usage\" }}\x27": f"metrics-chargeback_serverless.usage-{ver}-lookup_usage",
+}
+with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zout:
+    for item, data in entries:
+        fn = item.filename
+        if fn.endswith("/elasticsearch/ingest_pipeline/"):
+            continue
+        if fn in remap:
+            item.filename = remap[fn]
+        elif "/elasticsearch/transform/" in fn and fn.endswith("/transform.yml"):
+            txt = data.decode("utf-8")
+            for k, v in repl.items():
+                txt = txt.replace(k, v)
+            data = txt.encode("utf-8")
+        zout.writestr(item, data)
+' "$TARGET_ZIP" "$VERSION"
   echo "  ✓ Copied built zip to $TARGET_ZIP ($(ls -lh "$TARGET_ZIP" | awk '{print $5}'))"
 else
   echo ""
@@ -937,7 +971,7 @@ if [[ "$SKIP_POLICY" -eq 0 ]]; then
 import json, os, sys
 
 agent_policy_id = os.environ.get("AGENT_POLICY_ID", "")
-version = os.environ.get("VERSION", "0.4.1")
+version = os.environ.get("VERSION", "0.1.0")
 org_id = os.environ.get("ORGANIZATION_ID", "")
 cloud_api_key = os.environ.get("CLOUD_API_KEY", "") or os.environ.get("USAGE_API_KEY", "") or os.environ.get("BILLING_API_KEY", "")
 hub_es_api_key = os.environ.get("HUB_ES_API_KEY", "") or os.environ.get("ES_API_KEY", "")
