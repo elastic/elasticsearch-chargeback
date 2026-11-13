@@ -78,32 +78,66 @@ def build_tags() -> list[dict]:
         },
     ]
 
-# Currency settings resolved directly from the agent policy configuration.
+# Currency settings resolved from the newest @timestamp / updated_at row so historical backfill
+# rows (e.g. USD/$) never outvote a newer Fleet policy unit change (e.g. ECU).
 CURRENCY_RESOLVE_ESQL = """\
 | EVAL unit = TO_UPPER(COALESCE(conf_chargeable_unit_rate_unit, "USD"))
 | EVAL currency_symbol = CASE(conf_currency_symbol IS NOT NULL AND conf_currency_symbol != "", conf_currency_symbol, "$")"""
 
+NEWEST_CURRENCY_BROADCAST_ESQL = """\
+| INLINE STATS _g_ts = MAX(ts)
+| EVAL _latest_ts_upd = CASE(ts == _g_ts, updated_at, null)
+| INLINE STATS _g_latest_upd = MAX(_latest_ts_upd)
+| EVAL _is_newest_cfg = CASE(ts == _g_ts AND _g_latest_upd IS NOT NULL, updated_at == _g_latest_upd, ts == _g_ts)
+| EVAL _n_rate = CASE(_is_newest_cfg, _row_rate, null), _n_unit = CASE(_is_newest_cfg, _row_unit, null), _n_sym = CASE(_is_newest_cfg, _row_sym, null)
+| INLINE STATS _act_rate = MAX(_n_rate), _act_unit = MAX(_n_unit), _act_sym = MAX(_n_sym)
+| EVAL conf_chargeable_unit_rate = COALESCE(_act_rate, _row_rate, 1.0), unit = COALESCE(_act_unit, _row_unit, "USD"), currency_symbol = COALESCE(_act_sym, _row_sym, "$")
+| EVAL conf_chargeable_unit_rate_unit = unit, conf_currency_symbol = currency_symbol"""
+
+# Normalises legacy/backfill usage rows where pre-stripped canonical Elastic data streams
+# (e.g. metrics-system.process-default, metrics-elastic_agent.elastic_agent-default) were tagged
+# as ds_type == "index", and propagates the newest day's classification per (project_id, datastream).
+USAGE_DS_NORMALIZE_ESQL = """\
+| EVAL _inferred_ds_type = CASE(
+    datastream == "system" OR STARTS_WITH(COALESCE(datastream, ""), "."), "system",
+    datastream LIKE "logs-*.*-*" OR datastream LIKE "logs-generic-*", "logs",
+    datastream LIKE "metrics-*.*-*" OR datastream LIKE "metrics-generic-*", "metrics",
+    datastream LIKE "traces-*.*-*" OR datastream LIKE "traces-apm-*", "traces",
+    datastream LIKE "synthetics-*-*", "synthetics",
+    datastream LIKE "profiling-*-*", "profiling",
+    null
+  )
+| EVAL _raw_rep_ns = REPLACE(COALESCE(datastream, ""), "^[^-]+-[^-]+-", ""), _raw_rep_ds = REPLACE(REPLACE(COALESCE(datastream, ""), "^[^-]+-", ""), "-.*$", "")
+| EVAL _repaired_type = CASE((ds_type IS NULL OR ds_type == "" OR ds_type == "index") AND _inferred_ds_type IS NOT NULL, _inferred_ds_type, ds_type)
+| EVAL _repaired_ns = CASE((ds_type IS NULL OR ds_type == "" OR ds_type == "index") AND _inferred_ds_type IS NOT NULL AND _inferred_ds_type == "system", "system", (ds_type IS NULL OR ds_type == "" OR ds_type == "index") AND _inferred_ds_type IS NOT NULL AND _raw_rep_ns != "" AND _raw_rep_ns != datastream, _raw_rep_ns, ds_namespace)
+| EVAL _repaired_ds = CASE((ds_type IS NULL OR ds_type == "" OR ds_type == "index") AND _inferred_ds_type IS NOT NULL AND _inferred_ds_type == "system", "system", (ds_type IS NULL OR ds_type == "" OR ds_type == "index") AND _inferred_ds_type IS NOT NULL AND _raw_rep_ds != "" AND _raw_rep_ds != datastream, _raw_rep_ds, ds_dataset)
+| INLINE STATS _ds_latest_ts = MAX(ts) BY project_id, datastream
+| EVAL _is_ds_latest = (ts == _ds_latest_ts)
+| EVAL _l_ds_type = CASE(_is_ds_latest, _repaired_type, null), _l_ds_ns = CASE(_is_ds_latest, _repaired_ns, null), _l_ds_ds = CASE(_is_ds_latest, _repaired_ds, null)
+| INLINE STATS _best_ds_type = MAX(_l_ds_type), _best_ds_ns = MAX(_l_ds_ns), _best_ds_ds = MAX(_l_ds_ds) BY project_id, datastream
+| EVAL ds_type = COALESCE(_best_ds_type, _repaired_type, "other"), ds_namespace = COALESCE(_best_ds_ns, _repaired_ns, "other"), ds_dataset = COALESCE(_best_ds_ds, _repaired_ds, datastream)"""
+
 # Shared ES|QL time filter: respects Kibana dashboard time picker (?_tstart / ?_tend).
 TIME_FILTER_ESQL = "| WHERE @timestamp >= ?_tstart AND @timestamp <= ?_tend"
 
-# Shared ES|QL prelude body: currency rate and symbol from policy config stamped on events,
+# Shared ES|QL prelude body: currency rate and symbol from the newest policy config snapshot,
 # resolving missing/ID project_name via LOOKUP JOIN against serverless_project_status_lookup.
 COST_PRELUDE_BODY = f"""| EVAL ts = @timestamp
+| WHERE ts IS NOT NULL
 | RENAME project_id AS _b_pid, project_name AS _b_pname, project_type AS _b_ptype, conf_chargeable_unit_rate AS _b_rate, conf_chargeable_unit_rate_unit AS _b_unit, conf_currency_symbol AS _b_sym
 | LOOKUP JOIN {PROJECT_STATUS} ON composite_key
 | EVAL @timestamp = ts
 | EVAL project_id = COALESCE(_b_pid, project_id)
 | EVAL project_name = CASE(_b_pname IS NOT NULL AND _b_pname != "" AND _b_pname != project_id, _b_pname, project_name IS NOT NULL AND project_name != "" AND project_name != project_id, project_name, _b_pname IS NOT NULL AND _b_pname != "", _b_pname, project_name IS NOT NULL AND project_name != "", project_name, project_id)
 | EVAL project_type = CASE(_b_ptype IS NOT NULL AND _b_ptype != "" AND _b_ptype != "unknown", _b_ptype, project_type IS NOT NULL AND project_type != "", project_type, _b_ptype)
-| EVAL conf_chargeable_unit_rate = CASE(_b_rate IS NOT NULL, _b_rate, conf_chargeable_unit_rate IS NOT NULL, conf_chargeable_unit_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(_b_unit, conf_chargeable_unit_rate_unit, "USD"), conf_currency_symbol = COALESCE(_b_sym, conf_currency_symbol, "$")
-{CURRENCY_RESOLVE_ESQL}
+| EVAL _row_rate = CASE(_b_rate IS NOT NULL, _b_rate, conf_chargeable_unit_rate IS NOT NULL, conf_chargeable_unit_rate, 1.0), _row_unit = TO_UPPER(COALESCE(_b_unit, conf_chargeable_unit_rate_unit, "USD")), _row_sym = CASE(_b_sym IS NOT NULL AND _b_sym != "", _b_sym, conf_currency_symbol IS NOT NULL AND conf_currency_symbol != "", conf_currency_symbol, "$")
+{NEWEST_CURRENCY_BROADCAST_ESQL}
 | EVAL units = CASE(total_ecu IS NOT NULL, total_ecu, 0.0)
 | EVAL cost = units * conf_chargeable_unit_rate
 | EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "organization")
 | EVAL project_type_label = CASE(project_type IS NOT NULL AND project_type != "", project_type, "organization")
 | EVAL category_label = COALESCE(cost_category, "other")
-| EVAL cost_type_label = COALESCE(cost_type, "other")
-| WHERE ts IS NOT NULL"""
+| EVAL cost_type_label = COALESCE(cost_type, "other")"""
 
 COST_PRELUDE = f"""FROM {BILLING}
 {TIME_FILTER_ESQL}
@@ -114,8 +148,9 @@ COST_PRELUDE_NO_TIME = f"""FROM {BILLING}
 
 # Shared ES|QL join body for USAGE (serverless_datastream_contribution_lookup):
 # Preserves @timestamp, avoids all column collisions across chained LOOKUP JOINs,
-# and resolves human-readable project_name and currency settings.
+# normalises data stream classification, and resolves project_name and newest currency settings.
 USAGE_JOIN_BODY = f"""| EVAL ts = @timestamp
+| WHERE ts IS NOT NULL
 | RENAME project_id AS _u_pid, project_name AS _u_pname, project_type AS _u_ptype, conf_chargeable_unit_rate AS _u_rate, conf_chargeable_unit_rate_unit AS _u_unit, conf_currency_symbol AS _u_sym
 | LOOKUP JOIN {PROJECT_STATUS} ON composite_key
 | RENAME project_id AS _ps_pid, project_name AS _ps_pname, project_type AS _ps_ptype, conf_chargeable_unit_rate AS _ps_rate, conf_chargeable_unit_rate_unit AS _ps_unit, conf_currency_symbol AS _ps_sym
@@ -127,12 +162,14 @@ USAGE_JOIN_BODY = f"""| EVAL ts = @timestamp
 | EVAL project_name = CASE(_u_pname IS NOT NULL AND _u_pname != "" AND _u_pname != project_id, _u_pname, _ps_pname IS NOT NULL AND _ps_pname != "" AND _ps_pname != project_id, _ps_pname, _u_pname IS NOT NULL AND _u_pname != "", _u_pname, _ps_pname IS NOT NULL AND _ps_pname != "", _ps_pname, project_id)
 | EVAL project_type = CASE(_u_ptype IS NOT NULL AND _u_ptype != "" AND _u_ptype != "unknown", _u_ptype, _ps_ptype IS NOT NULL AND _ps_ptype != "", _ps_ptype, "unknown")
 | EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "unknown")
-| EVAL conf_chargeable_unit_rate = CASE(conf_chargeable_unit_rate IS NOT NULL, conf_chargeable_unit_rate, _ps_rate IS NOT NULL, _ps_rate, _u_rate IS NOT NULL, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _ps_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _ps_sym, _u_sym, "$")
+| EVAL _row_rate = CASE(conf_chargeable_unit_rate IS NOT NULL, conf_chargeable_unit_rate, _ps_rate IS NOT NULL, _ps_rate, _u_rate IS NOT NULL, _u_rate, 1.0), _row_unit = TO_UPPER(COALESCE(conf_chargeable_unit_rate_unit, _ps_unit, _u_unit, "USD")), _row_sym = CASE(conf_currency_symbol IS NOT NULL AND conf_currency_symbol != "", conf_currency_symbol, _ps_sym IS NOT NULL AND _ps_sym != "", _ps_sym, _u_sym IS NOT NULL AND _u_sym != "", _u_sym, "$")
+{NEWEST_CURRENCY_BROADCAST_ESQL}
 | EVAL rate = conf_chargeable_unit_rate
-{CURRENCY_RESOLVE_ESQL}"""
+{USAGE_DS_NORMALIZE_ESQL}"""
 
 # Shared ES|QL join body for AI_USAGE (serverless_ai_model_contribution_lookup):
 AI_JOIN_BODY = f"""| EVAL ts = @timestamp
+| WHERE ts IS NOT NULL
 | RENAME project_id AS _u_pid, project_name AS _u_pname, project_type AS _u_ptype, conf_chargeable_unit_rate AS _u_rate, conf_chargeable_unit_rate_unit AS _u_unit, conf_currency_symbol AS _u_sym
 | LOOKUP JOIN {PROJECT_STATUS} ON composite_key
 | RENAME project_id AS _ps_pid, project_name AS _ps_pname, project_type AS _ps_ptype, conf_chargeable_unit_rate AS _ps_rate, conf_chargeable_unit_rate_unit AS _ps_unit, conf_currency_symbol AS _ps_sym
@@ -142,9 +179,9 @@ AI_JOIN_BODY = f"""| EVAL ts = @timestamp
 | EVAL project_name = CASE(_u_pname IS NOT NULL AND _u_pname != "" AND _u_pname != project_id, _u_pname, _ps_pname IS NOT NULL AND _ps_pname != "" AND _ps_pname != project_id, _ps_pname, _u_pname IS NOT NULL AND _u_pname != "", _u_pname, _ps_pname IS NOT NULL AND _ps_pname != "", _ps_pname, project_id)
 | EVAL project_type = CASE(_u_ptype IS NOT NULL AND _u_ptype != "" AND _u_ptype != "unknown", _u_ptype, _ps_ptype IS NOT NULL AND _ps_ptype != "", _ps_ptype, "unknown")
 | EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "unknown")
-| EVAL conf_chargeable_unit_rate = CASE(conf_chargeable_unit_rate IS NOT NULL, conf_chargeable_unit_rate, _ps_rate IS NOT NULL, _ps_rate, _u_rate IS NOT NULL, _u_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(conf_chargeable_unit_rate_unit, _ps_unit, _u_unit, "USD"), conf_currency_symbol = COALESCE(conf_currency_symbol, _ps_sym, _u_sym, "$")
-| EVAL rate = conf_chargeable_unit_rate
-{CURRENCY_RESOLVE_ESQL}"""
+| EVAL _row_rate = CASE(conf_chargeable_unit_rate IS NOT NULL, conf_chargeable_unit_rate, _ps_rate IS NOT NULL, _ps_rate, _u_rate IS NOT NULL, _u_rate, 1.0), _row_unit = TO_UPPER(COALESCE(conf_chargeable_unit_rate_unit, _ps_unit, _u_unit, "USD")), _row_sym = CASE(conf_currency_symbol IS NOT NULL AND conf_currency_symbol != "", conf_currency_symbol, _ps_sym IS NOT NULL AND _ps_sym != "", _ps_sym, _u_sym IS NOT NULL AND _u_sym != "", _u_sym, "$")
+{NEWEST_CURRENCY_BROADCAST_ESQL}
+| EVAL rate = conf_chargeable_unit_rate"""
 
 # Shared ES|QL join body for SYNTHETICS_USAGE (serverless_synthetics_monitor_contribution_lookup):
 SYNTHETICS_JOIN_BODY = AI_JOIN_BODY
@@ -2684,6 +2721,7 @@ CONFIG_UNIFIED_TEMPLATE = f"""\
 {{% assign _active_rate = 1.0 %}}
 {{% assign _active_unit = "USD" %}}
 {{% assign _active_sym = "$" %}}
+{{% assign _has_curr = false %}}
 {{% assign _latest_poll = "—" %}}
 {{% assign _latest_bill_day = "—" %}}
 
@@ -2740,20 +2778,28 @@ CONFIG_UNIFIED_TEMPLATE = f"""\
     {{% endif %}}
   {{% endif %}}
 
-  {{% if r["conf_chargeable_unit_rate"].value != null and r["conf_chargeable_unit_rate"].value != "" %}}
-    {{% assign _active_rate = r["conf_chargeable_unit_rate"].value %}}
-  {{% endif %}}
-  {{% if r["conf_chargeable_unit_rate_unit"].value != null and r["conf_chargeable_unit_rate_unit"].value != "" %}}
-    {{% assign _active_unit = r["conf_chargeable_unit_rate_unit"].value | upcase %}}
-  {{% endif %}}
-  {{% if r["conf_currency_symbol"].value != null and r["conf_currency_symbol"].value != "" %}}
-    {{% assign _active_sym = r["conf_currency_symbol"].value %}}
-  {{% endif %}}
-
   {{% assign upd = r["updated_at"].value | default: "" | slice: 0, 19 | replace: "T", " " %}}
+  {{% assign _take_curr = false %}}
   {{% if upd != "" and upd != "null" %}}
-    {{% if _latest_poll == "—" or upd > _latest_poll %}}
+    {{% if _latest_poll == "—" or upd >= _latest_poll %}}
       {{% assign _latest_poll = upd %}}
+      {{% assign _take_curr = true %}}
+    {{% endif %}}
+  {{% elsif _has_curr == false %}}
+    {{% assign _take_curr = true %}}
+  {{% endif %}}
+  {{% if _take_curr %}}
+    {{% if r["conf_chargeable_unit_rate"].value != null and r["conf_chargeable_unit_rate"].value != "" %}}
+      {{% assign _active_rate = r["conf_chargeable_unit_rate"].value %}}
+      {{% assign _has_curr = true %}}
+    {{% endif %}}
+    {{% if r["conf_chargeable_unit_rate_unit"].value != null and r["conf_chargeable_unit_rate_unit"].value != "" %}}
+      {{% assign _active_unit = r["conf_chargeable_unit_rate_unit"].value | upcase %}}
+      {{% assign _has_curr = true %}}
+    {{% endif %}}
+    {{% if r["conf_currency_symbol"].value != null and r["conf_currency_symbol"].value != "" %}}
+      {{% assign _active_sym = r["conf_currency_symbol"].value %}}
+      {{% assign _has_curr = true %}}
     {{% endif %}}
   {{% endif %}}
 {{% endfor %}}
@@ -3867,13 +3913,15 @@ def build_usage() -> dict:
     esql = f"""FROM {USAGE}
 {TIME_FILTER_ESQL}
 | EVAL ts = @timestamp
+| WHERE ts IS NOT NULL
 | RENAME project_id AS _u_pid, project_name AS _u_pname, project_type AS _u_ptype
 | LOOKUP JOIN {PROJECT_STATUS} ON composite_key
 | EVAL @timestamp = ts
 | EVAL project_id = COALESCE(_u_pid, project_id)
 | EVAL project_name = CASE(_u_pname IS NOT NULL AND _u_pname != "" AND _u_pname != project_id, _u_pname, project_name IS NOT NULL AND project_name != "" AND project_name != project_id, project_name, _u_pname IS NOT NULL AND _u_pname != "", _u_pname, project_name IS NOT NULL AND project_name != "", project_name, project_id)
 | EVAL project_type = CASE(_u_ptype IS NOT NULL AND _u_ptype != "" AND _u_ptype != "unknown", _u_ptype, project_type IS NOT NULL AND project_type != "", project_type, "unknown")
-| EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "unknown"), ds_type = COALESCE(ds_type, "other"), ds_namespace = COALESCE(ds_namespace, "other")
+| EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "unknown")
+{USAGE_DS_NORMALIZE_ESQL}
 | STATS indexing_ms = SUM(datastream_sum_indexing_time), query_ms = SUM(datastream_sum_query_time), size_mb = ROUND(AVG(TO_DOUBLE(datastream_sum_data_set_store_size)) / 1048576.0, 2) BY project, project_type, ds_type, ds_namespace, datastream
 | SORT indexing_ms DESC
 | LIMIT 200
@@ -4293,7 +4341,7 @@ def build_synthetics() -> dict:
 | EVAL qry_cost = CASE(query_ecu IS NOT NULL, query_ecu, 0.0) * rate * qry_share
 | EVAL stg_cost = CASE(storage_ecu IS NOT NULL, storage_ecu, 0.0) * rate * stg_share
 | EVAL total_ds_cost = idx_cost + qry_cost + stg_cost
-| EVAL synth_type = COALESCE(ds_dataset, CASE(datastream LIKE "synthetics-browser.network-*", "browser.network", datastream LIKE "synthetics-browser.screenshot-*", "browser.screenshot", datastream LIKE "synthetics-browser-*", "browser", datastream LIKE "synthetics-http-*", "http", datastream LIKE "synthetics-icmp-*", "icmp", datastream LIKE "synthetics-tcp-*", "tcp", datastream LIKE "synthetics-dns-*", "dns", "http"))
+| EVAL synth_type = CASE(ds_dataset IS NOT NULL AND ds_dataset != "" AND ds_dataset != datastream, ds_dataset, datastream LIKE "synthetics-browser.network-*", "browser.network", datastream LIKE "synthetics-browser.screenshot-*", "browser.screenshot", datastream LIKE "synthetics-browser-*", "browser", datastream LIKE "synthetics-http-*", "http", datastream LIKE "synthetics-icmp-*", "icmp", datastream LIKE "synthetics-tcp-*", "tcp", datastream LIKE "synthetics-dns-*", "dns", "http")
 | EVAL synth_stream_label = CONCAT(synth_type, " (", COALESCE(ds_namespace, "default"), ")")
 | STATS cost = SUM(total_ds_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY synth_stream_label
 | SORT cost DESC
@@ -4342,7 +4390,7 @@ def build_synthetics() -> dict:
 | EVAL day_qry_cost = CASE(query_ecu IS NOT NULL, query_ecu, 0.0) * rate * qry_share
 | EVAL day_stg_cost = CASE(storage_ecu IS NOT NULL, storage_ecu, 0.0) * rate * stg_share
 | EVAL day_attr_cost = day_idx_cost + day_qry_cost + day_stg_cost
-| EVAL synth_type = COALESCE(ds_dataset, CASE(datastream LIKE "synthetics-browser.network-*", "browser.network", datastream LIKE "synthetics-browser.screenshot-*", "browser.screenshot", datastream LIKE "synthetics-browser-*", "browser", datastream LIKE "synthetics-http-*", "http", datastream LIKE "synthetics-icmp-*", "icmp", datastream LIKE "synthetics-tcp-*", "tcp", datastream LIKE "synthetics-dns-*", "dns", "http"))
+| EVAL synth_type = CASE(ds_dataset IS NOT NULL AND ds_dataset != "" AND ds_dataset != datastream, ds_dataset, datastream LIKE "synthetics-browser.network-*", "browser.network", datastream LIKE "synthetics-browser.screenshot-*", "browser.screenshot", datastream LIKE "synthetics-browser-*", "browser", datastream LIKE "synthetics-http-*", "http", datastream LIKE "synthetics-icmp-*", "icmp", datastream LIKE "synthetics-tcp-*", "tcp", datastream LIKE "synthetics-dns-*", "dns", "http")
 | STATS indexing_cost = SUM(day_idx_cost), query_cost = SUM(day_qry_cost), storage_cost = SUM(day_stg_cost), attributed_cost = SUM(day_attr_cost), currency_symbol = MAX(currency_symbol), unit = MAX(unit) BY project, project_type, synth_type, ds_namespace, datastream
 | SORT attributed_cost DESC
 | LIMIT 200
@@ -4380,15 +4428,21 @@ def build_config() -> dict:
         CONFIG_UNIFIED_TEMPLATE,
         f"""FROM {PROJECT_STATUS}
 | EVAL ts = @timestamp
+| WHERE ts IS NOT NULL
 | RENAME project_id AS _ps_pid, conf_chargeable_unit_rate AS _ps_rate, conf_chargeable_unit_rate_unit AS _ps_unit, conf_currency_symbol AS _ps_sym
 | LOOKUP JOIN {REALIZED_POOL} ON composite_key
 | RENAME project_id AS _rp_pid
 | LOOKUP JOIN {PROJECT_CONTRIB} ON composite_key
 | EVAL @timestamp = ts
 | EVAL project_id = COALESCE(_ps_pid, _rp_pid, project_id)
-| EVAL conf_chargeable_unit_rate = CASE(_ps_rate IS NOT NULL, _ps_rate, conf_chargeable_unit_rate IS NOT NULL, conf_chargeable_unit_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(_ps_unit, conf_chargeable_unit_rate_unit, "USD"), conf_currency_symbol = COALESCE(_ps_sym, conf_currency_symbol, "$")
-{CURRENCY_RESOLVE_ESQL}
-| EVAL day_ecu = CASE(all_sku_ecu IS NOT NULL, all_sku_ecu, total_ecu IS NOT NULL, total_ecu, 0.0)
+| EVAL _row_rate = CASE(_ps_rate IS NOT NULL, _ps_rate, conf_chargeable_unit_rate IS NOT NULL, conf_chargeable_unit_rate, 1.0), _row_unit = TO_UPPER(COALESCE(_ps_unit, conf_chargeable_unit_rate_unit, "USD")), _row_sym = CASE(_ps_sym IS NOT NULL AND _ps_sym != "", _ps_sym, conf_currency_symbol IS NOT NULL AND conf_currency_symbol != "", conf_currency_symbol, "$")
+| INLINE STATS _g_upd = MAX(updated_at), _g_ts = MAX(ts)
+| EVAL _is_newest_cfg = CASE(_g_upd IS NOT NULL, updated_at == _g_upd, ts == _g_ts)
+| EVAL _n_rate = CASE(_is_newest_cfg, _row_rate, null), _n_unit = CASE(_is_newest_cfg, _row_unit, null), _n_sym = CASE(_is_newest_cfg, _row_sym, null)
+| INLINE STATS _act_rate = MAX(_n_rate), _act_unit = MAX(_n_unit), _act_sym = MAX(_n_sym)
+| EVAL conf_chargeable_unit_rate = COALESCE(_act_rate, _row_rate, 1.0), unit = COALESCE(_act_unit, _row_unit, "USD"), currency_symbol = COALESCE(_act_sym, _row_sym, "$")
+| EVAL conf_chargeable_unit_rate_unit = unit, conf_currency_symbol = currency_symbol
+| EVAL day_ecu = CASE(all_sku_ecu IS NOT NULL, all_sku_ecu, 0.0)
 | EVAL day_cost = day_ecu * conf_chargeable_unit_rate
 | EVAL billed_day = CASE(day_ecu > 0.0, ts, null)
 | INLINE STATS latest_upd = MAX(updated_at), latest_ts = MAX(ts) BY project_id
@@ -4488,26 +4542,7 @@ def alert_template(
     }
 
 
-MULTI_DAY_COST_PRELUDE_BODY = f"""| EVAL ts = @timestamp
-| RENAME project_id AS _b_pid, project_name AS _b_pname, project_type AS _b_ptype, conf_chargeable_unit_rate AS _b_rate, conf_chargeable_unit_rate_unit AS _b_unit, conf_currency_symbol AS _b_sym
-| LOOKUP JOIN {PROJECT_STATUS} ON composite_key
-| EVAL @timestamp = ts
-| EVAL project_id = COALESCE(_b_pid, project_id)
-| EVAL project_name = CASE(_b_pname IS NOT NULL AND _b_pname != "" AND _b_pname != project_id, _b_pname, project_name IS NOT NULL AND project_name != "" AND project_name != project_id, project_name, _b_pname IS NOT NULL AND _b_pname != "", _b_pname, project_name IS NOT NULL AND project_name != "", project_name, project_id)
-| EVAL project_type = CASE(_b_ptype IS NOT NULL AND _b_ptype != "" AND _b_ptype != "unknown", _b_ptype, project_type IS NOT NULL AND project_type != "", project_type, _b_ptype)
-| EVAL conf_chargeable_unit_rate = CASE(_b_rate IS NOT NULL, _b_rate, conf_chargeable_unit_rate IS NOT NULL, conf_chargeable_unit_rate, 1.0), conf_chargeable_unit_rate_unit = COALESCE(_b_unit, conf_chargeable_unit_rate_unit, "USD"), conf_currency_symbol = COALESCE(_b_sym, conf_currency_symbol, "$")
-{CURRENCY_RESOLVE_ESQL}
-| EVAL is_latest_ts = (ts == latest_ts)
-| EVAL _latest_rate = CASE(is_latest_ts, conf_chargeable_unit_rate, null), _latest_unit = CASE(is_latest_ts, unit, null), _latest_sym = CASE(is_latest_ts, currency_symbol, null)
-| INLINE STATS active_rate = MAX(_latest_rate), active_unit = MAX(_latest_unit), active_sym = MAX(_latest_sym)
-| EVAL norm_rate = CASE(active_rate IS NOT NULL, active_rate, conf_chargeable_unit_rate IS NOT NULL, conf_chargeable_unit_rate, 1.0), unit = COALESCE(active_unit, unit, "USD"), currency_symbol = COALESCE(active_sym, currency_symbol, "$")
-| EVAL units = CASE(total_ecu IS NOT NULL, total_ecu, 0.0)
-| EVAL cost = units * norm_rate
-| EVAL project = CASE(project_name IS NOT NULL AND project_name != "", project_name, project_id IS NOT NULL AND project_id != "", project_id, "organization")
-| EVAL project_type_label = CASE(project_type IS NOT NULL AND project_type != "", project_type, "organization")
-| EVAL category_label = COALESCE(cost_category, "other")
-| EVAL cost_type_label = COALESCE(cost_type, "other")
-| WHERE ts IS NOT NULL"""
+MULTI_DAY_COST_PRELUDE_BODY = COST_PRELUDE_BODY
 
 
 def build_alerts() -> list[dict]:
@@ -4522,7 +4557,8 @@ def build_alerts() -> list[dict]:
 | WHERE @timestamp > latest_ts - 30 days
 {MULTI_DAY_COST_PRELUDE_BODY}
 | EVAL bill_day = DATE_TRUNC(1 day, ts)
-| EVAL active_pid = CASE(cost > 0 AND COALESCE(last_status, "") != "inactive", project_id, null)
+| EVAL is_synthetic_bucket = (project_id IS NULL OR project_id == "" OR STARTS_WITH(project_id, "deleted_or_unassociated") OR STARTS_WITH(project_id, "unassociated_") OR project_id == "org_level" OR project_id == "organization")
+| EVAL active_pid = CASE(cost > 0 AND COALESCE(is_synthetic_bucket, true) == false AND COALESCE(last_status, "") != "inactive", project_id, null)
 | STATS
     spend = ROUND(SUM(cost), 2),
     ecu = ROUND(SUM(units), 2),
@@ -4631,28 +4667,47 @@ def build_alerts() -> list[dict]:
             f"""FROM {BILLING}, {PROJECT_STATUS} METADATA _index
 | EVAL threshold_unallocated_spend = 100.0, threshold_unallocated_pct = 25.0, is_bill_doc = STARTS_WITH(_index, "{BILLING}"), is_status_doc = STARTS_WITH(_index, "{PROJECT_STATUS}")
 | EVAL bill_ts = CASE(is_bill_doc, @timestamp, null), status_ts = CASE(is_status_doc, @timestamp, null)
-| INLINE STATS latest_bill_day = MAX(bill_ts), latest_status_day = MAX(status_ts)
+| INLINE STATS latest_bill_day = MAX(bill_ts), latest_status_day = MAX(status_ts), _g_upd = MAX(updated_at), _g_ts = MAX(@timestamp)
+| EVAL _row_rate = CASE(conf_chargeable_unit_rate IS NOT NULL, conf_chargeable_unit_rate, 1.0), _row_unit = TO_UPPER(COALESCE(conf_chargeable_unit_rate_unit, "USD")), _row_sym = CASE(conf_currency_symbol IS NOT NULL AND conf_currency_symbol != "", conf_currency_symbol, "$")
+| EVAL _is_newest_cfg = CASE(_g_upd IS NOT NULL AND (_g_upd >= NOW() - 26 hours OR latest_bill_day IS NULL), updated_at == _g_upd, latest_bill_day IS NOT NULL, is_bill_doc AND @timestamp == latest_bill_day, @timestamp == _g_ts)
+| EVAL _n_rate = CASE(_is_newest_cfg, _row_rate, null), _n_unit = CASE(_is_newest_cfg, _row_unit, null), _n_sym = CASE(_is_newest_cfg, _row_sym, null)
+| INLINE STATS _act_rate = MAX(_n_rate), _act_unit = MAX(_n_unit), _act_sym = MAX(_n_sym)
 | EVAL expected_latest_day = DATE_TRUNC(1 day, NOW() - 6 hours) - 1 day
 | EVAL is_billing_stale = (latest_bill_day IS NULL OR latest_bill_day < expected_latest_day)
 | EVAL target_day = CASE(is_billing_stale, CASE(latest_status_day IS NOT NULL, latest_status_day, latest_bill_day), CASE(latest_bill_day IS NOT NULL, latest_bill_day, latest_status_day))
-| WHERE @timestamp == target_day
-| EVAL ts = @timestamp
-| EVAL clean_pname = CASE(project_name IS NOT NULL AND project_name != "" AND project_name != project_id, project_name, null), fallback_pname = CASE(project_name IS NOT NULL AND project_name != "", project_name, null), clean_ptype = CASE(project_type IS NOT NULL AND project_type != "" AND project_type != "unknown", project_type, null)
-| EVAL rate = CASE(conf_chargeable_unit_rate IS NOT NULL, conf_chargeable_unit_rate, 1.0), unit_str = TO_UPPER(COALESCE(conf_chargeable_unit_rate_unit, "USD")), sym_str = CASE(conf_currency_symbol IS NOT NULL AND conf_currency_symbol != "", conf_currency_symbol, "$")
-| EVAL units = CASE(is_bill_doc AND total_ecu IS NOT NULL, total_ecu, 0.0)
+| WHERE @timestamp IS NOT NULL AND project_id IS NOT NULL
+| EVAL status_sort_ts = CASE(is_status_doc, COALESCE(updated_at, @timestamp), null)
+| INLINE STATS proj_latest_status_sort = MAX(status_sort_ts), proj_latest_status_day = MAX(status_ts) BY project_id
+| EVAL is_proj_latest_status = is_status_doc AND CASE(proj_latest_status_sort IS NOT NULL AND status_sort_ts IS NOT NULL, status_sort_ts == proj_latest_status_sort, status_ts == proj_latest_status_day)
+| EVAL is_target_bill = (is_bill_doc AND @timestamp == target_day)
+| WHERE is_target_bill OR is_proj_latest_status
+| EVAL status_clean_pname = CASE(is_proj_latest_status AND project_name IS NOT NULL AND project_name != "" AND project_name != project_id, project_name, null),
+       bill_clean_pname = CASE(is_target_bill AND project_name IS NOT NULL AND project_name != "" AND project_name != project_id, project_name, null),
+       fallback_pname = CASE((is_proj_latest_status OR is_target_bill) AND project_name IS NOT NULL AND project_name != "", project_name, null),
+       status_clean_ptype = CASE(is_proj_latest_status AND project_type IS NOT NULL AND project_type != "" AND project_type != "unknown", project_type, null),
+       bill_clean_ptype = CASE(is_target_bill AND project_type IS NOT NULL AND project_type != "" AND project_type != "unknown", project_type, null)
+| EVAL cur_last_status = CASE(is_proj_latest_status, last_status, null),
+       cur_synth_status = CASE(is_proj_latest_status, synthetics_status, null),
+       cur_updated_at = CASE(is_proj_latest_status, updated_at, null)
+| EVAL rate = COALESCE(_act_rate, _row_rate, 1.0), unit_str = COALESCE(_act_unit, _row_unit, "USD"), sym_str = COALESCE(_act_sym, _row_sym, "$")
+| EVAL units = CASE(is_target_bill AND total_ecu IS NOT NULL, total_ecu, 0.0)
 | EVAL cost = units * rate
-| WHERE ts IS NOT NULL AND project_id IS NOT NULL
-| EVAL unalloc_cost = CASE(is_bill_doc AND (COALESCE(is_allocatable, false) == false OR allocation_driver == "none") AND COALESCE(sku, "none") != "none", cost, 0.0)
-| EVAL day = LEFT(TO_STRING(@timestamp), 10)
+| EVAL unalloc_cost = CASE(is_target_bill AND (COALESCE(is_allocatable, false) == false OR allocation_driver == "none") AND COALESCE(sku, "none") != "none", cost, 0.0)
+| EVAL day = COALESCE(LEFT(TO_STRING(target_day), 10), LEFT(TO_STRING(expected_latest_day), 10))
 | INLINE STATS org_total_spend = SUM(cost)
 | STATS
-    raw_pname = COALESCE(MAX(clean_pname), MAX(fallback_pname), project_id),
-    project = COALESCE(MAX(clean_pname), MAX(fallback_pname), project_id, "organization"),
-    project_type = COALESCE(MAX(clean_ptype), MAX(project_type), "organization"),
-    harvest_status = COALESCE(MAX(last_status), "missing"),
-    synth_status = COALESCE(MAX(synthetics_status), "ok"),
-    max_updated_at = MAX(updated_at),
-    updated_at_str = COALESCE(TO_STRING(MAX(updated_at)), "never"),
+    b_pname = MAX(bill_clean_pname),
+    s_pname = MAX(status_clean_pname),
+    fb_pname = MAX(fallback_pname),
+    b_ptype = MAX(bill_clean_ptype),
+    s_ptype = MAX(status_clean_ptype),
+    fb_ptype = MAX(project_type),
+    t_day = MAX(target_day),
+    s_day = MAX(proj_latest_status_day),
+    harvest_status = COALESCE(MAX(cur_last_status), "missing"),
+    synth_status = COALESCE(MAX(cur_synth_status), "ok"),
+    max_updated_at = MAX(cur_updated_at),
+    updated_at_str = COALESCE(TO_STRING(MAX(cur_updated_at)), "never"),
     billing_stale = MAX(CASE(is_billing_stale, 1, 0)),
     latest_bill_day_str = COALESCE(LEFT(TO_STRING(MAX(latest_bill_day)), 10), "none"),
     proj_spend = ROUND(SUM(cost), 2),
@@ -4664,6 +4719,10 @@ def build_alerts() -> list[dict]:
     sym = COALESCE(MAX(sym_str), "$"),
     unit = COALESCE(MAX(unit_str), "USD")
   BY day, project_id
+| EVAL prefer_status_meta = COALESCE(s_day IS NOT NULL AND (t_day IS NULL OR s_day >= t_day), false)
+| EVAL raw_pname = CASE(prefer_status_meta, COALESCE(s_pname, b_pname, fb_pname, project_id), COALESCE(b_pname, s_pname, fb_pname, project_id))
+| EVAL project = COALESCE(raw_pname, project_id, "organization")
+| EVAL project_type = CASE(prefer_status_meta, COALESCE(s_ptype, b_ptype, fb_ptype, "organization"), COALESCE(b_ptype, s_ptype, fb_ptype, "organization"))
 | EVAL is_stale_time = CASE(max_updated_at IS NULL OR max_updated_at < NOW() - 26 hours, 1, 0)
 | EVAL is_synthetic_bucket = (STARTS_WITH(project_id, "deleted_or_unassociated") OR STARTS_WITH(project_id, "unassociated_") OR project_id == "org_level" OR project_id == "organization")
 | EVAL has_harvest_issue = (NOT is_synthetic_bucket AND harvest_status != "inactive" AND (harvest_status != "ok" OR synth_status == "unauthorized" OR is_stale_time == 1))
@@ -4678,9 +4737,9 @@ def build_alerts() -> list[dict]:
   )
 | EVAL result = CONCAT("[", day, "] Project `", COALESCE(project, project_id), "` (", project_id, ") issue=", issue_type, ": latest_billing_day=", latest_bill_day_str, ", harvest_status=", harvest_status, " (last updated ", updated_at_str, "), unallocated=", sym, TO_STRING(unallocated_spend), " ", unit, " (", TO_STRING(unallocated_pct), "% of org spend).")
 | EVAL issue_entry = CASE(has_any_issue, CONCAT(day, "\\t", COALESCE(project, project_id), "\\t", project_id, "\\t", project_type, "\\t", issue_type, "\\t", harvest_status, "\\t", TO_STRING(unallocated_spend), "\\t", TO_STRING(unallocated_pct), "\\t", unit, "\\t", result), null)
-| STATS project_rows = COUNT(*), any_billing_stale = MAX(billing_stale), latest_bill_str = COALESCE(MAX(latest_bill_day_str), "none"), issue_entries = VALUES(issue_entry)
+| STATS project_rows = COUNT(*), any_billing_stale = MAX(billing_stale), latest_bill_str = COALESCE(MAX(latest_bill_day_str), "none"), out_unit = COALESCE(MAX(unit), "USD"), out_sym = COALESCE(MAX(sym), "$"), issue_entries = VALUES(issue_entry)
 | EVAL expected_day_str = LEFT(TO_STRING(DATE_TRUNC(1 day, NOW() - 6 hours) - 1 day), 10)
-| EVAL billing_outage_entry = CASE(project_rows == 0 OR COALESCE(any_billing_stale, 1) == 1, CONCAT(expected_day_str, "\\torganization\\torganization\\torganization\\tmissing_or_stale_billing_data\\tmissing\\t0.0\\t0.0\\tUSD\\t[", expected_day_str, "] Project `organization` (organization) issue=missing_or_stale_billing_data: latest_billing_day=", COALESCE(latest_bill_str, "none"), ", harvest_status=missing (last updated never), unallocated=$0.0 USD (0.0% of org spend)."), null)
+| EVAL billing_outage_entry = CASE(project_rows == 0 OR COALESCE(any_billing_stale, 1) == 1, CONCAT(expected_day_str, "\\torganization\\torganization\\torganization\\tmissing_or_stale_billing_data\\tmissing\\t0.0\\t0.0\\t", out_unit, "\\t[", expected_day_str, "] Project `organization` (organization) issue=missing_or_stale_billing_data: latest_billing_day=", COALESCE(latest_bill_str, "none"), ", harvest_status=missing (last updated never), unallocated=", out_sym, "0.0 ", out_unit, " (0.0% of org spend)."), null)
 | EVAL active_entry = COALESCE(MV_APPEND(issue_entries, billing_outage_entry), issue_entries, billing_outage_entry)
 | WHERE active_entry IS NOT NULL
 | MV_EXPAND active_entry

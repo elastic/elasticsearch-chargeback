@@ -107,16 +107,21 @@ def is_serverless_sku(sku):
 SEMVER_RE = re.compile(r"^v?\d+\.\d+(?:\.\d+.*)?$")
 
 
-def parse_datastream_parts(ds_name):
+def parse_datastream_parts(ds_name, is_backing_index=True):
     ds_name = (ds_name or "").strip()
-    if ds_name.startswith(".") or ds_name == "system" or (ds_name.startswith("serverless_") and ds_name.endswith("_lookup")):
+    if ds_name.startswith(".") or ds_name == "system" or (ds_name.startswith("serverless_") and (ds_name.endswith("_lookup") or "_lookup-" in ds_name)):
         return ("system", "system", "system")
     ds_parts = ds_name.split("-") if ds_name else []
     if len(ds_parts) <= 1:
         return ("index", ds_name or "index", "default")
     raw_first = ds_parts[0]
     raw_last = ds_parts[-1]
-    if raw_first in ("logs", "metrics", "traces", "synthetics", "profiling") and len(ds_parts) >= 3:
+    is_canonical_stream = (
+        (raw_first in ("logs", "metrics", "traces") and "." in ds_parts[1])
+        or raw_first in ("synthetics", "profiling")
+        or ds_name.startswith(("logs-generic-", "metrics-generic-", "traces-apm-"))
+    )
+    if raw_first in ("logs", "metrics", "traces", "synthetics", "profiling") and len(ds_parts) >= 3 and (is_backing_index or is_canonical_stream):
         if SEMVER_RE.match(raw_last):
             return (raw_first, ds_parts[1], "default")
         return (raw_first, ds_parts[1], "-".join(ds_parts[2:]))
@@ -171,6 +176,10 @@ LOOKUP_INDEX_SCHEMAS = {
         "synthetics_ecu": {"type": "double"},
         "synthetics_pings_ecu": {"type": "double"},
         "synthetics_executions_ecu": {"type": "double"},
+        "data_tier_capacity_ecu": {"type": "double"},
+        "realized_chargeable_units": {"type": "double"},
+        "total_chargeable_units": {"type": "double"},
+        "total_ecu": {"type": "double"},
         "all_sku_ecu": {"type": "double"},
         "conf_chargeable_unit_rate": {"type": "double"},
         "conf_chargeable_unit_rate_unit": {"type": "keyword"},
@@ -397,7 +406,7 @@ def classify_sku(sku, kind, item_type):
     return ("other", "other", False, "none")
 
 DS_INDEX_RE = re.compile(
-    r"^(?:partial-)?(?:restored-)?(?:shrink-.{4}-)?(?:\.ds-)?([a-zA-Z_0-9\-.]+?)(?:-\d{4}\.\d{2}(?:\.\d{2})?)?(?:-\d+)?$"
+    r"^(?:partial-)?(?:restored-)?(?:shrink-.{4}-)?(?:downsample-[^-]+-)?\.ds-(.+?)(?:-\d{4}\.\d{2}(?:\.\d{2})?)?(?:-\d+)?$"
 )
 
 def delete_existing_window(es_url, api_key, target_stream, from_iso, to_iso):
@@ -954,25 +963,7 @@ def main():
 
         # Only direct-write to serverless_billing_cost_lookup when the continuous Fleet transform is not installed
         if not has_billing_cost_tf:
-            ensure_lookup_index(ES_URL, ES_API_KEY, "serverless_billing_cost_lookup", {
-                "@timestamp": {"type": "date"},
-                "period_start": {"type": "date"},
-                "composite_key": {"type": "keyword"},
-                "project_id": {"type": "keyword"},
-                "project_name": {"type": "keyword"},
-                "project_type": {"type": "keyword"},
-                "sku": {"type": "keyword"},
-                "cost_type": {"type": "keyword"},
-                "cost_category": {"type": "keyword"},
-                "allocation_driver": {"type": "keyword"},
-                "is_allocatable": {"type": "boolean"},
-                "total_ecu": {"type": "double"},
-                "total_chargeable_units": {"type": "double"},
-                "quantity_value": {"type": "double"},
-                "conf_chargeable_unit_rate": {"type": "double"},
-                "conf_chargeable_unit_rate_unit": {"type": "keyword"},
-                "conf_currency_symbol": {"type": "keyword"},
-            })
+            ensure_lookup_index(ES_URL, ES_API_KEY, "serverless_billing_cost_lookup")
             print(f"  • Ingesting {len(billing_docs)} daily billing records directly into serverless_billing_cost_lookup (no transform detected)...")
             lk_bulk_lines = []
             for d in billing_docs:
@@ -1001,11 +992,12 @@ def main():
     u_unit = CONF_RATE_UNIT
     u_sym = CONF_CURRENCY_SYMBOL
     if billing_docs:
-        b_unit = billing_docs[0].get("conf_chargeable_unit_rate_unit")
+        latest_bdoc = max(billing_docs, key=lambda x: str(x.get("@timestamp") or ""))
+        b_unit = latest_bdoc.get("conf_chargeable_unit_rate_unit")
         if b_unit and (CONF_RATE_UNIT == "USD" or not get_env("CONF_RATE_UNIT")):
             u_unit = b_unit
-            u_sym = billing_docs[0].get("conf_currency_symbol", u_sym)
-            u_rate = billing_docs[0].get("conf_chargeable_unit_rate", u_rate)
+            u_sym = latest_bdoc.get("conf_currency_symbol", u_sym)
+            u_rate = latest_bdoc.get("conf_chargeable_unit_rate", u_rate)
 
     # Calculate latest daily realized pool per project
     pools = {}
@@ -1235,7 +1227,7 @@ def main():
             m_ds = DS_INDEX_RE.match(idx_name)
             ds_name = m_ds.group(1) if m_ds else idx_name
 
-            ds_type, ds_dataset, ds_namespace = parse_datastream_parts(ds_name)
+            ds_type, ds_dataset, ds_namespace = parse_datastream_parts(ds_name, is_backing_index=bool(m_ds))
             if ds_type == "system":
                 ds_name = "system"
 
@@ -1246,6 +1238,7 @@ def main():
             if ds_name not in ds_map:
                 ds_map[ds_name] = {
                     "ds": ds_name,
+                    "backing_index": "system" if ds_type == "system" else idx_name,
                     "ds_type": ds_type,
                     "ds_dataset": ds_dataset,
                     "ds_namespace": ds_namespace,
@@ -1270,11 +1263,13 @@ def main():
                 dtype = cdoc.get("doc_type")
                 if dtype == "datastream":
                     raw_ds = cdoc.get("datastream", "")
+                    raw_bi = str(cdoc.get("backing_index") or "")
                     m_ds = DS_INDEX_RE.match(raw_ds)
                     ds_name = m_ds.group(1) if m_ds else raw_ds
                     if not ds_name:
                         continue
-                    p_type, p_dataset, p_ns = parse_datastream_parts(ds_name)
+                    was_backing = bool(m_ds or DS_INDEX_RE.match(raw_bi) or cdoc.get("ds_type") in ("logs", "metrics", "traces", "synthetics", "profiling"))
+                    p_type, p_dataset, p_ns = parse_datastream_parts(ds_name, is_backing_index=was_backing)
                     if p_type == "system":
                         ds_name = "system"
                         ds_type, ds_dataset, ds_namespace = "system", "system", "system"
@@ -1288,6 +1283,7 @@ def main():
                     if ds_name not in ds_map:
                         ds_map[ds_name] = {
                             "ds": ds_name,
+                            "backing_index": "system" if ds_type == "system" else (raw_bi or raw_ds),
                             "ds_type": ds_type,
                             "ds_dataset": ds_dataset,
                             "ds_namespace": ds_namespace,
@@ -1374,6 +1370,7 @@ def main():
                     "project_name": pname,
                     "project_type": ptype,
                     "datastream": ds_name,
+                    "backing_index": v.get("backing_index", ds_name),
                     "ds_type": v["ds_type"],
                     "ds_dataset": v.get("ds_dataset", v["ds_type"]),
                     "ds_namespace": v["ds_namespace"],
@@ -1537,10 +1534,12 @@ def main():
         preserved_copy = dict(p_u_doc)
         if preserved_copy.get("doc_type") == "datastream":
             raw_ds = preserved_copy.get("datastream") or ""
+            raw_bi = str(preserved_copy.get("backing_index") or "")
             m_ds = DS_INDEX_RE.match(raw_ds)
             ds_name = m_ds.group(1) if m_ds else raw_ds
             if ds_name:
-                p_type, p_dataset, p_ns = parse_datastream_parts(ds_name)
+                was_backing = bool(m_ds or DS_INDEX_RE.match(raw_bi) or preserved_copy.get("ds_type") in ("logs", "metrics", "traces", "synthetics", "profiling"))
+                p_type, p_dataset, p_ns = parse_datastream_parts(ds_name, is_backing_index=was_backing)
                 if p_type == "system":
                     preserved_copy["datastream"] = "system"
                 preserved_copy["ds_type"] = p_type
