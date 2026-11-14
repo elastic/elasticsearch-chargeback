@@ -319,7 +319,7 @@ run_verification() {
   ds_lk_cnt=$(es_curl -sS "${ES_URL%/}/serverless_datastream_contribution_lookup/_count" -H "Authorization: ApiKey ${ES_API_KEY}" | jq -r '.count // 0' 2>/dev/null || echo "0")
   proj_lk_cnt=$(es_curl -sS "${ES_URL%/}/serverless_project_contribution_lookup/_count" -H "Authorization: ApiKey ${ES_API_KEY}" | jq -r '.count // 0' 2>/dev/null || echo "0")
   if [[ "${ds_lk_cnt:-0}" -gt 50 && "${proj_lk_cnt:-0}" -lt 10 ]]; then
-    proj_tf_id=$(echo "$tf_json" | jq -r '(.transforms // []) | map(select(.dest.index == "serverless_project_contribution_lookup")) | .[0].id // empty' 2>/dev/null || true)
+    proj_tf_id=$(echo "$tf_json" | jq -r '(.transforms // []) | map(select(.dest.index == "serverless_project_contribution_lookup" or (.dest.index | startswith("serverless_project_contribution_lookup")))) | .[0].id // empty' 2>/dev/null || true)
     if [[ -n "$proj_tf_id" ]]; then
       es_curl -sS -X POST "${ES_URL%/}/_transform/${proj_tf_id}/_stop?force=true&wait_for_completion=true" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
       es_curl -sS -X POST "${ES_URL%/}/_transform/${proj_tf_id}/_reset?force=true" -H "Authorization: ApiKey ${ES_API_KEY}" >/dev/null 2>&1 || true
@@ -334,7 +334,7 @@ run_verification() {
   for lk in "${lookups[@]}"; do
     local cnt tf_ret
     cnt=$(es_curl -sS "${ES_URL%/}/${lk}/_count" -H "Authorization: ApiKey ${ES_API_KEY}" | jq -r '._shards.successful as $s | if $s > 0 then .count else "error" end' 2>/dev/null || echo "not yet created")
-    tf_ret=$(echo "$tf_json" | jq -r --arg idx "$lk" '(.transforms // []) | map(select(.dest.index == $idx)) | .[0].retention_policy.time | if . then (.max_age + " (" + .field + ")") else "none" end' 2>/dev/null || echo "none")
+    tf_ret=$(echo "$tf_json" | jq -r --arg idx "$lk" '(.transforms // []) | map(select(.dest.index == $idx or (.dest.index | startswith($idx)))) | .[0].retention_policy.time | if . then (.max_age + " (" + .field + ")") else "none" end' 2>/dev/null || echo "none")
     printf "%-50s | %-12s | %-20s\n" "$lk" "$cnt" "$tf_ret"
   done
   echo ""
@@ -384,9 +384,9 @@ fi
 # ------------------------------------------------------------------------------
 PACKAGE_DIR="$INTEGRATIONS_REPO/packages/chargeback_serverless"
 if [[ "$SKIP_BUILD" -eq 0 && -f "$PACKAGE_DIR/manifest.yml" ]]; then
-  VERSION="$(grep -E '^version:' "$PACKAGE_DIR/manifest.yml" 2>/dev/null | awk '{print $2}' | tr -d '"' || echo "0.4.0")"
+  VERSION="$(grep -E '^version:' "$PACKAGE_DIR/manifest.yml" 2>/dev/null | awk '{print $2}' | tr -d '"' || echo "0.1.0")"
 else
-  TARGET_ZIP=$(ls -1t "$DIST_DIR"/chargeback_serverless-*.zip 2>/dev/null | head -1 || echo "$DIST_DIR/chargeback_serverless-0.4.0.zip")
+  TARGET_ZIP=$(ls -1t "$DIST_DIR"/chargeback_serverless-*.zip 2>/dev/null | head -1 || echo "$DIST_DIR/chargeback_serverless-0.1.0.zip")
   VERSION="$(basename "$TARGET_ZIP" | sed -E 's/chargeback_serverless-([0-9.]+)\.zip/\1/')"
 fi
 ZIP_NAME="chargeback_serverless-${VERSION}.zip"
@@ -448,6 +448,40 @@ if [[ "$SKIP_BUILD" -eq 0 ]]; then
   mkdir -p "$DIST_DIR"
   rm -f "$DIST_DIR"/chargeback_serverless-*.zip
   cp "$BUILT_ZIP" "$TARGET_ZIP"
+  # Scope any EPR package-level lookup pipelines under data_stream/{billing,usage} so Kibana custom .zip upload accepts the archive
+  python3 -c '
+import sys, zipfile
+zip_path, ver = sys.argv[1], sys.argv[2]
+with zipfile.ZipFile(zip_path, "r") as zin:
+    names = zin.namelist()
+    has_top = any("/elasticsearch/ingest_pipeline/" in n and "/data_stream/" not in n for n in names)
+    if not has_top:
+        sys.exit(0)
+    entries = [(item, zin.read(item.filename)) for item in zin.infolist()]
+remap = {
+    f"chargeback_serverless-{ver}/elasticsearch/ingest_pipeline/chargeback_serverless-lookup_billing.yml": f"chargeback_serverless-{ver}/data_stream/billing/elasticsearch/ingest_pipeline/lookup_billing.yml",
+    f"chargeback_serverless-{ver}/elasticsearch/ingest_pipeline/chargeback_serverless-lookup_realized_pool.yml": f"chargeback_serverless-{ver}/data_stream/billing/elasticsearch/ingest_pipeline/lookup_realized_pool.yml",
+    f"chargeback_serverless-{ver}/elasticsearch/ingest_pipeline/chargeback_serverless-lookup_usage.yml": f"chargeback_serverless-{ver}/data_stream/usage/elasticsearch/ingest_pipeline/lookup_usage.yml",
+}
+repl = {
+    "\x27{{ ingestPipelineName \"chargeback_serverless-lookup_billing\" }}\x27": f"metrics-chargeback_serverless.billing-{ver}-lookup_billing",
+    "\x27{{ ingestPipelineName \"chargeback_serverless-lookup_realized_pool\" }}\x27": f"metrics-chargeback_serverless.billing-{ver}-lookup_realized_pool",
+    "\x27{{ ingestPipelineName \"chargeback_serverless-lookup_usage\" }}\x27": f"metrics-chargeback_serverless.usage-{ver}-lookup_usage",
+}
+with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zout:
+    for item, data in entries:
+        fn = item.filename
+        if fn.endswith("/elasticsearch/ingest_pipeline/"):
+            continue
+        if fn in remap:
+            item.filename = remap[fn]
+        elif "/elasticsearch/transform/" in fn and fn.endswith("/transform.yml"):
+            txt = data.decode("utf-8")
+            for k, v in repl.items():
+                txt = txt.replace(k, v)
+            data = txt.encode("utf-8")
+        zout.writestr(item, data)
+' "$TARGET_ZIP" "$VERSION"
   echo "  ✓ Copied built zip to $TARGET_ZIP ($(ls -lh "$TARGET_ZIP" | awk '{print $5}'))"
 else
   echo ""
@@ -505,15 +539,15 @@ UPLOAD_HTTP=$(kbn_curl -o /tmp/cbs-upload.json -w '%{http_code}' \
   -H "Content-Type: application/zip" \
   --data-binary @"$TARGET_ZIP" || true)
 
-if [[ "$UPLOAD_HTTP" == "403" ]] && grep -q "Cannot install transforms from a upload package" /tmp/cbs-upload.json 2>/dev/null; then
-  echo "  • API Key upload detected (Kibana blocks secondary API key grant for upload transforms)."
-  echo "  • Uploading Fleet package assets via EPM and provisioning transforms directly via ES API..."
+if [[ "$UPLOAD_HTTP" == "403" || "$UPLOAD_HTTP" == "400" ]] && grep -Eq "Cannot install transforms from a upload package|Uploaded package contains a forbidden asset" /tmp/cbs-upload.json 2>/dev/null; then
+  echo "  • Upload package restriction detected (Kibana blocks package-level transforms/pipelines on direct zip upload)."
+  echo "  • Uploading Fleet package assets via EPM and provisioning pipelines & transforms directly via ES API..."
   python3 -c '
 import sys, zipfile
 src, dst = sys.argv[1], sys.argv[2]
 with zipfile.ZipFile(src, "r") as zin, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
     for item in zin.infolist():
-        if "/elasticsearch/transform/" not in item.filename:
+        if "/elasticsearch/transform/" not in item.filename and not ("/elasticsearch/ingest_pipeline/" in item.filename and "/data_stream/" not in item.filename):
             zout.writestr(item, zin.read(item.filename))
 ' "$TARGET_ZIP" "/tmp/cbs-epm-notf.zip"
 
@@ -619,7 +653,16 @@ with zipfile.ZipFile(zip_path, "r") as z:
         "usage.yml": f"logs-chargeback_serverless.lookup-{version}-usage",
     }
     for n in names:
-        if "/data_stream/lookup/elasticsearch/ingest_pipeline/" in n and n.endswith(".yml"):
+        if "/elasticsearch/ingest_pipeline/" in n and "/data_stream/" not in n and n.endswith(".yml"):
+            fname = n.rsplit("/", 1)[-1]
+            stem = fname[:-4]
+            pipe_id = f"{version}-{stem}"
+            pipe_cfg = yaml.safe_load(z.read(n).decode("utf-8"))
+            code, resp = es_req("PUT", f"/_ingest/pipeline/{pipe_id}", pipe_cfg)
+            if code >= 300:
+                print(f"ERROR: Failed to install pipeline {pipe_id} (HTTP {code}): {resp}", file=sys.stderr)
+                sys.exit(1)
+        elif "/data_stream/lookup/elasticsearch/ingest_pipeline/" in n and n.endswith(".yml"):
             fname = n.rsplit("/", 1)[-1]
             pipe_id = pipe_map.get(fname)
             if pipe_id:
@@ -638,6 +681,15 @@ with zipfile.ZipFile(zip_path, "r") as z:
                 {"pipeline": {"name": "metrics-chargeback_serverless.billing@custom", "ignore_missing_pipeline": True}},
             ])
             es_req("PUT", f"/_ingest/pipeline/metrics-chargeback_serverless.billing-{version}", pipe_cfg)
+        elif "/data_stream/billing/elasticsearch/ingest_pipeline/" in n and n.endswith(".yml"):
+            fname = n.rsplit("/", 1)[-1]
+            stem = fname[:-4]
+            pipe_id = f"metrics-chargeback_serverless.billing-{version}-{stem}"
+            pipe_cfg = yaml.safe_load(z.read(n).decode("utf-8"))
+            code, resp = es_req("PUT", f"/_ingest/pipeline/{pipe_id}", pipe_cfg)
+            if code >= 300:
+                print(f"ERROR: Failed to install pipeline {pipe_id} (HTTP {code}): {resp}", file=sys.stderr)
+                sys.exit(1)
         elif n.endswith("/data_stream/usage/elasticsearch/ingest_pipeline/default.yml"):
             pipe_cfg = yaml.safe_load(z.read(n).decode("utf-8"))
             procs = pipe_cfg.setdefault("processors", [])
@@ -648,6 +700,15 @@ with zipfile.ZipFile(zip_path, "r") as z:
                 {"pipeline": {"name": "metrics-chargeback_serverless.usage@custom", "ignore_missing_pipeline": True}},
             ])
             es_req("PUT", f"/_ingest/pipeline/metrics-chargeback_serverless.usage-{version}", pipe_cfg)
+        elif "/data_stream/usage/elasticsearch/ingest_pipeline/" in n and n.endswith(".yml"):
+            fname = n.rsplit("/", 1)[-1]
+            stem = fname[:-4]
+            pipe_id = f"metrics-chargeback_serverless.usage-{version}-{stem}"
+            pipe_cfg = yaml.safe_load(z.read(n).decode("utf-8"))
+            code, resp = es_req("PUT", f"/_ingest/pipeline/{pipe_id}", pipe_cfg)
+            if code >= 300:
+                print(f"ERROR: Failed to install pipeline {pipe_id} (HTTP {code}): {resp}", file=sys.stderr)
+                sys.exit(1)
 
     tf_files = [n for n in names if "/elasticsearch/transform/" in n and n.endswith("/transform.yml")]
     # Install primary transforms before dependent ones (realized_pool, proj_contrib)
@@ -666,6 +727,11 @@ with zipfile.ZipFile(zip_path, "r") as z:
         fields_file = f"{base_dir}/fields/fields.yml"
         dest_idx = tf_cfg.get("dest", {}).get("index")
         dest_pipe = tf_cfg.get("dest", {}).get("pipeline")
+        dest_aliases = [
+            a.get("alias")
+            for a in (tf_cfg.get("dest", {}).get("aliases") or [])
+            if isinstance(a, dict) and a.get("alias")
+        ]
         tf_id = f"logs-chargeback_serverless.{tf_name}-default-{version}"
 
         # Stop and remove older versioned transforms for this transform name so stale pipelines do not overwrite lookup docs
@@ -680,11 +746,25 @@ with zipfile.ZipFile(zip_path, "r") as z:
         if dest_idx and fields_file in names:
             fields_cfg = yaml.safe_load(z.read(fields_file).decode("utf-8"))
             mapping_body = fields_to_mappings(fields_cfg, default_pipeline=dest_pipe)
+            if dest_aliases:
+                mapping_body["aliases"] = {
+                    al: {"is_write_index": True}
+                    for al in dest_aliases
+                    if al != dest_idx
+                }
+                for al in dest_aliases:
+                    if al != dest_idx:
+                        c_al, al_body = es_req("GET", f"/{al}")
+                        if c_al == 200 and isinstance(al_body, dict) and al in al_body:
+                            print(f"  • Removing legacy unversioned lookup index {al} before attaching alias to {dest_idx}...")
+                            es_req("DELETE", f"/{al}")
             # Install persistent index template so transform _reset / _start always recreates in lookup mode with exact mappings
+            tpl_patterns = list(dict.fromkeys([f"{al}*" for al in dest_aliases] + [dest_idx]))
+            tpl_template = {k: v for k, v in mapping_body.items() if k in ("settings", "mappings")}
             tpl_body = {
-                "index_patterns": [dest_idx],
+                "index_patterns": tpl_patterns,
                 "priority": 500,
-                "template": mapping_body,
+                "template": tpl_template,
             }
             es_req("PUT", f"/_index_template/chargeback_serverless_lookup_{tf_name}", tpl_body)
 
@@ -706,6 +786,9 @@ with zipfile.ZipFile(zip_path, "r") as z:
                 es_req("PUT", f"/{dest_idx}/_mapping", mapping_body["mappings"])
                 if dest_pipe:
                     es_req("PUT", f"/{dest_idx}/_settings", {"index": {"default_pipeline": dest_pipe}})
+                for al in dest_aliases:
+                    if al != dest_idx:
+                        es_req("POST", "/_aliases", {"actions": [{"add": {"index": dest_idx, "alias": al, "is_write_index": True}}]})
 
         code, existing_tf = es_req("GET", f"/_transform/{tf_id}")
         if code == 404:
@@ -717,6 +800,7 @@ with zipfile.ZipFile(zip_path, "r") as z:
             cur_doc = (existing_tf.get("transforms") or [{}])[0]
             if (
                 cur_doc.get("source", {}) != tf_cfg.get("source", {})
+                or cur_doc.get("dest", {}) != tf_cfg.get("dest", {})
                 or cur_doc.get("pivot", {}) != tf_cfg.get("pivot", {})
                 or cur_doc.get("sync", {}) != tf_cfg.get("sync", {})
                 or cur_doc.get("retention_policy") != tf_cfg.get("retention_policy")
@@ -887,7 +971,7 @@ if [[ "$SKIP_POLICY" -eq 0 ]]; then
 import json, os, sys
 
 agent_policy_id = os.environ.get("AGENT_POLICY_ID", "")
-version = os.environ.get("VERSION", "0.4.0")
+version = os.environ.get("VERSION", "0.1.0")
 org_id = os.environ.get("ORGANIZATION_ID", "")
 cloud_api_key = os.environ.get("CLOUD_API_KEY", "") or os.environ.get("USAGE_API_KEY", "") or os.environ.get("BILLING_API_KEY", "")
 hub_es_api_key = os.environ.get("HUB_ES_API_KEY", "") or os.environ.get("ES_API_KEY", "")
@@ -923,6 +1007,12 @@ if existing_pkg_id and os.path.exists(existing_json_file):
                     for inp in old_inputs:
                         old_vars = inp.get("vars", {})
                         old_keys = old_vars.get("project_api_keys", {}).get("value")
+                        if not old_keys:
+                            for st in inp.get("streams", []) or []:
+                                st_keys = (st.get("vars") or {}).get("project_api_keys", {}).get("value")
+                                if st_keys:
+                                    old_keys = st_keys
+                                    break
                         # Only merge non-secret-ref plain strings/lists; never forward stale isSecretRef objects
                         if old_keys and not isinstance(old_keys, dict) and not os.environ.get("FORCE_PROJECT_KEYS"):
                             existing_list = [k.strip() for k in (old_keys if isinstance(old_keys, list) else str(old_keys).split(",")) if str(k).strip()]
@@ -977,9 +1067,6 @@ payload = {
             "vars": {
                 "organization_id": { "value": str(org_id), "type": "text" },
                 "cloud_api_key": cloud_secret_val,
-                "hub_es_api_key": hub_secret_val,
-                "project_api_keys": proj_secret_val,
-                "lookbehind": { "value": lookbehind, "type": "integer" },
                 "currency_unit": { "value": str(currency_unit), "type": "text" },
                 "currency_symbol": { "value": str(currency_symbol), "type": "text" },
                 "unit_rate": { "value": str(unit_rate), "type": "text" },
@@ -997,7 +1084,10 @@ payload = {
                 {
                     "data_stream": { "type": "metrics", "dataset": "chargeback_serverless.usage" },
                     "enabled": True,
-                    "vars": {}
+                    "vars": {
+                        "hub_es_api_key": hub_secret_val,
+                        "project_api_keys": proj_secret_val
+                    }
                 }
             ]
         }

@@ -1,6 +1,6 @@
 # Chargeback Serverless configuration reference
 
-Use this reference to configure the **Chargeback Serverless (`chargeback_serverless` `0.4.0`)** Fleet integration policy, create the required Elastic Cloud API key, customize currency conversion settings, and tune FinOps alerting thresholds.
+Use this reference to configure the **Chargeback Serverless (`chargeback_serverless` `0.1.0`)** Fleet integration policy, create the required Elastic Cloud API key, customize currency conversion settings, and tune FinOps alerting thresholds.
 
 ## Single unified Elastic Cloud API key
 
@@ -43,13 +43,13 @@ Configure these user-facing fields in Kibana under **Management → Integrations
 | --- | --- | --- | --- | --- |
 | **Organization ID** | `organization_id` | Yes | — | Your numeric Elastic Cloud organization identifier (`<YOUR_ORGANIZATION_ID>`, found in the [Elastic Cloud Console](https://cloud.elastic.co) URL or **Organization → Settings**). |
 | **Elastic Cloud API Key** | `cloud_api_key` | Yes | — | Unified Elastic Cloud API key (`secret: true`) with **Billing Admin** and **Cloud resource access** (`Cloud, Elasticsearch, and Kibana API`). |
-| **Billing Lookbehind Days** | `lookbehind` | Yes | `60` | Number of historical UTC days of billing data to backfill on initial install. |
+| **Billing Lookbehind Days** | `lookbehind` | Yes | `60` | Number of historical UTC days of billing data (`1`–`365`) to backfill on initial install before the CEL cursor is initialized. |
 | **Currency Unit** | `currency_unit` | No | `USD` | Target display currency unit code across dashboards and alerts (for example, `USD`, `EUR`, `ZAR`, `GBP`, `ECU`). |
 | **Currency Symbol** | `currency_symbol` | No | `$` | Target display currency symbol on KPI scorecards and tables (for example, `$`, `€`, `R`, `£`, `ECU`). |
 | **Chargeable Unit Rate** | `unit_rate` | No | `1.0` | Multiplier from `1.0` chargeable unit (ECU) to your target contract currency (for example, `1.0`, `0.85`, `18.5`). |
 
 > [!NOTE]
-> - **Collection schedule & daily cursor gating**: The Elastic Agent CEL `billing` and `usage` streams poll hourly (`interval: 1h`) and use daily UTC cursor gating to ingest completed calendar days once per day after `02:00 UTC`.
+> - **Collection schedule & initial lookbehind cursor**: The Elastic Agent CEL `billing` and `usage` streams poll hourly (`interval: 1h`) and use daily UTC cursor gating to ingest completed calendar days once per day after `02:00 UTC`. `lookbehind` (`1`–`365` days) is evaluated only on the initial run when no cursor state exists; increasing `lookbehind` later on an active policy will not rewind the cursor unless you delete and re-add the integration policy.
 > - **Advanced hidden variables (`show_user: false` in `manifest.yml`)**:
 >   - `billing_api_base` (default `https://billing.elastic-cloud.com`) and `cloud_api_base` (default `https://api.elastic-cloud.com`) define the Elastic Cloud Billing and Serverless Control Plane API base URLs.
 >   - `hub_es_api_key` and `project_api_keys` (`<project_id>:<encoded_api_key>` comma-separated string) are optional credential overrides; they remain hidden by default because a single unified `cloud_api_key` handles both organization billing and per-project usage harvesting across `Elasticsearch`, `Observability`, and `Security` projects.
@@ -59,7 +59,7 @@ Configure these user-facing fields in Kibana under **Management → Integrations
 
 ## Currency conversion configuration
 
-In Chargeback Serverless `0.4.0`, currency conversion rates and symbols are managed directly through Fleet policy variables (`unit_rate`, `currency_unit`, `currency_symbol`) without requiring manual Elasticsearch lookup index seeding.
+In Chargeback Serverless `0.1.0`, currency conversion rates and symbols are managed directly through Fleet policy variables (`unit_rate`, `currency_unit`, `currency_symbol`) without requiring manual Elasticsearch lookup index seeding.
 
 - **Dynamic stamping**: The Elastic Agent CEL streams stamp `conf_chargeable_unit_rate`, `conf_chargeable_unit_rate_unit`, and `conf_currency_symbol` directly onto every ingested billing and usage record.
 - **Continuous aggregation**: Fleet-managed continuous transforms propagate these values into all `serverless_*_lookup` indices (`max` / `terms` aggregation).
@@ -84,19 +84,13 @@ To override the retention period when running the automated deployment script, s
 
 ## FinOps alerting rule thresholds
 
-Each of the 10 prebuilt ES|QL alerting rule templates in [`assets/kibana/alerting_rule_template/`](assets/kibana/alerting_rule_template/) (**Stack Management → Rules → Create rule**, search `[Chargeback Serverless]`) defines its threshold and optional entity filter on **line 2** of the ES|QL query using an `EVAL` statement so you can adjust thresholds without rewriting the query logic:
+Each of the 4 prebuilt ES|QL alerting rule templates in [`assets/kibana/alerting_rule_template/`](assets/kibana/alerting_rule_template/) (**Management → Integrations → Installed integrations → Chargeback Serverless → Assets → Alerting rule templates**, or **Stack Management → Rules → Create rule → Classic** tab, search `[Chargeback Serverless]`) defines its threshold and optional entity filter on **line 2** of the ES|QL query using an `EVAL` statement so you can adjust thresholds without rewriting the query logic:
 
 | Alert rule title | Line-2 `EVAL` parameters | Default values |
 | --- | --- | --- |
-| **`[Chargeback Serverless] Total daily spend threshold exceeded`** | `EVAL threshold_spend = 1000.0` | `1000.0` |
-| **`[Chargeback Serverless] Rolling 30-day total spend budget exceeded`** | `EVAL threshold_budget = 25000.0` | `25000.0` |
-| **`[Chargeback Serverless] Cost category daily spend threshold exceeded`** | `EVAL threshold_spend = 300.0, filter_category = "*"` | `300.0`, all categories |
-| **`[Chargeback Serverless] Workload driver daily spend threshold exceeded`** | `EVAL threshold_spend = 250.0, filter_driver = "*"` | `250.0`, all drivers |
-| **`[Chargeback Serverless] Project daily spend threshold exceeded`** | `EVAL threshold_spend = 200.0, filter_project = "*"` | `200.0`, all projects |
+| **`[Chargeback Serverless] Rolling 30-day total spend budget exceeded`** | `EVAL threshold_budget = 25000.0, threshold_pct = 80.0, alert_on_projected = true` | `25000.0` budget, `80.0%` watermark, projected overrun enabled |
+| **`[Chargeback Serverless] Project daily spend threshold exceeded`** | `EVAL threshold_spend = 200.0, filter_project = "*", filter_driver = "*"` | `200.0`, all projects, all workload drivers |
 | **`[Chargeback Serverless] Project daily spend spike vs. 7-day baseline`** | `EVAL threshold_pct_increase = 50.0, min_daily_spend = 25.0, filter_project = "*"` | `+50.0%`, `25.0` min, all projects |
-| **`[Chargeback Serverless] Namespace attributed daily spend threshold exceeded`** | `EVAL threshold_spend = 100.0, filter_namespace = "*"` | `100.0`, all namespaces |
-| **`[Chargeback Serverless] AI model attributed daily spend threshold exceeded`** | `EVAL threshold_spend = 50.0, filter_model = "*"` | `50.0`, all models |
-| **`[Chargeback Serverless] Synthetics monitor attributed daily spend threshold exceeded`** | `EVAL threshold_spend = 25.0, filter_monitor = "*"` | `25.0`, all monitors |
 | **`[Chargeback Serverless] Data trust & project harvest health issue`** | `EVAL threshold_unallocated_spend = 100.0, threshold_unallocated_pct = 25.0` | `100.0` and `25.0%` |
 
 ## Related pages

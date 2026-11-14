@@ -1,10 +1,10 @@
 # Install and configure Chargeback Serverless
 
-Deploy the **Chargeback Serverless (`chargeback_serverless` `0.4.0`)** integration on an Elastic Cloud Serverless project to collect organization-wide Serverless billing history (including deleted projects) and per-project data stream, index, AI model, and Synthetics usage telemetry.
+Deploy the **Chargeback Serverless (`chargeback_serverless` `0.1.0`)** integration on an Elastic Cloud Serverless project to collect organization-wide Serverless billing history (including deleted projects) and per-project data stream, index, AI model, and Synthetics usage telemetry.
 
 > [!IMPORTANT]
 > **Customer Installation vs. Developer / Maintainer Workflows**
-> - **Customers & FinOps Operators (Part 1)**: You do **not** need the `elastic/integrations` repository, `elastic-package`, or macOS-specific scripts. Install the prebuilt package [`assets/dist/chargeback_serverless-0.4.0.zip`](assets/dist/chargeback_serverless-0.4.0.zip) directly through the Kibana Fleet UI, pre-create the lookup index templates in Kibana Dev Tools, and optionally run the cross-platform Python backfill collector (`python3 scripts/run_chargeback_serverless_collector.py`).
+> - **Customers & FinOps Operators (Part 1)**: You do **not** need the `elastic/integrations` repository, `elastic-package`, or macOS-specific scripts. Install the prebuilt package [`assets/dist/chargeback_serverless-0.1.0.zip`](assets/dist/chargeback_serverless-0.1.0.zip) directly through the Kibana Fleet UI, pre-create the lookup index templates in Kibana Dev Tools, and optionally run the cross-platform Python backfill collector (`python3 scripts/run_chargeback_serverless_collector.py`).
 > - **Developers & Maintainers (Part 2)**: Use the automated deployment script (`./scripts/deploy_chargeback_serverless.sh`) to provision templates, transforms, policies, backfills, and E2E verification from the command line (or pass `--build` when modifying package source templates in `elastic/integrations`).
 
 ## Before you begin
@@ -12,7 +12,8 @@ Deploy the **Chargeback Serverless (`chargeback_serverless` `0.4.0`)** integrati
 Make sure you have the following before installing Chargeback Serverless:
 
 1. **Target Elastic Cloud Serverless hub project**:
-   - An Elastic Cloud Serverless project (`elasticsearch`, `observability`, or `security`) where the dashboards, `LOOKUP`-mode indices, transforms, and Fleet policy will run.
+   - An Elastic Cloud Serverless **Elasticsearch** project (`general_purpose` or `vector`) or **Observability Complete** project where the dashboards, `LOOKUP`-mode indices, transforms, and Fleet policy will run.
+   - Note: **Observability Logs Essentials** projects exclude `metrics` data streams in Kibana Fleet (`Installation package: chargeback_serverless is not allowed due to data stream type exclusions`) and cannot host the central FinOps hub, though the hub still monitors and attributes costs across all **Observability Logs Essentials**, **Observability Complete**, **Elasticsearch**, and **Security** projects in your organization.
    - Note your project's **Elasticsearch endpoint (`ES_URL`)** and **Kibana endpoint (`KIBANA_URL`)**.
 2. **Elastic Cloud Organization ID (`ORGANIZATION_ID`)**:
    - Your numeric organization ID (`<YOUR_ORGANIZATION_ID>`) from the [Elastic Cloud Console](https://cloud.elastic.co).
@@ -35,21 +36,21 @@ Create a single unified Elastic Cloud API key (`cloud_api_key`) in the [Elastic 
 
 ### Step 2: Pre-Create Lookup Index Templates (Required for Fleet-Only Installations)
 
-Chargeback Serverless dashboards and alerting rules use ES|QL `LOOKUP JOIN`, which requires the three right-hand lookup indices (`serverless_project_status_lookup`, `serverless_billing_realized_pool_lookup`, and `serverless_project_contribution_lookup`) to be created with `"index.mode": "lookup"` and their corresponding `default_pipeline` (`logs-chargeback_serverless.lookup-0.4.0-billing`, `logs-chargeback_serverless.lookup-0.4.0-realized_pool`, and `logs-chargeback_serverless.lookup-0.4.0-usage`) **before** the Fleet transforms first run and auto-create their destination indices.
+Chargeback Serverless dashboards and alerting rules use ES|QL `LOOKUP JOIN`, which requires the lookup indices (`serverless_billing_cost_lookup`, `serverless_project_status_lookup`, `serverless_billing_realized_pool_lookup`, and `serverless_project_contribution_lookup`) to be created with `"index.mode": "lookup"` and their corresponding `default_pipeline` (`metrics-chargeback_serverless.billing-0.1.0-lookup_billing`, `metrics-chargeback_serverless.billing-0.1.0-lookup_realized_pool`, and `metrics-chargeback_serverless.usage-0.1.0-lookup_usage`) **before** the Fleet transforms first run and auto-create their versioned destination indices (`serverless_*_lookup-1` with alias `serverless_*_lookup`).
 
 In Kibana on your Serverless hub project, open **Management → Dev Tools** and run the following requests before uploading the integration package:
 
 ```json
 PUT _index_template/chargeback_serverless_lookup_billing_cost
 {
-  "index_patterns": ["serverless_billing_cost_lookup"],
+  "index_patterns": ["serverless_billing_cost_lookup*"],
   "priority": 500,
   "template": {
     "settings": {
       "index": {
         "mode": "lookup",
         "codec": "best_compression",
-        "default_pipeline": "logs-chargeback_serverless.lookup-0.4.0-billing"
+        "default_pipeline": "metrics-chargeback_serverless.billing-0.1.0-lookup_billing"
       }
     },
     "mappings": {
@@ -70,7 +71,7 @@ PUT _index_template/chargeback_serverless_lookup_billing_cost
         "rate": { "type": "double" },
         "total_ecu": { "type": "double" },
         "total_chargeable_units": { "type": "double" },
-        "total_quantity": { "type": "double" },
+        "quantity_value": { "type": "double" },
         "conf_chargeable_unit_rate": { "type": "double" },
         "conf_chargeable_unit_rate_unit": { "type": "keyword" },
         "conf_currency_symbol": { "type": "keyword" },
@@ -82,14 +83,14 @@ PUT _index_template/chargeback_serverless_lookup_billing_cost
 
 PUT _index_template/chargeback_serverless_lookup_realized_pool
 {
-  "index_patterns": ["serverless_billing_realized_pool_lookup"],
+  "index_patterns": ["serverless_billing_realized_pool_lookup*"],
   "priority": 500,
   "template": {
     "settings": {
       "index": {
         "mode": "lookup",
         "codec": "best_compression",
-        "default_pipeline": "logs-chargeback_serverless.lookup-0.4.0-realized_pool"
+        "default_pipeline": "metrics-chargeback_serverless.billing-0.1.0-lookup_realized_pool"
       }
     },
     "mappings": {
@@ -121,14 +122,14 @@ PUT _index_template/chargeback_serverless_lookup_realized_pool
 
 PUT _index_template/chargeback_serverless_lookup_proj_contrib
 {
-  "index_patterns": ["serverless_project_contribution_lookup"],
+  "index_patterns": ["serverless_project_contribution_lookup*"],
   "priority": 500,
   "template": {
     "settings": {
       "index": {
         "mode": "lookup",
         "codec": "best_compression",
-        "default_pipeline": "logs-chargeback_serverless.lookup-0.4.0-usage"
+        "default_pipeline": "metrics-chargeback_serverless.usage-0.1.0-lookup_usage"
       }
     },
     "mappings": {
@@ -148,14 +149,14 @@ PUT _index_template/chargeback_serverless_lookup_proj_contrib
 
 PUT _index_template/chargeback_serverless_lookup_project_status
 {
-  "index_patterns": ["serverless_project_status_lookup"],
+  "index_patterns": ["serverless_project_status_lookup*"],
   "priority": 500,
   "template": {
     "settings": {
       "index": {
         "mode": "lookup",
         "codec": "best_compression",
-        "default_pipeline": "logs-chargeback_serverless.lookup-0.4.0-usage"
+        "default_pipeline": "metrics-chargeback_serverless.usage-0.1.0-lookup_usage"
       }
     },
     "mappings": {
@@ -186,15 +187,24 @@ PUT _index_template/chargeback_serverless_lookup_project_status
 }
 ```
 
+> [!WARNING]
+> **Migrating an existing hub from an earlier pre-EPR `0.4.x` custom `.zip` build to `0.1.0`**:
+> Kibana Fleet blocks uploading `0.1.0` over `0.4.x` (`not newer than the installed version`), and after `0.4.x` is uninstalled Fleet also blocks uploading a `.zip` while live `metrics-chargeback_serverless.*` data streams still exist on the cluster.
+> - **Clean test-hub reset (recommended when Elastic Agent will re-backfill billing)**:
+>   1. Remove existing `Chargeback Serverless` integration policies in **Management → Integrations → Installed integrations → Chargeback Serverless → Policies**, then click **Uninstall Chargeback Serverless**.
+>   2. In **Management → Dev Tools**, delete the old data streams and concrete lookup indices (`DELETE _data_stream/metrics-chargeback_serverless.*` and `DELETE serverless_*_lookup*`), then run the four `PUT _index_template/...` requests above so `default_pipeline` points to `*-0.1.0-lookup_*`.
+>   3. Upload `chargeback_serverless-0.1.0.zip` in Step 3 below (or run `./scripts/deploy_chargeback_serverless.sh` to automate the full setup).
+> - **Preserving existing `usage` history across the downgrade**: Before step 2 above, `_reindex` `metrics-chargeback_serverless.usage-default` to a temporary backup index (for example `chargeback_serverless_usage_backup`), delete `metrics-chargeback_serverless.*` and `serverless_*_lookup*`, upload `0.1.0.zip` and add the integration policy, then `_reindex` the backup index back into `metrics-chargeback_serverless.usage-default` with `"op_type": "create"`.
+
 ### Step 3: Install Integration Package in Kibana & Configure Policy Settings
 
 1. In Kibana on your Serverless hub project, open **Management → Integrations**, and select **Upload integration** (or **Create new integration → Upload it as a .zip**).
-2. Choose [`integrations/chargeback-serverless/assets/dist/chargeback_serverless-0.4.0.zip`](assets/dist/chargeback_serverless-0.4.0.zip) from this repository and click **Upload**.
+2. Choose [`integrations/chargeback-serverless/assets/dist/chargeback_serverless-0.1.0.zip`](assets/dist/chargeback_serverless-0.1.0.zip) from this repository and click **Upload**.
 3. Search for `Chargeback Serverless`, select **Chargeback Serverless**, and click **Add Chargeback Serverless**.
 4. Enter your configuration values (matching the fields in `manifest.yml`):
    - **Organization ID (`organization_id`)**: Enter your numeric Elastic Cloud organization ID (`<YOUR_ORGANIZATION_ID>`).
    - **Elastic Cloud API Key (`cloud_api_key`)**: Paste your unified Elastic Cloud API key from Step 1.
-   - **Billing Lookbehind Days (`lookbehind`)**: Keep the default `60` (backfills up to 60 completed UTC days of billing history on initial run).
+   - **Billing Lookbehind Days (`lookbehind`)**: Set your desired backfill window **before** first saving the policy (default `60`, maximum `365` completed UTC days). Because the `billing` CEL stream persists its `last_to` cursor on initial execution, increasing `lookbehind` later on an existing integration policy will not retroactively backfill older dates unless you remove and re-add the integration to reset its cursor.
    - **Currency Unit (`currency_unit`)**: Enter your target display currency code (default `USD`; for example, `USD`, `EUR`, `ZAR`, `GBP`, `ECU`).
    - **Currency Symbol (`currency_symbol`)**: Enter your currency symbol (default `$`; for example, `$`, `€`, `R`, `£`).
    - **Chargeable Unit Rate (`unit_rate`)**: Enter your conversion multiplier from `1.0` ECU to your target currency (default `1.0`).
@@ -204,6 +214,16 @@ PUT _index_template/chargeback_serverless_lookup_project_status
    > [!WARNING]
    > Always use a dedicated Agent Policy (`Chargeback Serverless Policy`) with a single enrolled Elastic Agent rather than attaching Chargeback Serverless to an existing multi-agent policy. Attaching to a policy with multiple agents causes duplicate organization-wide collection across every agent in that policy.
 6. Click **Save and continue** and enroll a single Elastic Agent (`v9.2+`) into **`Chargeback Serverless Policy`**.
+   - **Enrolling Elastic Agent via Docker (Optional)**: Because Kibana's **Add agent → Enroll in Fleet** flyout only displays tabs for **Linux Tar**, **Mac**, **Windows**, **DEB**, **RPM**, and **Kubernetes**, you can copy the `--url` and `--enrollment-token` values from the **Linux Tar** tab and start a containerized Elastic Agent directly with Docker:
+     ```bash
+     docker run -d \
+       --name elastic-agent-chargeback \
+       --restart unless-stopped \
+       -e FLEET_ENROLL=1 \
+       -e FLEET_URL="https://<your-fleet-host>:443" \
+       -e FLEET_ENROLLMENT_TOKEN="<your-enrollment-token>" \
+       docker.elastic.co/beats/elastic-agent:9.2.0
+     ```
 
 ### Step 4: Optional Historical Usage Backfill (Cross-Platform `.env` / Environment Variables)
 
@@ -211,7 +231,7 @@ When an Elastic Agent is enrolled in the **`Chargeback Serverless Policy`**:
 - The **`billing` CEL stream** automatically backfills up to `lookbehind` days (default `60` days) of historical billing data from the Elastic Cloud Billing API.
 - The **`usage` CEL stream** harvests point-in-time per-project index, data stream, AI model, and Synthetics telemetry daily from the day of enrollment onward.
 
-If you want to immediately backfill historical `usage` snapshots across your past billing dates (or run collection without waiting for an Elastic Agent), run the cross-platform Python backfill collector [`scripts/run_chargeback_serverless_collector.py`](../../scripts/run_chargeback_serverless_collector.py) using standard environment variables (Linux, Windows/WSL, or macOS) or a `.env` file:
+If you want to backfill estimated historical `usage` snapshots across your past billing dates alongside an active Elastic Agent (projecting current index/model topology onto earlier billing days), pass `--usage-only` to [`scripts/run_chargeback_serverless_collector.py`](../../scripts/run_chargeback_serverless_collector.py) so existing Agent billing records and currency settings are preserved (omit `--usage-only` only when running standalone without an Elastic Agent):
 
 ```bash
 export ORGANIZATION_ID="<YOUR_ORGANIZATION_ID>"
@@ -221,17 +241,25 @@ export ES_API_KEY="<YOUR_HUB_PROJECT_API_KEY>"
 export KIBANA_URL="https://<your-hub-project>.kb.<region>.<csp>.elastic.cloud"
 export KIBANA_API_KEY="<YOUR_HUB_PROJECT_API_KEY>"
 
+# Alongside an enrolled Fleet Elastic Agent (backfills usage only; preserves Agent billing & currency):
+python3 scripts/run_chargeback_serverless_collector.py --usage-only --lookbehind 60
+
+# Standalone Agent-free mode (collects both billing and usage):
 python3 scripts/run_chargeback_serverless_collector.py
 ```
 
 ### Step 5: Activating Packaged Alerting Rule Templates in Kibana
 
-The integration package installs 10 pre-configured ES|QL FinOps alerting rule templates into Kibana:
+The integration package installs 4 pre-configured ES|QL FinOps alerting rule templates into Kibana. You can instantiate them using either method below:
 
-1. In Kibana, navigate to **Stack Management → Rules**.
-2. Click **Create rule** and search for **`[Chargeback Serverless]`** under rule types/templates.
-3. Select any of the 10 pre-configured ES|QL rule templates (such as **`[Chargeback Serverless] Total daily spend threshold exceeded`** or **`[Chargeback Serverless] Data trust & project harvest health issue`**).
-4. Customize the threshold or entity filter on **line 2** of the ES|QL query (`EVAL threshold_...`), choose your notification connector (Slack, Email, Webhook, PagerDuty, or Index), and click **Save**.
+1. **Direct from the Integration Assets tab (Recommended — pre-populates the rule flyout)**:
+   - Navigate to **Management → Integrations → Installed integrations → Chargeback Serverless → Assets**.
+   - Expand **Alerting rule templates** and click any of the 4 **`[Chargeback Serverless]`** rule templates to open the pre-populated **Create rule** flyout directly.
+2. **From Stack Management → Rules**:
+   - Navigate to **Stack Management → Rules** and click **Create rule**.
+   - Select the **Classic** tab (next to **Universal**) and search for **`[Chargeback Serverless]`** under rule types/templates.
+   - Select any of the 4 pre-configured ES|QL rule templates (such as **`[Chargeback Serverless] Rolling 30-day total spend budget exceeded`** or **`[Chargeback Serverless] Data trust & project harvest health issue`**).
+3. Customize the threshold or entity filter on **line 2** of the ES|QL query (`EVAL threshold_...`), choose your notification connector (Slack, Email, Webhook, PagerDuty, or Index), and click **Save**.
 
 ---
 
@@ -279,7 +307,7 @@ On macOS, you can optionally store credentials in the macOS Keychain (`elasticse
 ### Step 3: Run the Automated Deployment Script
 
 ```bash
-# Deploy using the prebuilt assets/dist/chargeback_serverless-0.4.0.zip (no elastic/integrations checkout required)
+# Deploy using the prebuilt assets/dist/chargeback_serverless-0.1.0.zip (no elastic/integrations checkout required)
 ./scripts/deploy_chargeback_serverless.sh
 
 # Run verification queries and health checks only
@@ -306,13 +334,13 @@ In `manifest.yml`, `deployment_modes.agentless.enabled` is set to `false`:
 ### 1. Verify the 7 Fleet transforms
 
 Go to **Stack Management → Transforms** and filter by `logs-chargeback_serverless.`. Confirm that all seven transforms are **Started** with `health: green`:
-- `logs-chargeback_serverless.billing_cost-default-0.4.0`
-- `logs-chargeback_serverless.realized_pool-default-0.4.0`
-- `logs-chargeback_serverless.proj_contrib-default-0.4.0`
-- `logs-chargeback_serverless.ds_contrib-default-0.4.0`
-- `logs-chargeback_serverless.ai_contrib-default-0.4.0`
-- `logs-chargeback_serverless.synthetics_contrib-default-0.4.0`
-- `logs-chargeback_serverless.project_status-default-0.4.0`
+- `logs-chargeback_serverless.billing_cost-default-0.1.0`
+- `logs-chargeback_serverless.realized_pool-default-0.1.0`
+- `logs-chargeback_serverless.proj_contrib-default-0.1.0`
+- `logs-chargeback_serverless.ds_contrib-default-0.1.0`
+- `logs-chargeback_serverless.ai_contrib-default-0.1.0`
+- `logs-chargeback_serverless.synthetics_contrib-default-0.1.0`
+- `logs-chargeback_serverless.project_status-default-0.1.0`
 
 ### 2. Verify project harvest status in Dev Tools
 
@@ -333,5 +361,5 @@ Open **Dashboards** and select **`[Chargeback Serverless] Billing Components Ove
 
 ## Next steps
 
-- Review the [Chargeback Serverless configuration reference](CONFIG.md) to customize currency rates, Hosted vs. Serverless billing filters, or the 10 FinOps ES|QL alerting rules.
+- Review the [Chargeback Serverless configuration reference](CONFIG.md) to customize currency rates, Hosted vs. Serverless billing filters, or the 4 FinOps ES|QL alerting rules.
 - See [Troubleshoot the Chargeback integration](../chargeback/docs/troubleshooting.md) if any project shows an authentication warning or missing billing history.

@@ -1,12 +1,12 @@
 # Chargeback Serverless integration overview
 
-The Chargeback Serverless integration (`chargeback_serverless` `0.4.0`) provides native FinOps cost attribution and workload showback for **Elastic Cloud Serverless** organizations—without requiring a dedicated Elastic Cloud Hosted monitoring cluster. Running directly on a Serverless FinOps hub project through a Fleet-managed Elastic Agent (or the standalone Python backfill collector), the integration uses a single unified Elastic Cloud API key to collect organization-wide Serverless billing history (including deleted projects) and per-project data stream, index, AI model, and Synthetics telemetry.
+The Chargeback Serverless integration (`chargeback_serverless` `0.1.0`) provides native FinOps cost attribution and workload showback for **Elastic Cloud Serverless** organizations—without requiring a dedicated Elastic Cloud Hosted monitoring cluster. Running directly on a Serverless FinOps hub project through a Fleet-managed Elastic Agent (or the standalone Python backfill collector), the integration uses a single unified Elastic Cloud API key to collect organization-wide Serverless billing history (including deleted projects) and per-project data stream, index, AI model, and Synthetics telemetry.
 
 ## Quick start: Customer Installation vs. Developer Workflows
 
 - **For Customers & FinOps Operators (Kibana Fleet UI — no `elastic/integrations` checkout required)**:
-  1. Pre-create the lookup index templates in Kibana Dev Tools (`"index.mode": "lookup"`), upload the prebuilt package [`assets/dist/chargeback_serverless-0.4.0.zip`](assets/dist/chargeback_serverless-0.4.0.zip) in Kibana (**Management → Integrations → Upload integration**), and attach it to a dedicated **`Chargeback Serverless Policy`**.
-  2. *(Optional)* Run [`python3 scripts/run_chargeback_serverless_collector.py`](../../scripts/run_chargeback_serverless_collector.py) to immediately backfill historical per-project usage telemetry alongside the 60-day billing lookbehind.
+  1. Pre-create the lookup index templates in Kibana Dev Tools (`"index.mode": "lookup"`), upload the prebuilt package [`assets/dist/chargeback_serverless-0.1.0.zip`](assets/dist/chargeback_serverless-0.1.0.zip) in Kibana (**Management → Integrations → Upload integration**), and attach it to a dedicated **`Chargeback Serverless Policy`**.
+  2. *(Optional)* Run [`python3 scripts/run_chargeback_serverless_collector.py --usage-only`](../../scripts/run_chargeback_serverless_collector.py) to immediately backfill historical per-project usage telemetry alongside the Fleet Agent's billing lookbehind.
   3. See **Part 1** of [Install and configure Chargeback Serverless](Instructions.md) for step-by-step instructions.
 - **For Developers & Maintainers (Automated CLI Deployment)**:
   - Run [`./scripts/deploy_chargeback_serverless.sh`](../../scripts/deploy_chargeback_serverless.sh) from a Python `venv` (`pip install pyyaml`) to automate lookup template creation, package upload, transform provisioning, policy creation, historical backfill, and E2E verification.
@@ -41,7 +41,7 @@ flowchart LR
 
     subgraph Kibana["Kibana FinOps Experience"]
         Dash["5 Linked ES|QL Dashboards"]:::pink
-        Rules["10 FinOps Spend & Data Trust<br/>ES|QL Alerting Rules"]:::pink
+        Rules["4 FinOps Spend & Data Trust<br/>ES|QL Alerting Rules"]:::pink
     end
 
     BillingAPI --> BStream
@@ -89,29 +89,23 @@ The package installs five linked Kibana dashboards with a shared top navigation 
 
 ## Prebuilt FinOps alerting rules
 
-Chargeback Serverless includes 10 ES|QL alerting rule templates in [`assets/kibana/alerting_rule_template/`](assets/kibana/alerting_rule_template/) with second-line `EVAL` threshold and filter variables that you can instantiate in Kibana (**Stack Management → Rules → Create rule**, searching for `[Chargeback Serverless]`):
+Chargeback Serverless includes 4 ES|QL alerting rule templates in [`assets/kibana/alerting_rule_template/`](assets/kibana/alerting_rule_template/) with second-line `EVAL` threshold and filter variables that you can instantiate in Kibana directly from **Management → Integrations → Installed integrations → Chargeback Serverless → Assets → Alerting rule templates** (or via **Stack Management → Rules → Create rule → Classic** tab, searching for `[Chargeback Serverless]`):
 
-1. **`[Chargeback Serverless] Total daily spend threshold exceeded`**: Alerts when total organization daily spend exceeds `threshold_spend` (default `1000.0`).
-2. **`[Chargeback Serverless] Rolling 30-day total spend budget exceeded`**: Alerts when cumulative 30-day spend exceeds `threshold_budget` (default `25000.0`).
-3. **`[Chargeback Serverless] Cost category daily spend threshold exceeded`**: Alerts when any `cost_category` matching `filter_category` exceeds `threshold_spend` (default `300.0`).
-4. **`[Chargeback Serverless] Workload driver daily spend threshold exceeded`**: Alerts when Indexing, Query, Storage, AI, or Synthetics spend matching `filter_driver` exceeds `threshold_spend` (default `250.0`).
-5. **`[Chargeback Serverless] Project daily spend threshold exceeded`**: Alerts when any single project matching `filter_project` exceeds `threshold_spend` (default `200.0`).
-6. **`[Chargeback Serverless] Project daily spend spike vs. 7-day baseline`**: Alerts when a project's daily spend increases by more than `threshold_pct_increase` (default `50.0%`) over its 7-day baseline and exceeds `min_daily_spend` (default `25.0`).
-7. **`[Chargeback Serverless] Namespace attributed daily spend threshold exceeded`**: Alerts when any `ds_namespace` matching `filter_namespace` exceeds `threshold_spend` (default `100.0`).
-8. **`[Chargeback Serverless] AI model attributed daily spend threshold exceeded`**: Alerts when any `.inference` model matching `filter_model` exceeds `threshold_spend` (default `50.0`).
-9. **`[Chargeback Serverless] Synthetics monitor attributed daily spend threshold exceeded`**: Alerts when any Synthetics monitor matching `filter_monitor` exceeds `threshold_spend` (default `25.0`).
-10. **`[Chargeback Serverless] Data trust & project harvest health issue`**: Alerts when any discovered Serverless project fails usage harvesting (`last_status != "ok"`) or unallocated spend exceeds `threshold_unallocated_spend` (default `100.0`) and `threshold_unallocated_pct` (default `25.0%`).
+1. **`[Chargeback Serverless] Rolling 30-day total spend budget exceeded`**: Alerts when cumulative 30-day organization spend reaches the budget watermark `threshold_pct` (default `80.0%` of `threshold_budget = 25000.0`) or when `alert_on_projected` (`true`) detects a projected 30-day overrun after at least 3 billed days.
+2. **`[Chargeback Serverless] Project daily spend threshold exceeded`**: Alerts when any single project matching `filter_project` and optional `filter_driver` (`indexing`, `search`, `storage`, `ai`, `synthetics`) exceeds `threshold_spend` (default `200.0`), reporting the per-driver spend breakdown.
+3. **`[Chargeback Serverless] Project daily spend spike vs. 7-day baseline`**: Alerts when a project's daily spend increases by more than `threshold_pct_increase` (default `50.0%`) over its 7-day baseline and exceeds `min_daily_spend` (default `25.0`).
+4. **`[Chargeback Serverless] Data trust & project harvest health issue`**: Alerts when any discovered Serverless project fails usage harvesting (`last_status != "ok"`) or unallocated spend exceeds `threshold_unallocated_spend` (default `100.0`) and `threshold_unallocated_pct` (default `25.0%`).
 
 ## Package assets in this directory
 
 | Path | Description |
 | --- | --- |
-| [`assets/dist/chargeback_serverless-0.4.0.zip`](assets/dist/chargeback_serverless-0.4.0.zip) | Prebuilt Fleet integration package ready to upload in Kibana (**Management → Integrations → Upload integration**). |
+| [`assets/dist/chargeback_serverless-0.1.0.zip`](assets/dist/chargeback_serverless-0.1.0.zip) | Prebuilt Fleet integration package ready to upload in Kibana (**Management → Integrations → Upload integration**). |
 | [`Instructions.md`](Instructions.md) | Step-by-step customer installation guide (Kibana Fleet UI) and developer/maintainer automated deployment reference. |
 | [`CONFIG.md`](CONFIG.md) | Reference for Fleet policy settings, currency conversion configuration, and alerting thresholds. |
-| [`dashboards/DESIGN.md`](dashboards/DESIGN.md) | Detailed design reference for the five dashboards, filter controls, lookup indices, data classification rules, and 10 alerting rule templates. |
+| [`dashboards/DESIGN.md`](dashboards/DESIGN.md) | Detailed design reference for the five dashboards, filter controls, lookup indices, data classification rules, and 4 alerting rule templates. |
 | [`assets/kibana/dashboard/`](assets/kibana/dashboard/) | Saved object JSON definitions for all five Chargeback Serverless dashboards. |
-| [`assets/kibana/alerting_rule_template/`](assets/kibana/alerting_rule_template/) | 10 ES|QL FinOps spend and data-trust alerting rule template definitions. |
+| [`assets/kibana/alerting_rule_template/`](assets/kibana/alerting_rule_template/) | 4 ES|QL FinOps spend and data-trust alerting rule template definitions. |
 
 ## Next steps
 
