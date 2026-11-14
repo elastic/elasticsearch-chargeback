@@ -187,18 +187,14 @@ PUT _index_template/chargeback_serverless_lookup_project_status
 }
 ```
 
-> [!TIP]
-> **Migrating a test hub from an earlier pre-EPR `0.4.x` custom `.zip` build**:
-> - Re-run the four `PUT _index_template/...` commands above so `default_pipeline` points to the `0.1.0` lookup pipelines (`metrics-chargeback_serverless.*-0.1.0-lookup_*`), upload `chargeback_serverless-0.1.0.zip` in **Management → Integrations → Upload integration**, and remove/re-add any existing `0.4.x` integration policy in **Management → Integrations → Installed integrations → Chargeback Serverless → Policies** so the policy binds to `0.1.0` (existing `metrics-chargeback_serverless.*` and `serverless_*_lookup` indices are preserved; or run `./scripts/deploy_chargeback_serverless.sh` to update templates, transforms, and the Fleet policy automatically).
-> - If `serverless_billing_cost_lookup` was created using an earlier template that mapped `total_quantity` instead of `quantity_value` (`Unknown column [quantity_value]`), add the `quantity_value` mapping in Dev Tools without recreating the index:
-> ```json
-> PUT serverless_billing_cost_lookup/_mapping
-> {
->   "properties": {
->     "quantity_value": { "type": "double" }
->   }
-> }
-> ```
+> [!WARNING]
+> **Migrating an existing hub from an earlier pre-EPR `0.4.x` custom `.zip` build to `0.1.0`**:
+> Kibana Fleet blocks uploading `0.1.0` over `0.4.x` (`not newer than the installed version`), and after `0.4.x` is uninstalled Fleet also blocks uploading a `.zip` while live `metrics-chargeback_serverless.*` data streams still exist on the cluster.
+> - **Clean test-hub reset (recommended when Elastic Agent will re-backfill billing)**:
+>   1. Remove existing `Chargeback Serverless` integration policies in **Management → Integrations → Installed integrations → Chargeback Serverless → Policies**, then click **Uninstall Chargeback Serverless**.
+>   2. In **Management → Dev Tools**, delete the old data streams and concrete lookup indices (`DELETE _data_stream/metrics-chargeback_serverless.*` and `DELETE serverless_*_lookup*`), then run the four `PUT _index_template/...` requests above so `default_pipeline` points to `*-0.1.0-lookup_*`.
+>   3. Upload `chargeback_serverless-0.1.0.zip` in Step 3 below (or run `./scripts/deploy_chargeback_serverless.sh` to automate the full setup).
+> - **Preserving existing `usage` history across the downgrade**: Before step 2 above, `_reindex` `metrics-chargeback_serverless.usage-default` to a temporary backup index (for example `chargeback_serverless_usage_backup`), delete `metrics-chargeback_serverless.*` and `serverless_*_lookup*`, upload `0.1.0.zip` and add the integration policy, then `_reindex` the backup index back into `metrics-chargeback_serverless.usage-default` with `"op_type": "create"`.
 
 ### Step 3: Install Integration Package in Kibana & Configure Policy Settings
 
@@ -208,7 +204,7 @@ PUT _index_template/chargeback_serverless_lookup_project_status
 4. Enter your configuration values (matching the fields in `manifest.yml`):
    - **Organization ID (`organization_id`)**: Enter your numeric Elastic Cloud organization ID (`<YOUR_ORGANIZATION_ID>`).
    - **Elastic Cloud API Key (`cloud_api_key`)**: Paste your unified Elastic Cloud API key from Step 1.
-   - **Billing Lookbehind Days (`lookbehind`)**: Keep the default `60` (backfills up to 60 completed UTC days of billing history on initial run).
+   - **Billing Lookbehind Days (`lookbehind`)**: Set your desired backfill window **before** first saving the policy (default `60`, maximum `365` completed UTC days). Because the `billing` CEL stream persists its `last_to` cursor on initial execution, increasing `lookbehind` later on an existing integration policy will not retroactively backfill older dates unless you remove and re-add the integration to reset its cursor.
    - **Currency Unit (`currency_unit`)**: Enter your target display currency code (default `USD`; for example, `USD`, `EUR`, `ZAR`, `GBP`, `ECU`).
    - **Currency Symbol (`currency_symbol`)**: Enter your currency symbol (default `$`; for example, `$`, `€`, `R`, `£`).
    - **Chargeable Unit Rate (`unit_rate`)**: Enter your conversion multiplier from `1.0` ECU to your target currency (default `1.0`).
@@ -235,7 +231,7 @@ When an Elastic Agent is enrolled in the **`Chargeback Serverless Policy`**:
 - The **`billing` CEL stream** automatically backfills up to `lookbehind` days (default `60` days) of historical billing data from the Elastic Cloud Billing API.
 - The **`usage` CEL stream** harvests point-in-time per-project index, data stream, AI model, and Synthetics telemetry daily from the day of enrollment onward.
 
-If you want to immediately backfill historical `usage` snapshots across your past billing dates (or run collection without waiting for an Elastic Agent), run the cross-platform Python backfill collector [`scripts/run_chargeback_serverless_collector.py`](../../scripts/run_chargeback_serverless_collector.py) using standard environment variables (Linux, Windows/WSL, or macOS) or a `.env` file:
+If you want to backfill estimated historical `usage` snapshots across your past billing dates alongside an active Elastic Agent (projecting current index/model topology onto earlier billing days), pass `--usage-only` to [`scripts/run_chargeback_serverless_collector.py`](../../scripts/run_chargeback_serverless_collector.py) so existing Agent billing records and currency settings are preserved (omit `--usage-only` only when running standalone without an Elastic Agent):
 
 ```bash
 export ORGANIZATION_ID="<YOUR_ORGANIZATION_ID>"
@@ -245,6 +241,10 @@ export ES_API_KEY="<YOUR_HUB_PROJECT_API_KEY>"
 export KIBANA_URL="https://<your-hub-project>.kb.<region>.<csp>.elastic.cloud"
 export KIBANA_API_KEY="<YOUR_HUB_PROJECT_API_KEY>"
 
+# Alongside an enrolled Fleet Elastic Agent (backfills usage only; preserves Agent billing & currency):
+python3 scripts/run_chargeback_serverless_collector.py --usage-only --lookbehind 60
+
+# Standalone Agent-free mode (collects both billing and usage):
 python3 scripts/run_chargeback_serverless_collector.py
 ```
 

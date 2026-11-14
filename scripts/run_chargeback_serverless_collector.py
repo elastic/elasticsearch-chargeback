@@ -9,6 +9,7 @@
 # into metrics-chargeback_serverless.billing-default and metrics-chargeback_serverless.usage-default.
 # ==============================================================================
 
+import argparse
 import json
 import os
 import re
@@ -23,6 +24,34 @@ from datetime import datetime, timedelta, timezone
 def get_env(key, default=""):
     return os.environ.get(key, default).strip()
 
+def _parse_cli_args():
+    parser = argparse.ArgumentParser(description="Chargeback Serverless historical backfill and local collector")
+    mode_grp = parser.add_mutually_exclusive_group()
+    mode_grp.add_argument(
+        "--usage-only",
+        action="store_true",
+        help="Backfill usage telemetry only without deleting or overwriting billing data collected by Elastic Agent.",
+    )
+    mode_grp.add_argument(
+        "--billing-only",
+        action="store_true",
+        help="Collect and backfill historical billing data only without harvesting project usage.",
+    )
+    parser.add_argument("--lookbehind", type=int, default=None, help="Override LOOKBEHIND days (1..365).")
+    parser.add_argument(
+        "--bulk-chunk-size",
+        type=int,
+        default=None,
+        help="Maximum documents per _bulk HTTP request (default: 5000).",
+    )
+    args, _ = parser.parse_known_args()
+    return args
+
+CLI_ARGS = _parse_cli_args()
+ENV_MODE = get_env("COLLECTOR_MODE", "all").lower()
+USAGE_ONLY = bool(CLI_ARGS.usage_only or ENV_MODE == "usage")
+BILLING_ONLY = bool(CLI_ARGS.billing_only or ENV_MODE == "billing")
+
 ORG_ID = get_env("ORGANIZATION_ID")
 CLOUD_API_KEY = get_env("CLOUD_API_KEY") or get_env("USAGE_API_KEY") or get_env("BILLING_API_KEY")
 ES_URL = get_env("ES_URL") or get_env("sl_url") or get_env("ES_HOST")
@@ -32,7 +61,8 @@ HUB_ES_API_KEY = get_env("HUB_ES_API_KEY") or ES_API_KEY
 BILLING_API_BASE = get_env("BILLING_API_BASE", "https://billing.elastic-cloud.com").rstrip("/")
 CLOUD_API_BASE = get_env("CLOUD_API_BASE", "https://api.elastic-cloud.com").rstrip("/")
 
-LOOKBEHIND = int(get_env("LOOKBEHIND", "60") or 60)
+LOOKBEHIND = int(CLI_ARGS.lookbehind if CLI_ARGS.lookbehind is not None else (get_env("LOOKBEHIND", "60") or 60))
+BULK_CHUNK_SIZE = max(100, int(CLI_ARGS.bulk_chunk_size if CLI_ARGS.bulk_chunk_size is not None else (get_env("BULK_CHUNK_SIZE", "5000") or 5000)))
 CONF_RATE = float(get_env("CONF_RATE", "1.0") or 1.0)
 CONF_RATE_UNIT = get_env("CONF_RATE_UNIT", "USD") or "USD"
 CONF_CURRENCY_SYMBOL = get_env("CONF_CURRENCY_SYMBOL", "$") or "$"
@@ -101,6 +131,8 @@ def is_serverless_sku(sku):
         "synthetic",
         "agent-builder",
         "inference",
+        "workflow",
+        "global.",
     ])
 
 
@@ -283,12 +315,13 @@ def ensure_lookup_index(es_url, api_key, index_name, properties=None):
     base = es_url.rstrip("/")
     hdrs = {"Authorization": f"ApiKey {api_key}", "Content-Type": "application/json"}
     props = properties or LOOKUP_INDEX_SCHEMAS.get(index_name, {})
-    # Install persistent fallback index template so transform resets always recreate in mode: lookup
+    dest_idx = f"{index_name}-1"
+    # Install persistent fallback index template (priority 400 < Step 2's priority 500) matching *-1 indices
     tmpl_body = json.dumps({
-        "index_patterns": [index_name],
+        "index_patterns": [f"{index_name}*"],
         "priority": 400,
         "template": {
-            "settings": {"index": {"mode": "lookup"}},
+            "settings": {"index": {"mode": "lookup", "codec": "best_compression"}},
             "mappings": {"properties": props}
         }
     })
@@ -298,24 +331,40 @@ def ensure_lookup_index(es_url, api_key, index_name, properties=None):
             pass
     except Exception:
         pass
+    # Remove any legacy plain-name concrete index so index_name is always an alias to dest_idx (*-1)
     try:
         _, info = http_get(f"{base}/{index_name}", hdrs, timeout=10, retries=1)
-        idx_obj = (info or {}).get(index_name) or next(iter((info or {}).values()), {})
-        mode = (((idx_obj.get("settings") or {}).get("index") or {}).get("mode")) or ""
-        if mode == "lookup":
+        if isinstance(info, dict) and index_name in info:
+            req = urllib.request.Request(f"{base}/{index_name}", headers=hdrs, method="DELETE")
+            with urllib.request.urlopen(req, timeout=15, context=create_ssl_context(base)):
+                pass
+        elif isinstance(info, dict) and info:
+            first_idx, idx_obj = next(iter(info.items()))
+            mode = (((idx_obj.get("settings") or {}).get("index") or {}).get("mode")) or ""
+            if mode == "lookup":
+                return
+            req = urllib.request.Request(f"{base}/{first_idx}", headers=hdrs, method="DELETE")
+            with urllib.request.urlopen(req, timeout=15, context=create_ssl_context(base)):
+                pass
+    except Exception:
+        pass
+    # Ensure dest_idx (*-1) exists in lookup mode and carries write alias index_name
+    try:
+        _, dinfo = http_get(f"{base}/{dest_idx}", hdrs, timeout=10, retries=1)
+        d_obj = (dinfo or {}).get(dest_idx) or {}
+        d_mode = (((d_obj.get("settings") or {}).get("index") or {}).get("mode")) or ""
+        if d_mode == "lookup":
+            alias_body = json.dumps({"actions": [{"add": {"index": dest_idx, "alias": index_name, "is_write_index": True}}]})
+            http_post_bulk(f"{base}/_aliases", hdrs, alias_body, timeout=15, retries=2)
             return
-        # Recreate if existing index is not in lookup mode
-        req = urllib.request.Request(f"{base}/{index_name}", headers=hdrs, method="DELETE")
-        with urllib.request.urlopen(req, timeout=10, context=create_ssl_context(base)):
+        req = urllib.request.Request(f"{base}/{dest_idx}", headers=hdrs, method="DELETE")
+        with urllib.request.urlopen(req, timeout=15, context=create_ssl_context(base)):
             pass
     except Exception:
         pass
-    body = json.dumps({
-        "settings": {"index": {"mode": "lookup"}},
-        "mappings": {"properties": props}
-    })
+    create_body = json.dumps({"aliases": {index_name: {"is_write_index": True}}})
     try:
-        req = urllib.request.Request(f"{base}/{index_name}", data=body.encode("utf-8"), headers=hdrs, method="PUT")
+        req = urllib.request.Request(f"{base}/{dest_idx}", data=create_body.encode("utf-8"), headers=hdrs, method="PUT")
         with urllib.request.urlopen(req, timeout=15, context=create_ssl_context(base)):
             pass
     except Exception:
@@ -351,18 +400,89 @@ def http_get(url, headers=None, timeout=30, retries=5):
 
 def http_post_bulk(url, headers, bulk_body_str, timeout=60, retries=5):
     last_err = None
+    payload_bytes = bulk_body_str.encode("utf-8")
     for attempt in range(retries):
         try:
-            req = urllib.request.Request(url, data=bulk_body_str.encode("utf-8"), headers=headers)
+            req = urllib.request.Request(url, data=payload_bytes, headers=headers)
             ctx = create_ssl_context(url)
             with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
                 return resp.getcode(), json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
+            if e.code in (429, 502, 503, 504) and attempt + 1 < retries:
+                last_err = e
+                time.sleep(min(8.0, 1.5 ** (attempt + 1)))
+                continue
             raise e
         except Exception as e:
             last_err = e
-            time.sleep(1.0)
+            time.sleep(min(8.0, 1.5 ** (attempt + 1)))
     raise last_err
+
+
+def bulk_ingest_chunked(url, headers, docs, action_fn, label, chunk_size=BULK_CHUNK_SIZE, max_bytes=10 * 1024 * 1024):
+    total = len(docs)
+    if total == 0:
+        return True
+    batch_lines = []
+    batch_bytes = 0
+    batch_docs = 0
+    batches_sent = 0
+    indexed_ok = 0
+    failed_items = 0
+    sample_err = None
+
+    def _flush():
+        nonlocal batch_lines, batch_bytes, batch_docs, batches_sent, indexed_ok, failed_items, sample_err
+        if not batch_lines:
+            return True
+        payload = "\n".join(batch_lines) + "\n"
+        count_in_batch = batch_docs
+        batch_lines = []
+        batch_bytes = 0
+        batch_docs = 0
+        batches_sent += 1
+        try:
+            _, resp = http_post_bulk(url, headers, payload, timeout=120, retries=5)
+        except Exception as exc:
+            print(f"  ✗ Failed _bulk batch #{batches_sent} ({count_in_batch} {label} docs) to {url}: {exc}", file=sys.stderr)
+            return False
+        if resp.get("errors", False):
+            batch_errs = []
+            for item in resp.get("items", []):
+                op_res = next(iter(item.values()), {}) if isinstance(item, dict) else {}
+                if "error" in op_res:
+                    batch_errs.append(op_res["error"])
+            if batch_errs:
+                failed_items += len(batch_errs)
+                if sample_err is None:
+                    sample_err = batch_errs[0]
+        indexed_ok += count_in_batch
+        return True
+
+    for doc in docs:
+        act_line = json.dumps(action_fn(doc))
+        doc_line = json.dumps(doc)
+        pair_bytes = len(act_line.encode("utf-8")) + len(doc_line.encode("utf-8")) + 2
+        if batch_docs > 0 and (batch_docs >= chunk_size or (batch_bytes + pair_bytes) > max_bytes):
+            if not _flush():
+                return False
+        batch_lines.append(act_line)
+        batch_lines.append(doc_line)
+        batch_bytes += pair_bytes
+        batch_docs += 1
+
+    if not _flush():
+        return False
+
+    if failed_items > 0:
+        print(
+            f"  ✗ Bulk index for {label} reported {failed_items} failed item(s) across {batches_sent} batch(es); first error: {sample_err}",
+            file=sys.stderr,
+        )
+        return False
+
+    print(f"  ✓ Successfully indexed {indexed_ok} {label} records across {batches_sent} bulk batch(es).")
+    return True
 
 def classify_sku(sku, kind, item_type):
     s = (sku or "")
@@ -572,17 +692,21 @@ def main():
             if hosted_project_ids:
                 print(f"  • Excluding and purging {len(hosted_project_ids)} non-Serverless Hosted deployment(s) from Chargeback Serverless indices")
                 del_q = json.dumps({"query": {"terms": {"project_id": list(hosted_project_ids)}}})
-                for target_idx in [
-                    "metrics-chargeback_serverless.billing-default",
+                purge_targets = [
                     "metrics-chargeback_serverless.usage-default",
-                    "serverless_billing_cost_lookup",
-                    "serverless_billing_realized_pool_lookup",
                     "serverless_datastream_contribution_lookup",
                     "serverless_project_contribution_lookup",
                     "serverless_ai_model_contribution_lookup",
                     "serverless_synthetics_monitor_contribution_lookup",
                     "serverless_project_status_lookup",
-                ]:
+                ]
+                if not USAGE_ONLY:
+                    purge_targets = [
+                        "metrics-chargeback_serverless.billing-default",
+                        "serverless_billing_cost_lookup",
+                        "serverless_billing_realized_pool_lookup",
+                    ] + purge_targets
+                for target_idx in purge_targets:
                     try:
                         http_post_bulk(f"{ES_URL.rstrip('/')}/{target_idx}/_delete_by_query?conflicts=proceed&refresh=true", search_hdrs, del_q, timeout=20)
                     except Exception:
@@ -903,27 +1027,35 @@ def main():
 
     billing_docs.sort(key=lambda d: (d["@timestamp"], d["project_id"], d["sku"]))
 
+    had_fatal_error = False
+
     # Purge any records of today or future from target indices, plus any error records
-    delete_existing_window(ES_URL, ES_API_KEY, "metrics-chargeback_serverless.billing-default", today_start_iso, "now+1d")
-    delete_existing_window(ES_URL, ES_API_KEY, "metrics-chargeback_serverless.usage-default", today_start_iso, "now+1d")
-    try:
-        http_post_bulk(
-            f"{ES_URL.rstrip('/')}/metrics-chargeback_serverless.billing-default/_delete_by_query?conflicts=proceed&refresh=true",
-            es_headers,
-            json.dumps({"query": {"exists": {"field": "error.code"}}}),
-            timeout=30
-        )
-    except Exception:
-        pass
-    for lk_idx in [
-        "serverless_billing_cost_lookup",
-        "serverless_billing_realized_pool_lookup",
-        "serverless_datastream_contribution_lookup",
-        "serverless_project_contribution_lookup",
-        "serverless_ai_model_contribution_lookup",
-        "serverless_synthetics_monitor_contribution_lookup",
-        "serverless_project_status_lookup"
-    ]:
+    if not USAGE_ONLY:
+        delete_existing_window(ES_URL, ES_API_KEY, "metrics-chargeback_serverless.billing-default", today_start_iso, "now+1d")
+        try:
+            http_post_bulk(
+                f"{ES_URL.rstrip('/')}/metrics-chargeback_serverless.billing-default/_delete_by_query?conflicts=proceed&refresh=true",
+                es_headers,
+                json.dumps({"query": {"exists": {"field": "error.code"}}}),
+                timeout=30
+            )
+        except Exception:
+            pass
+    if not BILLING_ONLY:
+        delete_existing_window(ES_URL, ES_API_KEY, "metrics-chargeback_serverless.usage-default", today_start_iso, "now+1d")
+
+    purge_lk = []
+    if not USAGE_ONLY:
+        purge_lk.extend(["serverless_billing_cost_lookup", "serverless_billing_realized_pool_lookup"])
+    if not BILLING_ONLY:
+        purge_lk.extend([
+            "serverless_datastream_contribution_lookup",
+            "serverless_project_contribution_lookup",
+            "serverless_ai_model_contribution_lookup",
+            "serverless_synthetics_monitor_contribution_lookup",
+            "serverless_project_status_lookup",
+        ])
+    for lk_idx in purge_lk:
         delete_existing_window(ES_URL, ES_API_KEY, lk_idx, today_start_iso, "now+1d")
 
     # Detect whether continuous Fleet transforms exist so we don't create duplicate _id docs in lookup indices
@@ -936,52 +1068,32 @@ def main():
     has_billing_cost_tf = any("billing_cost" in tid for tid in active_transforms)
     has_proj_status_tf = any("project_status" in tid or "proj_status" in tid for tid in active_transforms)
 
-    if billing_docs:
+    if USAGE_ONLY:
+        print("  • --usage-only mode active: preserving existing metrics-chargeback_serverless.billing-default and serverless_billing_cost_lookup records.")
+    elif billing_docs:
         min_ts = billing_docs[0]["@timestamp"]
         max_ts = billing_docs[-1]["@timestamp"]
         delete_existing_window(ES_URL, ES_API_KEY, "metrics-chargeback_serverless.billing-default", min_ts, max_ts)
         delete_existing_window(ES_URL, ES_API_KEY, "serverless_billing_cost_lookup", min_ts, max_ts)
         delete_existing_window(ES_URL, ES_API_KEY, "serverless_billing_realized_pool_lookup", min_ts, max_ts)
         print(f"  • Ingesting {len(billing_docs)} daily billing metric documents into metrics-chargeback_serverless.billing-default...")
-        bulk_lines = []
-        for d in billing_docs:
-            bulk_lines.append(json.dumps({"create": {}}))
-            bulk_lines.append(json.dumps(d))
-        bulk_payload = "\n".join(bulk_lines) + "\n"
-
         target_es_bulk = f"{ES_URL.rstrip('/')}/metrics-chargeback_serverless.billing-default/_bulk"
-        try:
-            status, bulk_resp = http_post_bulk(target_es_bulk, es_headers, bulk_payload)
-            errors = bulk_resp.get("errors", False)
-            if errors:
-                err_items = [item for item in bulk_resp.get("items", []) if "error" in item.get("create", {})]
-                print(f"  ⚠ Bulk index reported {len(err_items)} errors: {err_items[:1]}")
-            else:
-                print(f"  ✓ Successfully indexed {len(billing_docs)} daily billing records into metrics stream.")
-        except Exception as e:
-            print(f"  ⚠ Failed to bulk index billing metrics: {e}")
+        if not bulk_ingest_chunked(target_es_bulk, es_headers, billing_docs, lambda _d: {"create": {}}, "daily billing"):
+            had_fatal_error = True
 
         # Only direct-write to serverless_billing_cost_lookup when the continuous Fleet transform is not installed
         if not has_billing_cost_tf:
             ensure_lookup_index(ES_URL, ES_API_KEY, "serverless_billing_cost_lookup")
             print(f"  • Ingesting {len(billing_docs)} daily billing records directly into serverless_billing_cost_lookup (no transform detected)...")
-            lk_bulk_lines = []
-            for d in billing_docs:
-                doc_id = f"{d['composite_key']}_{d['sku']}"
-                lk_bulk_lines.append(json.dumps({"index": {"_id": doc_id}}))
-                lk_bulk_lines.append(json.dumps(d))
-            lk_bulk_payload = "\n".join(lk_bulk_lines) + "\n"
             target_lk_bulk = f"{ES_URL.rstrip('/')}/serverless_billing_cost_lookup/_bulk"
-            try:
-                status, bulk_resp = http_post_bulk(target_lk_bulk, es_headers, lk_bulk_payload)
-                errors = bulk_resp.get("errors", False)
-                if errors:
-                    err_items = [item for item in bulk_resp.get("items", []) if "error" in item.get("index", {})]
-                    print(f"  ⚠ Bulk index to serverless_billing_cost_lookup reported {len(err_items)} errors: {err_items[:1]}")
-                else:
-                    print(f"  ✓ Successfully indexed {len(billing_docs)} daily billing records into serverless_billing_cost_lookup.")
-            except Exception as e:
-                print(f"  ⚠ Failed to direct-index into serverless_billing_cost_lookup: {e}")
+            if not bulk_ingest_chunked(
+                target_lk_bulk,
+                es_headers,
+                billing_docs,
+                lambda d: {"index": {"_id": f"{d['composite_key']}_{d['sku']}"}},
+                "serverless_billing_cost_lookup",
+            ):
+                had_fatal_error = True
     else:
         print("  Notice: No Serverless billing line items found for the given window.")
 
@@ -998,6 +1110,23 @@ def main():
             u_unit = b_unit
             u_sym = latest_bdoc.get("conf_currency_symbol", u_sym)
             u_rate = latest_bdoc.get("conf_chargeable_unit_rate", u_rate)
+    elif USAGE_ONLY and not get_env("CONF_RATE_UNIT"):
+        try:
+            _, cur_resp = http_post_bulk(
+                f"{ES_URL.rstrip('/')}/metrics-chargeback_serverless.billing-*/_search",
+                search_hdrs,
+                json.dumps({"size": 1, "sort": [{"@timestamp": {"order": "desc"}}]}),
+                timeout=10,
+            )
+            cur_hits = ((cur_resp.get("hits") or {}).get("hits") or [])
+            if cur_hits:
+                cur_src = cur_hits[0].get("_source") or {}
+                if cur_src.get("conf_chargeable_unit_rate_unit"):
+                    u_unit = cur_src["conf_chargeable_unit_rate_unit"]
+                    u_sym = cur_src.get("conf_currency_symbol", u_sym)
+                    u_rate = float(cur_src.get("conf_chargeable_unit_rate", u_rate))
+        except Exception:
+            pass
 
     # Calculate latest daily realized pool per project
     pools = {}
@@ -1585,7 +1714,7 @@ def main():
             u_curr += timedelta(days=1)
         print(f"  • {pname} ({pid}): status=inactive (decommissioned / historical in window)")
 
-    if usage_docs:
+    if usage_docs and not BILLING_ONLY:
         min_u_ts = f"{start_date.strftime('%Y-%m-%d')}T00:00:00.000Z"
         max_u_ts = f"{end_date.strftime('%Y-%m-%d')}T00:00:00.000Z"
         delete_existing_window(ES_URL, ES_API_KEY, "metrics-chargeback_serverless.usage-default", min_u_ts, max_u_ts)
@@ -1598,46 +1727,24 @@ def main():
         ]:
             delete_existing_window(ES_URL, ES_API_KEY, u_lk, min_u_ts, max_u_ts)
         print(f"\n  Ingesting {len(usage_docs)} daily usage documents into metrics-chargeback_serverless.usage-default...")
-        bulk_lines = []
-        for d in usage_docs:
-            bulk_lines.append(json.dumps({"create": {}}))
-            bulk_lines.append(json.dumps(d))
-        bulk_payload = "\n".join(bulk_lines) + "\n"
-
         target_es_bulk = f"{ES_URL.rstrip('/')}/metrics-chargeback_serverless.usage-default/_bulk"
-        try:
-            status, bulk_resp = http_post_bulk(target_es_bulk, es_headers, bulk_payload)
-            errors = bulk_resp.get("errors", False)
-            if errors:
-                err_items = [item for item in bulk_resp.get("items", []) if "error" in item.get("create", {})]
-                print(f"  ⚠ Bulk index reported {len(err_items)} errors: {err_items[:1]}")
-            else:
-                print(f"  ✓ Successfully indexed {len(usage_docs)} daily usage records.")
-        except Exception as e:
-            print(f"  ⚠ Failed to bulk index usage metrics: {e}")
+        if not bulk_ingest_chunked(target_es_bulk, es_headers, usage_docs, lambda _d: {"create": {}}, "daily usage"):
+            had_fatal_error = True
 
         # Only direct-write project_status into serverless_project_status_lookup when the continuous Fleet transform is not installed
         status_docs = [d for d in usage_docs if d.get("doc_type") == "project_status"]
         if status_docs and not has_proj_status_tf:
             ensure_lookup_index(ES_URL, ES_API_KEY, "serverless_project_status_lookup")
             print(f"  • Ingesting {len(status_docs)} project status records directly into serverless_project_status_lookup (no transform detected)...")
-            ps_bulk_lines = []
-            for d in status_docs:
-                doc_id = d["composite_key"]
-                ps_bulk_lines.append(json.dumps({"index": {"_id": doc_id}}))
-                ps_bulk_lines.append(json.dumps(d))
-            ps_bulk_payload = "\n".join(ps_bulk_lines) + "\n"
             target_ps_bulk = f"{ES_URL.rstrip('/')}/serverless_project_status_lookup/_bulk"
-            try:
-                status, bulk_resp = http_post_bulk(target_ps_bulk, es_headers, ps_bulk_payload)
-                errors = bulk_resp.get("errors", False)
-                if errors:
-                    err_items = [item for item in bulk_resp.get("items", []) if "error" in item.get("index", {})]
-                    print(f"  ⚠ Bulk index to serverless_project_status_lookup reported {len(err_items)} errors: {err_items[:1]}")
-                else:
-                    print(f"  ✓ Successfully indexed {len(status_docs)} status records into serverless_project_status_lookup.")
-            except Exception as e:
-                print(f"  ⚠ Failed to direct-index into serverless_project_status_lookup: {e}")
+            if not bulk_ingest_chunked(
+                target_ps_bulk,
+                es_headers,
+                status_docs,
+                lambda d: {"index": {"_id": d["composite_key"]}},
+                "serverless_project_status_lookup",
+            ):
+                had_fatal_error = True
 
     # Refresh data streams and lookups
     try:
@@ -1649,8 +1756,18 @@ def main():
     # Reset and schedule continuous transforms so lookup indices are cleanly populated without duplicate _ids
     if active_transforms:
         ensure_all_lookup_indices(ES_URL, ES_API_KEY)
-        upstream_tfs = [t for t in active_transforms if "realized_pool" not in t and "proj_contrib" not in t]
-        downstream_tfs = [t for t in active_transforms if "realized_pool" in t or "proj_contrib" in t]
+        upstream_tfs = [
+            t for t in active_transforms
+            if "realized_pool" not in t
+            and "proj_contrib" not in t
+            and not (USAGE_ONLY and "billing_cost" in t)
+            and not (BILLING_ONLY and ("ds_contrib" in t or "ai_contrib" in t or "synthetics_contrib" in t or "project_status" in t or "proj_status" in t))
+        ]
+        downstream_tfs = [
+            t for t in active_transforms
+            if ("realized_pool" in t and not USAGE_ONLY)
+            or ("proj_contrib" in t and not BILLING_ONLY)
+        ]
         for tid in upstream_tfs:
             try:
                 http_post_bulk(f"{ES_URL.rstrip('/')}/_transform/{tid}/_stop?force=true&wait_for_completion=true", es_headers, "{}")
@@ -1687,6 +1804,10 @@ def main():
             http_get(f"{ES_URL.rstrip('/')}/serverless_*_lookup/_refresh", {"Authorization": f"ApiKey {ES_API_KEY}"})
         except Exception:
             pass
+
+    if had_fatal_error:
+        print("\nERROR: Local collection pass completed with one or more bulk ingestion errors.", file=sys.stderr)
+        sys.exit(1)
 
     print("\n✓ Local collection pass finished successfully.")
 
