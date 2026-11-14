@@ -43,13 +43,13 @@ Configure these user-facing fields in Kibana under **Management → Integrations
 | --- | --- | --- | --- | --- |
 | **Organization ID** | `organization_id` | Yes | — | Your numeric Elastic Cloud organization identifier (`<YOUR_ORGANIZATION_ID>`, found in the [Elastic Cloud Console](https://cloud.elastic.co) URL or **Organization → Settings**). |
 | **Elastic Cloud API Key** | `cloud_api_key` | Yes | — | Unified Elastic Cloud API key (`secret: true`) with **Billing Admin** and **Cloud resource access** (`Cloud, Elasticsearch, and Kibana API`). |
-| **Billing Lookbehind Days** | `lookbehind` | Yes | `60` | Number of historical UTC days of billing data to backfill on initial install. |
+| **Billing Lookbehind Days** | `lookbehind` | Yes | `60` | Number of historical UTC days of billing data (`1`–`365`) to backfill on initial install before the CEL cursor is initialized. |
 | **Currency Unit** | `currency_unit` | No | `USD` | Target display currency unit code across dashboards and alerts (for example, `USD`, `EUR`, `ZAR`, `GBP`, `ECU`). |
 | **Currency Symbol** | `currency_symbol` | No | `$` | Target display currency symbol on KPI scorecards and tables (for example, `$`, `€`, `R`, `£`, `ECU`). |
 | **Chargeable Unit Rate** | `unit_rate` | No | `1.0` | Multiplier from `1.0` chargeable unit (ECU) to your target contract currency (for example, `1.0`, `0.85`, `18.5`). |
 
 > [!NOTE]
-> - **Collection schedule & daily cursor gating**: The Elastic Agent CEL `billing` and `usage` streams poll hourly (`interval: 1h`) and use daily UTC cursor gating to ingest completed calendar days once per day after `02:00 UTC`.
+> - **Collection schedule & initial lookbehind cursor**: The Elastic Agent CEL `billing` and `usage` streams poll hourly (`interval: 1h`) and use daily UTC cursor gating to ingest completed calendar days once per day after `02:00 UTC`. `lookbehind` (`1`–`365` days) is evaluated only on the initial run when no cursor state exists; increasing `lookbehind` later on an active policy will not rewind the cursor unless you delete and re-add the integration policy.
 > - **Advanced hidden variables (`show_user: false` in `manifest.yml`)**:
 >   - `billing_api_base` (default `https://billing.elastic-cloud.com`) and `cloud_api_base` (default `https://api.elastic-cloud.com`) define the Elastic Cloud Billing and Serverless Control Plane API base URLs.
 >   - `hub_es_api_key` and `project_api_keys` (`<project_id>:<encoded_api_key>` comma-separated string) are optional credential overrides; they remain hidden by default because a single unified `cloud_api_key` handles both organization billing and per-project usage harvesting across `Elasticsearch`, `Observability`, and `Security` projects.

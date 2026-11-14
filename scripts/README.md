@@ -46,8 +46,11 @@ export KIBANA_API_KEY="$HUB_ES_API_KEY"
 ### Running the Standalone Backfill or Full Automated Deployment
 
 ```bash
-# Option A (Customer optional backfill after Fleet UI install — stdlib Python only):
-python3 scripts/run_chargeback_serverless_collector.py
+# Option A1 (Customer optional usage-only backfill alongside an enrolled Fleet Elastic Agent — stdlib Python only):
+python3 scripts/run_chargeback_serverless_collector.py --usage-only --lookbehind 60
+
+# Option A2 (Standalone agent-free billing + usage collection — stdlib Python only):
+python3 scripts/run_chargeback_serverless_collector.py --lookbehind 60
 
 # Option B (Developer / Maintainer full E2E automated deployment — requires PyYAML):
 python3 -m venv .venv
@@ -69,7 +72,7 @@ pip install pyyaml
 ```
 
 Modular components:
-- [`run_chargeback_serverless_collector.py`](run_chargeback_serverless_collector.py): Cross-platform standalone Python collector (stdlib only) that backfills up to 60 days of Serverless billing and per-project data stream, index, AI model, and Synthetics telemetry and refreshes the 7 `serverless_*_lookup` indices.
+- [`run_chargeback_serverless_collector.py`](run_chargeback_serverless_collector.py): Cross-platform standalone Python collector (stdlib only) supporting `--usage-only` (preserves Fleet Agent billing and live Agent usage days), `--billing-only`, `--lookbehind DAYS`, and chunked `_bulk` indexing (`--bulk-chunk-size N`, default `5000`) while maintaining `-1` versioned lookup indices and write aliases across the 7 `serverless_*_lookup` targets.
 - [`deploy_chargeback_serverless.sh`](deploy_chargeback_serverless.sh): Installs the prebuilt `chargeback_serverless-0.1.0.zip` (unless `--build` is passed), installs persistent `mode: lookup` index templates and starts all 7 Fleet transforms, creates/updates a dedicated `'Chargeback Serverless Policy'` in Fleet, runs `run_chargeback_serverless_collector.py`, and verifies all lookup indices and dashboards.
 - [`configure_chargeback_serverless.sh`](configure_chargeback_serverless.sh): Updates the Fleet package policy settings (Cloud Org ID, unified Cloud API key, optional overrides, currency rates) on a dedicated `'Chargeback Serverless Policy'` via Kibana Fleet API with zero plaintext secret indices.
 - [`keychain.sh`](keychain.sh): Optional macOS Keychain credential manager for local macOS developers. Securely stores, loads, lists, and manages environment variables in Keychain (`elasticsearch-chargeback` service) instead of a plaintext `.env`.

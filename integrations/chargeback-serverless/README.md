@@ -6,7 +6,7 @@ The Chargeback Serverless integration (`chargeback_serverless` `0.1.0`) provides
 
 - **For Customers & FinOps Operators (Kibana Fleet UI — no `elastic/integrations` checkout required)**:
   1. Pre-create the lookup index templates in Kibana Dev Tools (`"index.mode": "lookup"`), upload the prebuilt package [`assets/dist/chargeback_serverless-0.1.0.zip`](assets/dist/chargeback_serverless-0.1.0.zip) in Kibana (**Management → Integrations → Upload integration**), and attach it to a dedicated **`Chargeback Serverless Policy`**.
-  2. *(Optional)* Run [`python3 scripts/run_chargeback_serverless_collector.py`](../../scripts/run_chargeback_serverless_collector.py) to immediately backfill historical per-project usage telemetry alongside the 60-day billing lookbehind.
+  2. *(Optional)* Run [`python3 scripts/run_chargeback_serverless_collector.py --usage-only`](../../scripts/run_chargeback_serverless_collector.py) to immediately backfill historical per-project usage telemetry alongside the Fleet Agent's billing lookbehind.
   3. See **Part 1** of [Install and configure Chargeback Serverless](Instructions.md) for step-by-step instructions.
 - **For Developers & Maintainers (Automated CLI Deployment)**:
   - Run [`./scripts/deploy_chargeback_serverless.sh`](../../scripts/deploy_chargeback_serverless.sh) from a Python `venv` (`pip install pyyaml`) to automate lookup template creation, package upload, transform provisioning, policy creation, historical backfill, and E2E verification.
