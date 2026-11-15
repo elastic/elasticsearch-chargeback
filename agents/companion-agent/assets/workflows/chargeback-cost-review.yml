@@ -13,8 +13,21 @@ enabled: true
 triggers:
   - type: manual
 consts:
-  # Preserve billing @timestamp before optional LOOKUP JOINs (right-side nulls would drop rows).
-  conf_join: "| EVAL ts = COALESCE(billing_ts, @timestamp) | LOOKUP JOIN chargeback_conf_lookup ON ts >= conf_start_date AND ts <= conf_end_date"
+  # Preserve billing @timestamp and resolve both Cloud ECU and On-Premises mERU rate windows.
+  conf_join: >-
+    | EVAL ts = COALESCE(billing_ts, @timestamp), cloud_cfg_key = "chargeback_config"
+    | LOOKUP JOIN chargeback_conf_lookup ON cloud_cfg_key == config_join_key AND ts >= conf_start_date AND ts <= conf_end_date
+    | EVAL cloud_rate = conf_chargeable_unit_rate, cloud_unit = conf_chargeable_unit_rate_unit,
+    c_mem_w = TO_DOUBLE(conf_utilization_memory_weight), c_disk_w = TO_DOUBLE(conf_utilization_storage_weight),
+    c_util_floor = TO_DOUBLE(conf_utilization_floor)
+    | DROP cloud_cfg_key, config_join_key, conf_start_date, conf_end_date, conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit
+    | EVAL onprem_cfg_key = CASE(is_onprem_row, "chargeback_config_onprem", null)
+    | LOOKUP JOIN chargeback_conf_lookup ON onprem_cfg_key == config_join_key AND ts >= conf_start_date AND ts <= conf_end_date
+    | EVAL rate = CASE(is_onprem_row, COALESCE(conf_chargeable_unit_rate, 0.00085), COALESCE(cloud_rate, 0.85)),
+    currency_unit = CASE(is_onprem_row, COALESCE(conf_chargeable_unit_rate_unit, cloud_unit, "EUR"), COALESCE(cloud_unit, "EUR")),
+    mem_w = CASE(is_onprem_row, COALESCE(TO_DOUBLE(conf_utilization_memory_weight), c_mem_w, 70.0), COALESCE(c_mem_w, 70.0)),
+    disk_w = CASE(is_onprem_row, COALESCE(TO_DOUBLE(conf_utilization_storage_weight), c_disk_w, 30.0), COALESCE(c_disk_w, 30.0)),
+    util_floor = CASE(is_onprem_row, COALESCE(TO_DOUBLE(conf_utilization_floor), c_util_floor, 0.10), COALESCE(c_util_floor, 0.10))
 steps:
   - name: configuration
     type: elasticsearch.request
@@ -23,11 +36,11 @@ steps:
       path: /_query
       body:
         query: >-
-          FROM chargeback_conf_lookup | KEEP conf_chargeable_unit_rate,
+          FROM chargeback_conf_lookup | KEEP config_join_key, conf_chargeable_unit_rate,
           conf_chargeable_unit_rate_unit, conf_indexing_weight, conf_query_weight,
           conf_storage_weight, conf_utilization_memory_weight,
           conf_utilization_storage_weight, conf_utilization_floor, conf_start_date,
-          conf_end_date | LIMIT 5
+          conf_end_date | LIMIT 10
 
   # Deliberately second, and always run: platform classification must be in front of the
   # model before it can offer platform-specific advice.
@@ -38,15 +51,13 @@ steps:
       path: /_query
       body:
         query: >-
-          FROM metrics-ess_billing.billing-* | WHERE DATE_DIFF("day", @timestamp, NOW()) <= 30 |
-          EVAL platform = CASE(ess.billing.deployment_type == "deployment", "hosted",
-          ess.billing.deployment_type == "onprem", "onprem",
-          ess.billing.deployment_type == "elasticsearch", "serverless",
-          ess.billing.deployment_type == "observability", "serverless",
-          ess.billing.deployment_type == "security", "serverless", "unknown") |
-          STATS chargeable_units = SUM(ess.billing.total_ecu) BY deployment_id
-          = ess.billing.deployment_id, deployment_name = ess.billing.deployment_name,
-          deployment_type = ess.billing.deployment_type, platform, region = cloud.region |
+          FROM chargeback_lookup.billing_cluster_cost | WHERE DATE_DIFF("day", @timestamp, NOW()) <= 30 |
+          EVAL platform = CASE(COALESCE(is_onprem, false) OR ess.billing.deployment_type IN ("onprem", "ece", "eck")
+          OR cloud.provider == "onprem", "onprem", ess.billing.deployment_type == "deployment", "hosted",
+          ess.billing.deployment_type IN ("elasticsearch", "observability", "security", "vectordb"), "serverless", "unknown") |
+          STATS chargeable_units = SUM(total_chargeable_units), skus = COUNT_DISTINCT(sku)
+          BY deployment_id, deployment_name, deployment_type = ess.billing.deployment_type,
+          platform, region = cloud.region, provider = cloud.provider |
           SORT chargeable_units DESC | LIMIT 50
 
   - name: cost_by_deployment
@@ -56,9 +67,10 @@ steps:
       path: /_query
       body:
         query: >-
-          FROM billing_cluster_cost_lookup | EVAL billing_ts = @timestamp {{consts.conf_join}} |
-          WHERE DATE_DIFF("day", billing_ts, NOW()) <= 30 | EVAL cost = total_chargeable_units *
-          conf_chargeable_unit_rate | STATS cost = SUM(cost), days_covered =
+          FROM chargeback_lookup.billing_cluster_cost | EVAL billing_ts = @timestamp,
+          is_onprem_row = COALESCE(is_onprem, ess.billing.deployment_type IN ("onprem", "ece", "eck") OR cloud.provider == "onprem", false) |
+          WHERE DATE_DIFF("day", billing_ts, NOW()) <= 30 {{consts.conf_join}} | EVAL cost = total_chargeable_units *
+          rate | STATS cost = SUM(cost), currency = VALUES(currency_unit), days_covered =
           COUNT_DISTINCT(billing_ts) BY deployment_id, deployment_name, deployment_group |
           SORT cost DESC | LIMIT 50
 
@@ -69,21 +81,19 @@ steps:
       path: /_query
       body:
         query: >-
-          FROM billing_realized_pool_lookup | EVAL billing_ts = @timestamp, billing_deployment_id
-          = deployment_id, billing_deployment_name = deployment_name | LOOKUP JOIN
-          cluster_capacity_utilization_lookup ON composite_key {{consts.conf_join}} | WHERE
-          DATE_DIFF("day", billing_ts, NOW()) <= 30 | EVAL heap_util =
-          COALESCE(heap_used_pct_p95, 100) / 100, disk_util = COALESCE(disk_used_pct_p95, 100)
-          / 100 | EVAL w_sum = conf_utilization_memory_weight +
-          conf_utilization_storage_weight, util_floor = COALESCE(TO_DOUBLE(conf_utilization_floor), 0.10) |
-          EVAL raw_utilization_score = CASE(w_sum > 0,
-          (conf_utilization_memory_weight * heap_util + conf_utilization_storage_weight *
-          disk_util) / w_sum, 1.0) | EVAL utilization_score = CASE(raw_utilization_score < util_floor,
-          util_floor, raw_utilization_score) | EVAL rate = conf_chargeable_unit_rate | EVAL provisioned_cost = data_tier_capacity_ecu * rate,
-          realized_cost = data_tier_capacity_ecu * utilization_score * rate | EVAL
+          FROM chargeback_lookup.billing_realized_pool | WHERE @timestamp IS NOT NULL AND data_tier_capacity_ecu IS NOT NULL |
+          EVAL billing_ts = @timestamp, ck = composite_key::keyword, billing_deployment_id
+          = deployment_id, billing_deployment_name = deployment_name, is_onprem_row = COALESCE(is_onprem, false) |
+          WHERE DATE_DIFF("day", billing_ts, NOW()) <= 30 | DROP composite_key | LOOKUP JOIN
+          cluster_capacity_utilization_lookup ON ck == composite_key | DROP composite_key {{consts.conf_join}} | EVAL heap_util =
+          COALESCE(heap_used_pct_p95, 100.0) / 100.0, disk_util = COALESCE(disk_used_pct_p95, 100.0)
+          / 100.0 | EVAL raw_utilization_score = CASE(mem_w + disk_w > 0.0,
+          (mem_w * heap_util + disk_w * disk_util) / (mem_w + disk_w), 1.0) | EVAL utilization_score = CASE(raw_utilization_score < util_floor,
+          util_floor, raw_utilization_score) | EVAL provisioned_cost = data_tier_capacity_ecu * rate,
+          realized_cost = data_tier_capacity_ecu * COALESCE(utilization_score, 1.0) * rate | EVAL
           no_utilization_data = heap_used_pct_p95 IS NULL AND disk_used_pct_p95 IS NULL |
           STATS provisioned_cost = SUM(provisioned_cost), realized_cost = SUM(realized_cost),
-          avg_heap_pct = AVG(heap_used_pct_p95), avg_disk_pct = AVG(disk_used_pct_p95),
+          currency = VALUES(currency_unit), avg_heap_pct = AVG(heap_used_pct_p95), avg_disk_pct = AVG(disk_used_pct_p95),
           no_utilization_data = MAX(no_utilization_data) BY deployment_id = billing_deployment_id,
           deployment_name = billing_deployment_name |
           EVAL wasted_cost = provisioned_cost - realized_cost | SORT wasted_cost DESC | LIMIT 50

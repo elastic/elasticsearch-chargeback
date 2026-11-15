@@ -8,20 +8,24 @@ and the traps. Read it before making any claim about cost.
 
 Two independent feeds, joined per day per deployment:
 
-1. **Cost** — the Elasticsearch Service Billing integration writes
-   `metrics-ess_billing.billing-*`, which the `billing_cluster_cost` transform aggregates
-   into `billing_cluster_cost_lookup`: one row per day, per deployment, per SKU. This is
-   the invoice. It covers Elastic Cloud Hosted deployments **and** Serverless projects.
-2. **Usage** — per-index stats become `cluster_*_contribution_lookup`: bytes stored,
-   indexing time and query time per day, aggregated by deployment, by tier, by data
-   stream, and by tier+data stream.
+1. **Cost** — Chargeback's native `metrics-chargeback.billing-*` CEL stream and/or
+   `metrics-ess_billing.billing-*` (ESS Billing / On-Premises Billing), which the
+   `billing_cluster_cost` transform aggregates into `chargeback_lookup.billing_cluster_cost`:
+   one row per day, per deployment, per SKU. This is the invoice. It covers Elastic Cloud
+   Hosted deployments, Serverless projects, and On-Premises (`mERU`) deployments.
+2. **Usage** — per-index stats (`metrics-chargeback.usage-*` and/or `monitoring-indices*`)
+   become `chargeback_lookup.cluster_*_contribution`: bytes stored, indexing time and query
+   time per day, aggregated by deployment, by tier, by data stream, and by tier+data stream.
 
 Everything joins on `composite_key`, which is `YYYY-MM-DD_<deployment_id>`.
 
-`chargeback_conf_lookup` holds the currency rate and the weights. Every cost figure is
-`chargeable_units x conf_chargeable_unit_rate`, so **always read the configuration before
-quoting a currency amount** — the rate and the currency are customer-configurable.
-Never assume 0.85 EUR — always read `conf_chargeable_unit_rate` and `conf_chargeable_unit_rate_unit` from `chargeback_conf_lookup` or `chargeback.configuration`.
+`chargeback_conf_lookup` holds the currency rate (`config_join_key: "chargeback_config"`
+for Elastic Cloud ECU, `config_join_key: "chargeback_config_onprem"` for On-Premises `mERU`)
+and the weights. Every cost figure is `chargeable_units x conf_chargeable_unit_rate` (falling
+back to `0.85` `EUR` per ECU and `0.00085` `EUR` per `mERU` when `chargeback_conf_lookup` is
+empty on an assets-only install), so **always read the configuration before quoting a currency
+amount** — the rate and the currency are customer-configurable.
+Never assume 0.85 EUR without checking `chargeback.configuration` first.
 
 ## How cost is attributed to a data stream
 

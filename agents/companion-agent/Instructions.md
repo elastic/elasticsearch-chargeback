@@ -1,15 +1,15 @@
 # Chargeback companion agent — setup
 
-This **optional add-on** installs on the **monitoring cluster** — where the Chargeback integration, ESS Billing, and `*_lookup` indices already run. The agent queries those indices directly.
+This **optional add-on** installs on the **monitoring cluster** — where the Chargeback integration (**0.6.0+**) and its `chargeback_lookup.*` indices already run. The agent queries those lookup indices directly.
 
 Prefer [`scripts/install_chargeback_agent.sh`](../../scripts/install_chargeback_agent.sh) from the repository root.
 
 ## Prerequisites
 
-- Chargeback integration **0.5.0+** with transforms in `health: green` and lookup indices populated. Verify with `GET _transform/_stats` and `GET cluster_datastream_contribution_lookup/_count`.
+- Chargeback integration **0.6.0+** with transforms in `health: green` and lookup indices populated. Verify with `GET _transform/_stats` and `GET chargeback_lookup.cluster_datastream_contribution/_count`.
 - Kibana **9.2.0+** with **Agent Builder** enabled (`GET /api/agent_builder/agents` returns `200`).
 - An LLM connector configured for Agent Builder.
-- A Kibana API key that can manage Agent Builder assets and read `*_lookup` plus `metrics-ess_billing.billing-*`.
+- A Kibana API key that can manage Agent Builder assets and read `chargeback_lookup.*`, `chargeback_conf_lookup`, and `cluster_capacity_utilization_lookup`.
 
 ## Install
 

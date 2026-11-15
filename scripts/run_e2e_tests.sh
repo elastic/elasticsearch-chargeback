@@ -10,16 +10,16 @@
 #   so the install creates them from the local package. Use when the dashboard in Kibana still shows
 #   "Unknown column [total_ecu]" (e.g. because a previous install came from the registry).
 #
-# Tested with: Elasticsearch/Kibana 9.2.2, Chargeback integration 0.5.0.
+# Tested with: Elasticsearch/Kibana 9.2.x, Chargeback integration 0.6.0.
 # Step 12 verifies elasticsearch-chargeback#99 (legacy ECU field aliases for dashboard COALESCE).
-# Step 13 verifies 0.5.0 package facts (canonical usage source, tier preference order, Serverless billing classification).
+# Step 13 verifies 0.5.0+ and 0.6.0+ package facts (canonical usage source, tier preference order, Serverless billing classification, versioned chargeback_lookup.* aliases, dual Cloud/On-Prem config rows).
 # Step 14 installs the Serverless usage collector add-on (pipeline + indices; workflow optional on local stacks).
-# Step 15 installs the Chargeback companion Agent Builder add-on (workflows skipped when Kibana Workflows API is absent).
+# Step 15 installs the Chargeback companion Agent Builder add-on and executes live ES|QL tool queries.
 set -e
 
 # Versions this E2E is intended for (for documentation and optional checks)
 STACK_VERSION="${STACK_VERSION:-9.2.2}"
-# Prefer env, else integrations manifest, else 0.5.0
+# Prefer env, else integrations manifest, else 0.6.0
 CHARGEBACK_VERSION="${CHARGEBACK_VERSION:-}"
 # package = build+install from INTEGRATIONS_REPO/packages/chargeback
 # zip     = install committed artifact integrations/chargeback/assets/dist/<ver>/chargeback-<ver>.zip
@@ -42,7 +42,32 @@ PASS="${ELASTIC_PASSWORD:-changeme}"
 if [[ -z "$CHARGEBACK_VERSION" && -f "${INTEGRATIONS_REPO:-}/packages/chargeback/manifest.yml" ]]; then
   CHARGEBACK_VERSION="$(grep -E '^version:' "$INTEGRATIONS_REPO/packages/chargeback/manifest.yml" | awk '{print $2}')"
 fi
-CHARGEBACK_VERSION="${CHARGEBACK_VERSION:-0.5.0}"
+CHARGEBACK_VERSION="${CHARGEBACK_VERSION:-0.6.0}"
+
+IS_060_PLUS=0
+if [[ "$(printf '%s\n' "$CHARGEBACK_VERSION" "0.6.0" | sort -V | head -1)" == "0.6.0" ]]; then
+  IS_060_PLUS=1
+fi
+
+if [[ "$IS_060_PLUS" -eq 1 ]]; then
+  BILLING_COST_LOOKUP="chargeback_lookup.billing_cluster_cost"
+  REALIZED_POOL_LOOKUP="chargeback_lookup.billing_realized_pool"
+  BILLING_CREDITS_LOOKUP="chargeback_lookup.billing_credits"
+  DEP_CONTRIB_LOOKUP="chargeback_lookup.cluster_deployment_contribution"
+  DS_CONTRIB_LOOKUP="chargeback_lookup.cluster_datastream_contribution"
+  TIER_CONTRIB_LOOKUP="chargeback_lookup.cluster_tier_contribution"
+  TIER_DS_CONTRIB_LOOKUP="chargeback_lookup.cluster_tier_and_datastream_contribution"
+  ALL_CHARGEBACK_LOOKUPS="$BILLING_COST_LOOKUP $REALIZED_POOL_LOOKUP $BILLING_CREDITS_LOOKUP chargeback_conf_lookup cluster_capacity_utilization_lookup $DS_CONTRIB_LOOKUP $DEP_CONTRIB_LOOKUP $TIER_DS_CONTRIB_LOOKUP $TIER_CONTRIB_LOOKUP"
+else
+  BILLING_COST_LOOKUP="billing_cluster_cost_lookup"
+  REALIZED_POOL_LOOKUP="billing_realized_pool_lookup"
+  BILLING_CREDITS_LOOKUP=""
+  DEP_CONTRIB_LOOKUP="cluster_deployment_contribution_lookup"
+  DS_CONTRIB_LOOKUP="cluster_datastream_contribution_lookup"
+  TIER_CONTRIB_LOOKUP="cluster_tier_contribution_lookup"
+  TIER_DS_CONTRIB_LOOKUP="cluster_tier_and_datastream_contribution_lookup"
+  ALL_CHARGEBACK_LOOKUPS="$BILLING_COST_LOOKUP $REALIZED_POOL_LOOKUP chargeback_conf_lookup cluster_capacity_utilization_lookup $DS_CONTRIB_LOOKUP $DEP_CONTRIB_LOOKUP $TIER_DS_CONTRIB_LOOKUP $TIER_CONTRIB_LOOKUP"
+fi
 
 # Sleep durations (seconds) for transform/config backfill
 SLEEP_CONFIG_BOOT=15
@@ -252,6 +277,7 @@ echo "--- 6. Install On-Prem Billing ---"
 ONPREM_INSTALLED=false
 if [[ -d "$INTEGRATIONS_REPO/packages/onprem_billing" ]]; then
   echo "  Installing from integrations repo packages/onprem_billing (e.g. wip/onprem-billing-integration)"
+  sleep 11
   (cd "$INTEGRATIONS_REPO/packages/onprem_billing" && $EP_CMD build --skip-validation && $EP_CMD install --skip-validation) && ONPREM_INSTALLED=true || true
 fi
 if [[ "$ONPREM_INSTALLED" != "true" ]]; then
@@ -260,6 +286,7 @@ if [[ "$ONPREM_INSTALLED" != "true" ]]; then
     if [[ -n "$ONPREM_ZIP_PATH" ]]; then
       ONPREM_ZIP="/tmp/$(basename "$ONPREM_ZIP_PATH")"
       if (cd "$CHARGEBACK_REPO" && git show "$branch:$ONPREM_ZIP_PATH" > "$ONPREM_ZIP" 2>/dev/null) && [[ -f "$ONPREM_ZIP" ]]; then
+        sleep 11
         (cd "$INTEGRATIONS_REPO" && $EP_CMD install --zip "$ONPREM_ZIP" --skip-validation) && ONPREM_INSTALLED=true || true
         break
       fi
@@ -437,7 +464,7 @@ for day in $(seq 1 30); do
     esac
     v=$(( 90 + day % 20 ))
     ecu=$(( base_ecu * v / 100 ))
-    printf '{"index":{"_index":"%s"}}\n' "$BILLING_INDEX" >> "$BULK_BILLING"
+    printf '{"create":{"_index":"%s"}}\n' "$BILLING_INDEX" >> "$BULK_BILLING"
     printf '{"@timestamp":"%s","event":{"ingested":"%s"},"ess":{"billing":{"deployment_id":"%s","deployment_name":"%s","total_ecu":%d,"deployment_tags":%s,"sku":"onprem_node","type":"capacity","kind":"elasticsearch","deployment_type":"onprem"}}}\n' \
       "$TS" "$NOW_ISO" "$dep_id" "$name" "$ecu" "$tags" >> "$BULK_BILLING"
   done
@@ -461,26 +488,76 @@ for BILLING_TID_PATTERN in 'logs-chargeback\.billing_cluster_cost-[^"]+' 'logs-c
   fi
 done
 sleep "$SLEEP_BILLING_AFTER_PATCH"
-BILLING_LOOKUP_COUNT=$(curl_es "$ES_HOST/billing_cluster_cost_lookup/_count" 2>/dev/null | grep -oE '"count":[0-9]+' | sed 's/"count"://')
-REALIZED_LOOKUP_COUNT=$(curl_es "$ES_HOST/billing_realized_pool_lookup/_count" 2>/dev/null | grep -oE '"count":[0-9]+' | sed 's/"count"://')
+BILLING_LOOKUP_COUNT=$(curl_es "$ES_HOST/$BILLING_COST_LOOKUP/_count" 2>/dev/null | grep -oE '"count":[0-9]+' | sed 's/"count"://')
+REALIZED_LOOKUP_COUNT=$(curl_es "$ES_HOST/$REALIZED_POOL_LOOKUP/_count" 2>/dev/null | grep -oE '"count":[0-9]+' | sed 's/"count"://')
 if [[ -n "$BILLING_LOOKUP_COUNT" && "${BILLING_LOOKUP_COUNT:-0}" -gt 0 ]]; then
-  echo "  billing_cluster_cost_lookup has $BILLING_LOOKUP_COUNT doc(s) from billing source (dummy data or On-Prem)."
+  echo "  $BILLING_COST_LOOKUP has $BILLING_LOOKUP_COUNT doc(s) from billing source (dummy data or On-Prem)."
 else
-  echo "  WARN: billing_cluster_cost_lookup is empty; transform may not have picked up $BILLING_INDEX data (check sync delay and source query ess.billing.total_ecu > 0)."
+  echo "  WARN: $BILLING_COST_LOOKUP is empty; transform may not have picked up $BILLING_INDEX data (check sync delay and source query ess.billing.total_ecu > 0)."
 fi
 if [[ -n "$REALIZED_LOOKUP_COUNT" && "${REALIZED_LOOKUP_COUNT:-0}" -gt 0 ]]; then
-  echo "  billing_realized_pool_lookup has $REALIZED_LOOKUP_COUNT doc(s) (required for Usage dashboard)."
+  echo "  $REALIZED_POOL_LOOKUP has $REALIZED_LOOKUP_COUNT doc(s) (required for Usage dashboard)."
 else
-  echo "  ERROR: billing_realized_pool_lookup is empty — Usage & Cost Allocation panels will show no data." >&2
+  echo "  ERROR: $REALIZED_POOL_LOOKUP is empty — Usage & Cost Allocation panels will show no data." >&2
   exit 1
 fi
 
-# 8g2. chargeback_conf_lookup reads metrics-ess_billing.billing-*; re-run after billing seed (8f)
+# 8g2. Seed 0.6.0+ config_snapshot + credit_line_item + node_stats so all 9 transforms populate cleanly
+if [[ "$IS_060_PLUS" -eq 1 ]]; then
+  echo "Seeding 0.6.0 config_snapshot, credit_line_item, and node_stats samples..."
+  curl_es -X POST "$ES_HOST/metrics-chargeback.billing-default/_doc?refresh=true" -d "{
+    \"@timestamp\": \"$YESTERDAY\",
+    \"doc_type\": \"config_snapshot\",
+    \"data_stream\": {\"type\": \"metrics\", \"dataset\": \"chargeback.billing\", \"namespace\": \"default\"},
+    \"conf_sync_enabled\": true,
+    \"conf_chargeable_unit_rate\": 0.85,
+    \"conf_onprem_unit_rate\": 0.00085,
+    \"conf_chargeable_unit_rate_unit\": \"EUR\",
+    \"conf_indexing_weight\": 20,
+    \"conf_query_weight\": 20,
+    \"conf_storage_weight\": 40,
+    \"conf_utilization_memory_weight\": 70,
+    \"conf_utilization_storage_weight\": 30,
+    \"conf_utilization_floor\": 0.10
+  }" >/dev/null 2>&1 || true
+  curl_es -X POST "$ES_HOST/metrics-chargeback.billing-default/_doc?refresh=true" -d "{
+    \"@timestamp\": \"$YESTERDAY\",
+    \"_credit_poll_ts\": \"$YESTERDAY\",
+    \"doc_type\": \"credit_line_item\",
+    \"credit_line_id\": \"credit-e2e-1\",
+    \"data_stream\": {\"type\": \"metrics\", \"dataset\": \"chargeback.billing\", \"namespace\": \"default\"},
+    \"ess\": {\"billing\": {\"organization_id\": \"e2e-org\", \"start\": \"2026-01-01T00:00:00Z\", \"end\": \"2027-01-01T00:00:00Z\", \"type\": \"prepaid\", \"ecu_quantity\": 100000, \"ecu_balance\": 75000, \"active\": true}}
+  }" >/dev/null 2>&1 || true
+  for dep_id in dev prod monitoring; do
+    curl_es -X POST "$ES_HOST/metrics-chargeback.node_stats-default/_doc?refresh=true" -d "{
+      \"@timestamp\": \"$YESTERDAY\",
+      \"data_stream\": {\"type\": \"metrics\", \"dataset\": \"chargeback.node_stats\", \"namespace\": \"default\"},
+      \"elasticsearch\": {
+        \"cluster\": {\"name\": \"$dep_id\", \"id\": \"$dep_id\"},
+        \"node\": {\"id\": \"${dep_id}-node-1\", \"name\": \"${dep_id}-node-1\", \"roles\": [\"data_hot\", \"data_content\"], \"stats\": {\"jvm\": {\"mem\": {\"heap_used_percent\": 65}}, \"fs\": {\"summary\": {\"total_in_bytes\": 100000000000, \"available_in_bytes\": 40000000000}}}}
+      }
+    }" >/dev/null 2>&1 || true
+  done
+  for EXTRA_PAT in 'logs-chargeback\.billing_credits-[^"]+' 'logs-chargeback\.cluster_capacity_utilization-[^"]+'; do
+    EXTRA_TID=$(get_transform_id "$EXTRA_PAT")
+    if [[ -n "$EXTRA_TID" ]]; then
+      curl_es -X POST "$ES_HOST/_transform/$EXTRA_TID/_stop?wait_for_completion=true&timeout=30s" >/dev/null 2>&1 || true
+      curl_es -X POST "$ES_HOST/_transform/$EXTRA_TID/_update" -d '{"frequency":"1m","sync":{"time":{"field":"@timestamp","delay":"1s"}}}' >/dev/null 2>&1 || true
+      curl_es -X POST "$ES_HOST/_transform/$EXTRA_TID/_reset" >/dev/null 2>&1 || true
+      curl_es -X POST "$ES_HOST/_transform/$EXTRA_TID/_start" >/dev/null 2>&1 || true
+      curl_es -X POST "$ES_HOST/_transform/$EXTRA_TID/_schedule_now" >/dev/null 2>&1 || true
+    fi
+  done
+fi
+
 CONF_TID=$(get_transform_id 'logs-chargeback\.chargeback_conf_lookup-[^"]+')
 if [[ -n "$CONF_TID" ]]; then
   echo "Reset/start chargeback_conf_lookup after billing seed..."
   curl_es -X POST "$ES_HOST/_transform/$CONF_TID/_stop?wait_for_completion=true&timeout=30s" >/dev/null 2>&1 || true
   sleep 2
+  if [[ "$IS_060_PLUS" -eq 1 ]]; then
+    curl_es -X POST "$ES_HOST/_transform/$CONF_TID/_update" -d '{"frequency":"1m","sync":{"time":{"field":"cb_sync_ts","delay":"1s"}}}' >/dev/null 2>&1 || true
+  fi
   curl_es -X POST "$ES_HOST/_transform/$CONF_TID/_reset" >/dev/null 2>&1 || true
   sleep 2
   curl_es -X POST "$ES_HOST/_transform/$CONF_TID/_start" >/dev/null 2>&1 || true
@@ -490,33 +567,43 @@ if [[ -n "$CONF_TID" ]]; then
   echo "  chargeback_conf_lookup has ${CONF_LOOKUP_COUNT:-0} doc(s) after re-run."
 fi
 
-# 8h. Ensure billing_cluster_cost_lookup has deployment_group set (transform runtime_mapping can leave it empty; patch by deployment_id)
-LOOKUP_INDEX="billing_cluster_cost_lookup"
-for dep_id in dev prod monitoring; do
-  case "$dep_id" in
-    dev|prod)  group="product" ;;
-    monitoring) group="monitoring" ;;
-    *)         group="product" ;;
-  esac
-  resp=$(curl_es "$ES_HOST/$LOOKUP_INDEX/_search?size=50" -d "{\"_source\":false,\"query\":{\"term\":{\"deployment_id\":\"$dep_id\"}}}" 2>/dev/null)
-  ids=$(echo "$resp" | grep -oE '"_id":"[^"]+"' | sed 's/"_id":"//;s/"//')
-  for doc_id in $ids; do
-    curl_es -X POST "$ES_HOST/$LOOKUP_INDEX/_update/$doc_id" -d "{\"doc\":{\"deployment_group\":\"$group\"}}" >/dev/null 2>&1 || true
+# 8h. Ensure billing_cluster_cost lookup has deployment_group set (0.6.0+ extracts it natively; patch only if empty)
+LOOKUP_INDEX="$BILLING_COST_LOOKUP"
+MISSING_DG=$(curl_es "$ES_HOST/$LOOKUP_INDEX/_count" -d '{"query":{"term":{"deployment_group":""}}}' 2>/dev/null | grep -oE '"count":[0-9]+' | sed 's/"count"://' || echo 0)
+if [[ "${MISSING_DG:-0}" -gt 0 || "$IS_060_PLUS" -eq 0 ]]; then
+  for dep_id in dev prod monitoring; do
+    case "$dep_id" in
+      dev|prod)  group="product" ;;
+      monitoring) group="monitoring" ;;
+      *)         group="product" ;;
+    esac
+    resp=$(curl_es "$ES_HOST/$LOOKUP_INDEX/_search?size=50" -d "{\"_source\":false,\"query\":{\"term\":{\"deployment_id\":\"$dep_id\"}}}" 2>/dev/null)
+    ids=$(echo "$resp" | grep -oE '"_id":"[^"]+"' | sed 's/"_id":"//;s/"//')
+    for doc_id in $ids; do
+      curl_es -X POST "$ES_HOST/$LOOKUP_INDEX/_update/$doc_id" -d "{\"doc\":{\"deployment_group\":\"$group\"}}" >/dev/null 2>&1 || true
+    done
   done
-done
-echo "Patched $LOOKUP_INDEX deployment_group by deployment_id (dev,prod->product; monitoring->monitoring)."
+  echo "Patched $LOOKUP_INDEX deployment_group by deployment_id (dev,prod->product; monitoring->monitoring)."
+else
+  echo "$LOOKUP_INDEX already extracted deployment_group natively for all rows."
+fi
 
 # 9. Verification: list Chargeback transforms and document counts for lookup indices
 echo "--- 9. Verification ---"
 echo "Transforms (chargeback):"
 curl_es "$ES_HOST/_transform?size=50" 2>/dev/null | grep -o '"id":"[^"]*chargeback[^"]*"' || true
 echo "Lookup indices (chargeback) — document counts:"
-for idx in billing_cluster_cost_lookup billing_realized_pool_lookup chargeback_conf_lookup cluster_capacity_utilization_lookup cluster_datastream_contribution_lookup cluster_deployment_contribution_lookup cluster_tier_and_datastream_contribution_lookup cluster_tier_contribution_lookup; do
+for idx in $ALL_CHARGEBACK_LOOKUPS; do
   count=$(curl_es "$ES_HOST/$idx/_count" 2>/dev/null | grep -oE '"count":[0-9]+' | sed 's/"count"://')
   echo "  $idx: ${count:-0} docs"
 done
 # Usage dashboard smoke: blended cost by ds_namespace must return rows
-USAGE_SMOKE=$(curl_es "$ES_HOST/_query" -d '{"query":"FROM billing_realized_pool_lookup | EVAL ts = @timestamp | EVAL ck = composite_key::keyword | DROP composite_key | LOOKUP JOIN cluster_deployment_contribution_lookup ON ck == composite_key | DROP composite_key | LOOKUP JOIN cluster_tier_and_datastream_contribution_lookup ON ck == composite_key | DROP composite_key | LOOKUP JOIN chargeback_conf_lookup ON ts >= conf_start_date AND ts <= conf_end_date | EVAL chargeable_pool = data_tier_capacity_ecu | EVAL blended = TO_DOUBLE(tier_and_datastream_sum_store_size) / deployment_sum_store_size * chargeable_pool * COALESCE(conf_chargeable_unit_rate, 1.0) | STATS agg = SUM(blended) BY ds_namespace | WHERE agg > 0 | LIMIT 3"}' 2>/dev/null || true)
+if [[ "$IS_060_PLUS" -eq 1 ]]; then
+  USAGE_SMOKE_QUERY="FROM $REALIZED_POOL_LOOKUP | EVAL ts = @timestamp, ck = composite_key::keyword, bill_is_onprem = COALESCE(is_onprem, false), cloud_cfg_key = \"chargeback_config\" | DROP composite_key | LOOKUP JOIN $DEP_CONTRIB_LOOKUP ON ck == composite_key | DROP composite_key, usage_source | LOOKUP JOIN $TIER_DS_CONTRIB_LOOKUP ON ck == composite_key | DROP composite_key | LOOKUP JOIN chargeback_conf_lookup ON cloud_cfg_key == config_join_key AND ts >= conf_start_date AND ts <= conf_end_date | EVAL chargeable_pool = data_tier_capacity_ecu | EVAL blended = TO_DOUBLE(tier_and_datastream_sum_store_size) / deployment_sum_store_size * chargeable_pool * COALESCE(conf_chargeable_unit_rate, 0.85) | STATS agg = SUM(blended) BY ds_namespace | WHERE agg > 0 | LIMIT 3"
+else
+  USAGE_SMOKE_QUERY="FROM $REALIZED_POOL_LOOKUP | EVAL ts = @timestamp | EVAL ck = composite_key::keyword | DROP composite_key | LOOKUP JOIN $DEP_CONTRIB_LOOKUP ON ck == composite_key | DROP composite_key | LOOKUP JOIN $TIER_DS_CONTRIB_LOOKUP ON ck == composite_key | DROP composite_key | LOOKUP JOIN chargeback_conf_lookup ON ts >= conf_start_date AND ts <= conf_end_date | EVAL chargeable_pool = data_tier_capacity_ecu | EVAL blended = TO_DOUBLE(tier_and_datastream_sum_store_size) / deployment_sum_store_size * chargeable_pool * COALESCE(conf_chargeable_unit_rate, 1.0) | STATS agg = SUM(blended) BY ds_namespace | WHERE agg > 0 | LIMIT 3"
+fi
+USAGE_SMOKE=$(curl_es "$ES_HOST/_query" -d "$(printf '%s' "$USAGE_SMOKE_QUERY" | jq -Rs '{query: .}')" 2>/dev/null || true)
 if echo "$USAGE_SMOKE" | grep -q '"values"'; then
   if echo "$USAGE_SMOKE" | grep -qE '"values"[[:space:]]*:[[:space:]]*\[\['; then
     echo "  Usage ES|QL smoke (ds_namespace): PASS"
@@ -530,16 +617,10 @@ else
   echo "  WARN: Usage ES|QL smoke could not parse response (continuing)."
 fi
 
-# 10. Evidence: GET all *lookup indices — full content so you can visually verify success
+# 10. Evidence: GET all Chargeback lookup indices — full content so you can visually verify success
 echo ""
-echo "--- 10. Evidence: full content of all *lookup indices ---"
-cat_resp=$(curl_es "$ES_HOST/_cat/indices/*lookup*?format=json" 2>/dev/null)
-if command -v jq >/dev/null 2>&1 && [[ -n "$cat_resp" ]]; then
-  LOOKUP_INDICES=$(echo "$cat_resp" | jq -r '.[].index' 2>/dev/null | sort -u)
-fi
-if [[ -z "$LOOKUP_INDICES" ]]; then
-  LOOKUP_INDICES="billing_cluster_cost_lookup billing_realized_pool_lookup chargeback_conf_lookup cluster_capacity_utilization_lookup cluster_datastream_contribution_lookup cluster_deployment_contribution_lookup cluster_tier_and_datastream_contribution_lookup cluster_tier_contribution_lookup"
-fi
+echo "--- 10. Evidence: full content of all Chargeback lookup indices ---"
+LOOKUP_INDICES="$ALL_CHARGEBACK_LOOKUPS"
 EVIDENCE_FILE="$CHARGEBACK_REPO/scripts/evidence_lookup_indices.txt"
 {
   echo "Evidence of lookup indices — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -650,7 +731,7 @@ else
   echo "  chargeback_conf_lookup _id=config: FAIL (expected GET _doc/config with found=true)"
   ESQL_PROOF_OK=0
 fi
-for pair in "billing_cluster_cost_lookup:total_chargeable_units" "billing_cluster_cost_lookup:total_ecu" "chargeback_conf_lookup:conf_chargeable_unit_rate" "chargeback_conf_lookup:conf_ecu_rate"; do
+for pair in "$BILLING_COST_LOOKUP:total_chargeable_units" "$BILLING_COST_LOOKUP:total_ecu" "chargeback_conf_lookup:conf_chargeable_unit_rate" "chargeback_conf_lookup:conf_ecu_rate"; do
   idx="${pair%%:*}"
   field="${pair##*:}"
   if curl_es "$ES_HOST/$idx/_mapping" 2>/dev/null | grep -q "\"$field\""; then
@@ -660,11 +741,11 @@ for pair in "billing_cluster_cost_lookup:total_chargeable_units" "billing_cluste
     ESQL_PROOF_OK=0
   fi
 done
-BILLING_MAP=$(curl_es "$ES_HOST/billing_cluster_cost_lookup/_mapping" 2>/dev/null)
+BILLING_MAP=$(curl_es "$ES_HOST/$BILLING_COST_LOOKUP/_mapping" 2>/dev/null)
 if echo "$BILLING_MAP" | jq -e 'to_entries[0].value.mappings.properties.total_ecu.type == "alias" and to_entries[0].value.mappings.properties.total_ecu.path == "total_chargeable_units"' >/dev/null 2>&1; then
-  echo "  billing_cluster_cost_lookup total_ecu alias: PASS (-> total_chargeable_units)"
+  echo "  $BILLING_COST_LOOKUP total_ecu alias: PASS (-> total_chargeable_units)"
 else
-  echo "  billing_cluster_cost_lookup total_ecu alias: FAIL (expected alias -> total_chargeable_units)"
+  echo "  $BILLING_COST_LOOKUP total_ecu alias: FAIL (expected alias -> total_chargeable_units)"
   ESQL_PROOF_OK=0
 fi
 CONF_MAP=$(curl_es "$ES_HOST/chargeback_conf_lookup/_mapping" 2>/dev/null)
@@ -682,7 +763,23 @@ else
 fi
 # Bundled dashboards (0.4.3+) use chargeable-unit field names only; ES|QL does not resolve mapping aliases.
 # Join on composite_key after casting ck — LOOKUP JOIN rejects text-typed right-side keys.
-ESQL_INDEXING='FROM billing_realized_pool_lookup
+if [[ "$IS_060_PLUS" -eq 1 ]]; then
+  ESQL_INDEXING="FROM $REALIZED_POOL_LOOKUP
+| EVAL ts = @timestamp, ck = composite_key::keyword, cloud_cfg_key = \"chargeback_config\"
+| DROP composite_key
+| LOOKUP JOIN cluster_capacity_utilization_lookup ON ck == composite_key
+| DROP composite_key
+| LOOKUP JOIN $DEP_CONTRIB_LOOKUP ON ck == composite_key
+| DROP composite_key, usage_source
+| LOOKUP JOIN $DS_CONTRIB_LOOKUP ON ck == composite_key
+| DROP composite_key
+| LOOKUP JOIN chargeback_conf_lookup ON cloud_cfg_key == config_join_key AND ts >= conf_start_date AND ts <= conf_end_date
+| EVAL chargeable_pool = data_tier_capacity_ecu, indexing = CASE (deployment_sum_indexing_time > 0, TO_DOUBLE(datastream_sum_indexing_time) / deployment_sum_indexing_time * chargeable_pool) * COALESCE(conf_chargeable_unit_rate, 0.85)
+| STATS agg_indexing = SUM(indexing) BY datastream
+| WHERE agg_indexing > 0
+| LIMIT 5"
+else
+  ESQL_INDEXING='FROM billing_realized_pool_lookup
 | EVAL ts = @timestamp
 | EVAL ck = composite_key::keyword
 | DROP composite_key
@@ -697,6 +794,7 @@ ESQL_INDEXING='FROM billing_realized_pool_lookup
 | STATS agg_indexing = SUM(indexing) BY datastream
 | WHERE agg_indexing > 0
 | LIMIT 5'
+fi
 ESQL_BODY=$(printf '%s' "$ESQL_INDEXING" | jq -Rs '{query: .}')
 ESQL_RESP=$(curl_es -X POST "$ES_HOST/_query" -d "$ESQL_BODY" 2>/dev/null)
 if echo "$ESQL_RESP" | grep -qi 'verification_exception\|"type"[[:space:]]*:[[:space:]]*"verification_exception"'; then
@@ -759,17 +857,17 @@ else
   # resolve to cold, warm, and frozen (not hot-first). Wait briefly for the transform.
   TIER_LOOKUP_COUNT=0
   for _try in 1 2 3 4 5 6; do
-    TIER_LOOKUP_COUNT=$(curl_es "$ES_HOST/cluster_tier_contribution_lookup/_count" -d '{"query":{"term":{"cluster_name":"tierpref"}}}' 2>/dev/null | jq -r '.count // 0' 2>/dev/null || echo 0)
+    TIER_LOOKUP_COUNT=$(curl_es "$ES_HOST/$TIER_CONTRIB_LOOKUP/_count" -d '{"query":{"term":{"cluster_name":"tierpref"}}}' 2>/dev/null | jq -r '.count // 0' 2>/dev/null || echo 0)
     if [[ "${TIER_LOOKUP_COUNT:-0}" -ge 3 ]]; then
       break
     fi
     sleep 5
   done
   if [[ "${TIER_LOOKUP_COUNT:-0}" -eq 0 ]]; then
-    echo "  tier preference fallback: FAIL (no tierpref rows in cluster_tier_contribution_lookup after wait)"
+    echo "  tier preference fallback: FAIL (no tierpref rows in $TIER_CONTRIB_LOOKUP after wait)"
     PROOF_05_OK=0
   else
-    TIERS=$(curl_es "$ES_HOST/cluster_tier_contribution_lookup/_search?size=20" -d '{"_source":["tier"],"query":{"term":{"cluster_name":"tierpref"}}}' 2>/dev/null \
+    TIERS=$(curl_es "$ES_HOST/$TIER_CONTRIB_LOOKUP/_search?size=20" -d '{"_source":["tier"],"query":{"term":{"cluster_name":"tierpref"}}}' 2>/dev/null \
       | jq -r '.hits.hits[]._source.tier // empty' 2>/dev/null | sort -u | tr '\n' ' ')
     echo "  tierpref tiers observed: ${TIERS:-none}"
     MISSING_TIERS=()
@@ -866,6 +964,51 @@ else
   echo "  Chargeback 0.5.0 proofs: PASS"
 fi
 
+# 13e. Chargeback 0.6.0 proofs (versioned chargeback_lookup.* aliases, dual Cloud/On-Prem config, On-Prem mERU rate join)
+if [[ "$IS_060_PLUS" -eq 1 ]]; then
+  echo ""
+  echo "--- 13e. Chargeback 0.6.0 proofs ---"
+  PROOF_06_OK=1
+  for alias_name in \
+    billing_cluster_cost \
+    billing_realized_pool \
+    billing_credits \
+    cluster_deployment_contribution \
+    cluster_datastream_contribution \
+    cluster_tier_contribution \
+    cluster_tier_and_datastream_contribution
+  do
+    full_alias="chargeback_lookup.${alias_name}"
+    dest_idx="chargeback_lookup.dest_${alias_name}-1"
+    if curl_es "$ES_HOST/_alias/$full_alias" 2>/dev/null | jq -e --arg d "$dest_idx" 'has($d)' >/dev/null 2>&1; then
+      echo "  alias $full_alias -> $dest_idx: PASS"
+    else
+      echo "  alias $full_alias -> $dest_idx: FAIL"
+      PROOF_06_OK=0
+    fi
+  done
+  if curl_es "$ES_HOST/chargeback_conf_lookup/_doc/config_onprem" 2>/dev/null | jq -e '.found == true and ._source.config_join_key == "chargeback_config_onprem"' >/dev/null 2>&1; then
+    echo "  chargeback_conf_lookup _id=config_onprem: PASS"
+  else
+    echo "  chargeback_conf_lookup _id=config_onprem: FAIL"
+    PROOF_06_OK=0
+  fi
+  ONPREM_ESQL='FROM chargeback_lookup.billing_cluster_cost | EVAL ts = @timestamp, is_onprem_row = COALESCE(is_onprem, false), onprem_cfg_key = CASE(is_onprem_row, "chargeback_config_onprem", null) | LOOKUP JOIN chargeback_conf_lookup ON onprem_cfg_key == config_join_key AND ts >= conf_start_date AND ts <= conf_end_date | STATS cost = SUM(total_chargeable_units * COALESCE(conf_chargeable_unit_rate, 0.00085)), onprem_rows = COUNT(*) BY is_onprem_row | WHERE is_onprem_row == true'
+  ONPREM_RESP=$(curl_es -X POST "$ES_HOST/_query" -d "$(printf '%s' "$ONPREM_ESQL" | jq -Rs '{query: .}')" 2>/dev/null)
+  if echo "$ONPREM_RESP" | jq -e '(.values | length) >= 1 and .values[0][0] > 0' >/dev/null 2>&1; then
+    echo "  onprem mERU dual-rate join: PASS"
+  else
+    echo "  onprem mERU dual-rate join: FAIL ($ONPREM_RESP)"
+    PROOF_06_OK=0
+  fi
+  if [[ "$PROOF_06_OK" -ne 1 ]]; then
+    echo ""
+    echo "Chargeback 0.6.0 proofs FAILED."
+    exit 1
+  fi
+  echo "  Chargeback 0.6.0 proofs: PASS"
+fi
+
 # 14. Serverless usage collector add-on (integrations/chargeback/addons/serverless-usage-collector/)
 echo ""
 echo "--- 14. Serverless usage collector add-on ---"
@@ -873,6 +1016,8 @@ ADDON_OK=1
 if [[ "$(printf '%s\n' "$CHARGEBACK_VERSION" "0.5.0" | sort -V | head -1)" != "0.5.0" && "$CHARGEBACK_VERSION" != "0.5.0" ]]; then
   echo "  Skipping Serverless add-on (CHARGEBACK_VERSION=$CHARGEBACK_VERSION < 0.5.0)."
 else
+  export KEYCHAIN_SERVICE="elasticsearch-chargeback-e2e-none"
+  unset ES_API_KEY KIBANA_API_KEY PROJECT_ID project_id SL_URL sl_url SL_API_KEY sl_api_key
   export ELASTIC_PASSWORD="$PASS"
   export ES_URL="$ES_HOST"
   export KIBANA_URL="$KIBANA_HOST"
@@ -940,48 +1085,79 @@ echo "--- 15. Chargeback companion agent add-on ---"
 if [[ "$(printf '%s\n' "$CHARGEBACK_VERSION" "0.5.0" | sort -V | head -1)" != "0.5.0" && "$CHARGEBACK_VERSION" != "0.5.0" ]]; then
   echo "  Skipping Agent add-on (CHARGEBACK_VERSION=$CHARGEBACK_VERSION < 0.5.0)."
 else
+  export KEYCHAIN_SERVICE="elasticsearch-chargeback-e2e-none"
+  unset ES_API_KEY KIBANA_API_KEY
   export ELASTIC_PASSWORD="$PASS"
   export ES_URL="$ES_HOST"
   export KIBANA_URL="$KIBANA_HOST"
-  # elastic-package 9.2.x exposes Agent Builder but not Kibana Workflows / skills APIs.
-  # Probe with a read-only list (never POST a throwaway workflow). Skip workflows only on 404.
-  AGENT_FLAGS=()
-  WF_PROBE=$(curl -sS -k -o /tmp/e2e-wf-list.json -w '%{http_code}' -u "$USER:$PASS" -H "kbn-xsrf: true" \
-    "$KIBANA_HOST/api/workflows" 2>/dev/null || echo 000)
-  if [[ "$WF_PROBE" == "200" ]]; then
-    echo "  Kibana Workflows API available; installing full agent (including cost_review workflow)."
-  elif [[ "$WF_PROBE" == "404" ]]; then
-    AGENT_FLAGS=(--skip-workflows)
-    echo "  Kibana Workflows API unavailable (HTTP 404); installing agent with --skip-workflows."
+  AB_PROBE=$(curl -sS -k -o /dev/null -w '%{http_code}' -u "$USER:$PASS" -H "kbn-xsrf: true" \
+    "$KIBANA_HOST/api/agent_builder/tools" 2>/dev/null || echo 000)
+  if [[ "$AB_PROBE" == "404" ]]; then
+    echo "  Kibana Agent Builder API unavailable on stack $STACK_VERSION (HTTP 404; requires 9.2.2+); skipping Kibana API registration and validating ES|QL tool queries directly."
   else
-    echo "  Kibana Workflows API probe: FAIL (HTTP $WF_PROBE; expected 200 or 404)"
-    ADDON_OK=0
-    AGENT_FLAGS=(--skip-workflows)
-    echo "  Continuing agent install with --skip-workflows after probe failure (ES|QL tools only)."
+    # elastic-package 9.2.2+ exposes Agent Builder but not Kibana Workflows / skills APIs.
+    # Probe with a read-only list (never POST a throwaway workflow). Skip workflows only on 404.
+    AGENT_FLAGS=()
+    WF_PROBE=$(curl -sS -k -o /tmp/e2e-wf-list.json -w '%{http_code}' -u "$USER:$PASS" -H "kbn-xsrf: true" \
+      "$KIBANA_HOST/api/workflows" 2>/dev/null || echo 000)
+    if [[ "$WF_PROBE" == "200" ]]; then
+      echo "  Kibana Workflows API available; installing full agent (including cost_review workflow)."
+    elif [[ "$WF_PROBE" == "404" ]]; then
+      AGENT_FLAGS=(--skip-workflows)
+      echo "  Kibana Workflows API unavailable (HTTP 404); installing agent with --skip-workflows."
+    else
+      echo "  Kibana Workflows API probe: FAIL (HTTP $WF_PROBE; expected 200 or 404)"
+      ADDON_OK=0
+      AGENT_FLAGS=(--skip-workflows)
+      echo "  Continuing agent install with --skip-workflows after probe failure (ES|QL tools only)."
+    fi
+    if ! "$CHARGEBACK_REPO/scripts/install_chargeback_agent.sh" "${AGENT_FLAGS[@]}"; then
+      echo "  agent add-on install: FAIL"
+      ADDON_OK=0
+    else
+      echo "  agent add-on install: PASS"
+    fi
+    # Verify with the same flags (skills auto-skipped when API is 404).
+    if ! "$CHARGEBACK_REPO/scripts/install_chargeback_agent.sh" --verify "${AGENT_FLAGS[@]}"; then
+      echo "  agent add-on verify: FAIL"
+      ADDON_OK=0
+    else
+      echo "  agent add-on verify: PASS"
+    fi
+    # Spot-check companion agent and a core ES|QL tool via Kibana API (basic auth).
+    AGENT_HTTP=$(curl -sS -k -o /tmp/e2e-agent.json -w '%{http_code}' -u "$USER:$PASS" -H "kbn-xsrf: true" \
+      "$KIBANA_HOST/api/agent_builder/agents/chargeback-companion" 2>/dev/null || echo 000)
+    TOOL_HTTP=$(curl -sS -k -o /dev/null -w '%{http_code}' -u "$USER:$PASS" -H "kbn-xsrf: true" \
+      "$KIBANA_HOST/api/agent_builder/tools/chargeback.configuration" 2>/dev/null || echo 000)
+    if [[ "$AGENT_HTTP" == "200" && "$TOOL_HTTP" == "200" ]]; then
+      echo "  agent API spot-check: PASS (chargeback-companion + chargeback.configuration)"
+    else
+      echo "  agent API spot-check: FAIL (agent HTTP $AGENT_HTTP, configuration tool HTTP $TOOL_HTTP)"
+      ADDON_OK=0
+    fi
   fi
-  if ! "$CHARGEBACK_REPO/scripts/install_chargeback_agent.sh" "${AGENT_FLAGS[@]}"; then
-    echo "  agent add-on install: FAIL"
-    ADDON_OK=0
-  else
-    echo "  agent add-on install: PASS"
-  fi
-  # Verify with the same flags (skills auto-skipped when API is 404).
-  if ! "$CHARGEBACK_REPO/scripts/install_chargeback_agent.sh" --verify "${AGENT_FLAGS[@]}"; then
-    echo "  agent add-on verify: FAIL"
-    ADDON_OK=0
-  else
-    echo "  agent add-on verify: PASS"
-  fi
-  # Spot-check companion agent and a core ES|QL tool via Kibana API (basic auth).
-  AGENT_HTTP=$(curl -sS -k -o /tmp/e2e-agent.json -w '%{http_code}' -u "$USER:$PASS" -H "kbn-xsrf: true" \
-    "$KIBANA_HOST/api/agent_builder/agents/chargeback-companion" 2>/dev/null || echo 000)
-  TOOL_HTTP=$(curl -sS -k -o /dev/null -w '%{http_code}' -u "$USER:$PASS" -H "kbn-xsrf: true" \
-    "$KIBANA_HOST/api/agent_builder/tools/chargeback.configuration" 2>/dev/null || echo 000)
-  if [[ "$AGENT_HTTP" == "200" && "$TOOL_HTTP" == "200" ]]; then
-    echo "  agent API spot-check: PASS (chargeback-companion + chargeback.configuration)"
-  else
-    echo "  agent API spot-check: FAIL (agent HTTP $AGENT_HTTP, configuration tool HTTP $TOOL_HTTP)"
-    ADDON_OK=0
+  if [[ "$IS_060_PLUS" -eq 1 ]]; then
+    for tool_file in "$CHARGEBACK_REPO"/agents/companion-agent/assets/tools/chargeback.*.json; do
+      [[ -f "$tool_file" ]] || continue
+      tool_type=$(jq -r '.type // empty' "$tool_file")
+      [[ "$tool_type" == "esql" ]] || continue
+      tool_id=$(jq -r '.id' "$tool_file")
+      tool_payload=$(jq '{
+        query: .configuration.query,
+        params: (
+          (.configuration.params // {})
+          | to_entries
+          | map({(.key): (if .key == "days" then 30 elif .key == "deployment_id" then "prod" else .value end)})
+        )
+      }' "$tool_file")
+      tool_resp=$(curl_es -X POST "$ES_HOST/_query" -d "$tool_payload" 2>/dev/null || true)
+      if echo "$tool_resp" | jq -e 'has("error") | not' >/dev/null 2>&1 && echo "$tool_resp" | jq -e '(.values | length) >= 1' >/dev/null 2>&1; then
+        echo "  agent ES|QL tool live query ($tool_id): PASS"
+      else
+        echo "  agent ES|QL tool live query ($tool_id): FAIL ($tool_resp)"
+        ADDON_OK=0
+      fi
+    done
   fi
 fi
 

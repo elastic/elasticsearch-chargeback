@@ -14,11 +14,12 @@ To install the Chargeback integration, please follow these steps:
 
 See [Requirements](README.md#requirements) for details.
 
-**Key prerequisite for 0.4.x:** Install **ESS Billing** (or On-Premises Billing) first so billing backing indices exist, then the [Elasticsearch integration](https://www.elastic.co/docs/reference/integrations/elasticsearch/) with both **index stats** and **node stats** datasets enabled, then Chargeback. Node stats are required for the realized cost utilization score. Without them, utilization defaults to 100% and no discount is applied. The `chargeback_conf_lookup` bootstrap transform sources `metrics-ess_billing.billing-*`; start or `_schedule_now` that transform if Chargeback was installed before billing indices existed.
+- **Self-contained mode (`0.6.0+`, recommended):** Upload `chargeback-0.6.0.zip` and add the **Chargeback** integration to a Fleet Agent policy (`chargeback.billing`, `chargeback.usage`, `chargeback.node_stats`). For self-managed / On-Premises clusters, also install **On-Premises Billing** (`metrics-ess_billing.billing-onprem*`) so `mERU` billing rows exist.
+- **Coexistence / assets-only mode:** If relying on existing **ESS Billing** (or **On-Premises Billing**) and **Elasticsearch** (`index_pivot` + `node_stats`) policies without a Chargeback Agent policy, ensure at least one billing or monitoring backing index exists so `chargeback_conf_lookup` materialises (dashboards apply default rates/weights automatically, or upsert custom values as shown below).
 
 ### 2. Upload ZIP File: 
 
-- Asset: [`chargeback-0.5.0.zip`](assets/dist/0.5.0/chargeback-0.5.0.zip)
+- Asset: [`chargeback-0.6.0.zip`](assets/dist/0.6.0/chargeback-0.6.0.zip)
 - Browse to Integrations, and click on `+ Create new integration`
 
 ![alt text](assets/img/CreateNewIntegration.png)
@@ -27,16 +28,17 @@ See [Requirements](README.md#requirements) for details.
 
 ![alt text](assets/img/UploadItAsAZip.png)
 
-### 3. Transforms Auto-Start
+### 3. Transforms Auto-Start & Fleet Policy Configuration
 
-Starting from version 0.2.8, all Chargeback transforms are configured to auto-start upon installation. You no longer need to manually start the transforms.
+Starting from version 0.2.8, all Chargeback transforms are configured to auto-start upon installation.
 
-**Starting from version 0.2.10** (current: **v0.5.0**), the `chargeback_conf_lookup` index is automatically created via a bootstrap transform during installation. No manual setup is required! The transform creates the index with default configuration:
-- **Chargeable unit rate:** 0.85 EUR
-- **Weights:** indexing=20, query=20, storage=40
-- **Date range:** 2010-01-01 to 2046-12-31
+In **v0.6.0**, rates and weights are configured directly in Kibana under **Management → Fleet → Agent Policies → Chargeback** (`sync_fleet_config: true` by default) and synced automatically into `chargeback_conf_lookup` (`_id: config` for Elastic Cloud ECU and `_id: config_onprem` for On-Premises `mERU`):
+- **Chargeable unit rate:** `0.85` `EUR` per Elastic Cloud ECU (`0.00085` `EUR` per On-Premises `mERU`)
+- **Blended weights:** `indexing=20`, `query=20`, `storage=40`
+- **Utilization weights & floor:** `memory=70`, `storage=30`, `floor=0.10`
+- **Date range:** `2010-01-01` to `2046-12-31` (or bounded from `config_effective_from` when preserving historical rate periods)
 
-You can modify these values after installation if needed (see Configuration section below).
+On assets-only installations without a Chargeback Agent policy, dashboards fall back to these defaults automatically, or you can upsert custom configuration rows manually (see Configuration section below).
 
 **Performance Note:** On clusters with months of historical monitoring data for multiple deployments, the initial transform execution may process a large volume of data. This can cause temporary performance impact during the first run. The transforms will then run incrementally on their configured schedules (15-60 minute intervals), processing only new data with minimal overhead.
 
@@ -56,6 +58,13 @@ These rules can be configured in **Stack Management → Rules** after installati
 To upgrade the integration, do the following:
 - Upload the new asset (ZIP) file to Kibana.
 - Transforms will auto-start (from version 0.2.8 onwards).
+
+**Upgrading to 0.6.0:**
+- Upload [`chargeback-0.6.0.zip`](assets/dist/0.6.0/chargeback-0.6.0.zip). Kibana requirement remains `9.2.0+`.
+- Seven transforms (`billing_cluster_cost`, `billing_realized_pool`, `billing_credits`, `cluster_deployment_contribution`, `cluster_tier_contribution`, `cluster_datastream_contribution`, and `cluster_tier_and_ds_contribution`) now write to versioned `chargeback_lookup.dest_*-1` indices aliased as `chargeback_lookup.*`, backfilling retained history from `metrics-ess_billing.billing-*`, `metrics-ess_billing.credits-*`, `monitoring-indices*`, and `metrics-chargeback.*` automatically. If raw billing or monitoring streams have shorter ILM retention than your `0.5.0` `*_lookup` indices, reindex older daily rows before the earliest retained source timestamp into `chargeback_lookup.dest_*-1` (routing `billing_cluster_cost_lookup` rows through `"pipeline": "logs-chargeback.lookup-0.6.0-billing"`, setting `usage_source: "legacy"` on migrated usage rows, and setting `is_onprem: true` on migrated On-Premises `mERU` rows).
+- Existing manual rates and historical effective-date windows in `chargeback_conf_lookup` stay untouched until a **Chargeback** Fleet policy with `sync_fleet_config: true` emits `config_snapshot` events. Before enabling `sync_fleet_config: true` on an installation with customized historical rate periods, copy your active rate and weights into the Fleet policy UI and set **Configuration Effective Start Date** (`config_effective_from`) to the start date of your current open-ended period (or set `sync_fleet_config: false`). On-Premises `mERU` rows now read `config_join_key: "chargeback_config_onprem"` (`_id: config_onprem`, default `0.00085`).
+- Transform destination custom pipeline hooks moved to `logs-chargeback.lookup@custom` and `logs-chargeback.lookup-<name>@custom`; migrate any lookup-only custom processors out of `metrics-chargeback.*@custom` before enabling native CEL streams.
+- If you installed the optional **Chargeback companion agent**, re-run `./scripts/install_chargeback_agent.sh` so its ES|QL tools and `chargeback-cost-review` workflow query the `0.6.0` `chargeback_lookup.*` aliases.
 
 **Upgrading to 0.5.0:**
 - Upload [`chargeback-0.5.0.zip`](assets/dist/0.5.0/chargeback-0.5.0.zip). Adds Serverless allocatable pool SKUs, usage transforms on canonical `monitoring-indices*` only (Cloud Console via the Elasticsearch integration `index_pivot`; avoids double-counting raw `.monitoring-es-*`), tier-preference order matching `monitoring_indices.yml`, and keyword runtime fields for fielddata-safe aggregations. Kibana requirement remains 9.2.0+.
@@ -101,8 +110,8 @@ To upgrade the integration, do the following:
 
 Pure Chargeback is this Fleet package. Optional add-ons live under [`addons/`](addons/) and [`../../agents/`](../../agents/):
 
-- **Serverless usage collector** — per–data-stream showback for Elastic Cloud Serverless after **0.5.0+**. See [`addons/serverless-usage-collector/Instructions.md`](addons/serverless-usage-collector/Instructions.md) and [`scripts/install_serverless_usage.sh`](../../scripts/install_serverless_usage.sh).
-- **Chargeback companion agent** — optional report and Q&A over lookup indices. See [`../../agents/companion-agent/Instructions.md`](../../agents/companion-agent/Instructions.md) and [`scripts/install_chargeback_agent.sh`](../../scripts/install_chargeback_agent.sh).
+- **Serverless usage collector** — optional Kibana Workflow add-on for **0.5.0** or **0.6.0+** assets-only deployments without a Chargeback Elastic Agent policy (in **0.6.0+**, the built-in `chargeback.usage` CEL stream collects Serverless `/_cat/indices` usage natively). See [`addons/serverless-usage-collector/Instructions.md`](addons/serverless-usage-collector/Instructions.md) and [`scripts/install_serverless_usage.sh`](../../scripts/install_serverless_usage.sh).
+- **Chargeback companion agent** — optional report and Q&A over `chargeback_lookup.*` indices (**0.6.0+**). See [`../../agents/companion-agent/Instructions.md`](../../agents/companion-agent/Instructions.md) and [`scripts/install_chargeback_agent.sh`](../../scripts/install_chargeback_agent.sh).
 
 ## Troubleshooting
 
@@ -110,24 +119,27 @@ If the dashboard is empty after install, see **[docs/troubleshooting.md](docs/tr
 
 ## Configuration
 
-Configuration values are stored in the `chargeback_conf_lookup` index, which is automatically created by version 0.2.10+ (current: **v0.5.0**). The dashboard automatically applies the correct configuration based on the billing date falling within the `conf_start_date` and `conf_end_date` range.
+In **v0.6.0**, configuration values (Cloud ECU rate, On-Premises `mERU` rate, currency unit, effective start date, blended weights, and utilization weights/floor) are managed directly in Kibana under **Management → Fleet → Agent Policies → Chargeback** (`sync_fleet_config: true`) and synced into `chargeback_conf_lookup` (`_id: config` for `chargeback_config` and `_id: config_onprem` for `chargeback_config_onprem`).
 
-### Update the default configuration:
+To manage `chargeback_conf_lookup` manually instead, set `sync_fleet_config: false` on your Chargeback Fleet policy (or run in assets-only mode) and upsert `_id: config` (and optionally `_id: config_onprem` for On-Premises `mERU`) with `"doc_as_upsert": true`:
 
-Using `_update/config` updates the document with ID `config` (the bootstrap transform writes this ID from 0.4.4 onward):
-
-```
+```json
 POST chargeback_conf_lookup/_update/config
 {
   "doc": {
+    "config_join_key": "chargeback_config",
     "conf_chargeable_unit_rate": 0.85,
     "conf_chargeable_unit_rate_unit": "EUR",
     "conf_indexing_weight": 20,
     "conf_query_weight": 20,
     "conf_storage_weight": 40,
+    "conf_utilization_memory_weight": 70,
+    "conf_utilization_storage_weight": 30,
+    "conf_utilization_floor": 0.10,
     "conf_start_date": "2024-01-01T00:00:00.000Z",
-    "conf_end_date": "2024-12-31T23:59:59.999Z"
-  }
+    "conf_end_date": "2046-12-31T23:59:59.999Z"
+  },
+  "doc_as_upsert": true
 }
 ```
 

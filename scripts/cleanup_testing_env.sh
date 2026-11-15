@@ -2,7 +2,7 @@
 # Clean up testing environment: uninstall Chargeback, On-Prem Billing, Elasticsearch;
 # remove Fleet package policy; delete lookup/monitoring indices; re-enable legacy monitoring.
 # Run from elasticsearch-chargeback repo root; integrations repo must be sibling or set INTEGRATIONS_REPO.
-# Tested with: Elasticsearch/Kibana 9.2.2, Chargeback integration 0.3.1.
+# Tested with: Elasticsearch/Kibana 9.2.x, Chargeback integration 0.6.0.
 set -e
 
 # Versions this cleanup is intended for (for documentation and optional checks)
@@ -15,7 +15,7 @@ INTEGRATIONS_REPO="${INTEGRATIONS_REPO:-$(cd "$CHARGEBACK_REPO/../integrations" 
 if [[ -z "$CHARGEBACK_VERSION" && -f "${INTEGRATIONS_REPO:-}/packages/chargeback/manifest.yml" ]]; then
   CHARGEBACK_VERSION="$(grep -E '^version:' "$INTEGRATIONS_REPO/packages/chargeback/manifest.yml" | awk '{print $2}')"
 fi
-CHARGEBACK_VERSION="${CHARGEBACK_VERSION:-0.5.0}"
+CHARGEBACK_VERSION="${CHARGEBACK_VERSION:-0.6.0}"
 KIBANA_HOST="${KIBANA_HOST:-https://127.0.0.1:5601}"
 ES_HOST="${ES_HOST:-https://127.0.0.1:9200}"
 USER="${ELASTIC_USER:-elastic}"
@@ -38,7 +38,24 @@ echo "Cleaning up testing env (stack $STACK_VERSION, chargeback $CHARGEBACK_VERS
 
 # 1. Uninstall Chargeback
 echo "--- 1. Uninstall Chargeback ---"
-(cd "$INTEGRATIONS_REPO/packages/chargeback" && $EP_CMD uninstall 2>/dev/null) || echo "Chargeback uninstall skipped or failed."
+CB_POLICIES_JSON=$(curl_kibana -sS "$KIBANA_HOST/api/fleet/package_policies?perPage=200" 2>/dev/null || true)
+if command -v jq >/dev/null 2>&1 && [[ -n "$CB_POLICIES_JSON" ]]; then
+  for PID in $(echo "$CB_POLICIES_JSON" | jq -r '.items[]? | select(.package.name == "chargeback") | .id' 2>/dev/null); do
+    [[ -z "$PID" ]] && continue
+    echo "  Delete Chargeback package policy $PID"
+    curl_kibana -sS -X DELETE "$KIBANA_HOST/api/fleet/package_policies/$PID" >/dev/null 2>&1 || true
+  done
+fi
+(cd "$INTEGRATIONS_REPO/packages/chargeback" && $EP_CMD uninstall 2>/dev/null) || echo "Chargeback elastic-package uninstall skipped or failed."
+CB_INSTALLED_JSON=$(curl_kibana -sS "$KIBANA_HOST/api/fleet/epm/packages/installed?perPage=200&nameQuery=chargeback" 2>/dev/null || true)
+CB_INST_VER=""
+if command -v jq >/dev/null 2>&1 && [[ -n "$CB_INSTALLED_JSON" ]]; then
+  CB_INST_VER=$(echo "$CB_INSTALLED_JSON" | jq -r '.items[]? | select(.name == "chargeback") | .version' 2>/dev/null | head -1)
+fi
+if [[ -n "$CB_INST_VER" ]]; then
+  curl_kibana -sS -X DELETE "$KIBANA_HOST/api/fleet/epm/packages/chargeback/$CB_INST_VER?force=true" >/dev/null 2>&1 \
+    && echo "Chargeback (chargeback@$CB_INST_VER) removed via Fleet API." || true
+fi
 
 # 2. Uninstall On-Prem Billing (remove package policies first, then package)
 echo "--- 2. Uninstall On-Prem Billing ---"
@@ -103,9 +120,30 @@ if [[ -z "$POLICY_IDS" ]]; then
   echo "No elasticsearch-monitoring package policy found."
 fi
 
-# 5. Delete indices created by testing
+# 5. Delete indices and data streams created by testing
 echo "--- 5. Delete testing indices ---"
-for idx in billing_cluster_cost_lookup billing_realized_pool_lookup chargeback_conf_lookup cluster_capacity_utilization_lookup cluster_datastream_contribution_lookup cluster_deployment_contribution_lookup cluster_tier_and_datastream_contribution_lookup cluster_tier_contribution_lookup monitoring-indices monitoring-indices-serverless .chargeback-serverless-projects onprem_billing_config metrics-ess_billing.billing-onprem; do
+for ds in "metrics-chargeback.billing-*" "metrics-chargeback.usage-*" "metrics-chargeback.node_stats-*" "metrics-ess_billing.billing-onprem"; do
+  resp=$(curl_es -sS -X DELETE "$ES_HOST/_data_stream/$ds" 2>/dev/null || true)
+  if echo "$resp" | grep -q '"acknowledged":true'; then
+    echo "Deleted data stream $ds"
+  fi
+done
+for idx in \
+  "chargeback_lookup.dest_*" \
+  billing_cluster_cost_lookup \
+  billing_realized_pool_lookup \
+  chargeback_conf_lookup \
+  cluster_capacity_utilization_lookup \
+  cluster_datastream_contribution_lookup \
+  cluster_deployment_contribution_lookup \
+  cluster_tier_and_datastream_contribution_lookup \
+  cluster_tier_contribution_lookup \
+  monitoring-indices \
+  monitoring-indices-serverless \
+  .chargeback-serverless-projects \
+  onprem_billing_config \
+  metrics-ess_billing.billing-onprem
+do
   resp=$(curl_es -sS -X DELETE "$ES_HOST/$idx" 2>/dev/null)
   if echo "$resp" | grep -q '"acknowledged":true'; then
     echo "Deleted $idx"

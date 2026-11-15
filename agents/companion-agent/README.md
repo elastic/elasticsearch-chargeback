@@ -6,7 +6,7 @@ This is an **add-on**, not part of the Fleet zip. Pure Chargeback does not depen
 
 ## Version
 
-Requires Chargeback integration **0.5.0+** and Kibana **9.2.0+** with Agent Builder enabled.
+Requires Chargeback integration **0.6.0+** (`chargeback_lookup.*` aliases) and Kibana **9.2.0+** with Agent Builder enabled.
 
 ## Install
 

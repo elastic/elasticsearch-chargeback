@@ -22,6 +22,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Integration Releases
 
+### [0.6.0] - 2026-11-15
+
+#### Breaking changes (package)
+
+- **Versioned `chargeback_lookup.*` lookup aliases and dedicated lookup `@custom` pipeline hooks.** `billing_cluster_cost`, `billing_realized_pool`, `billing_credits`, `cluster_deployment_contribution`, `cluster_tier_contribution`, `cluster_datastream_contribution`, and `cluster_tier_and_ds_contribution` now write to versioned `lookup`-mode destination indices (`chargeback_lookup.dest_*-1`) aliased as `chargeback_lookup.billing_cluster_cost`, `chargeback_lookup.billing_realized_pool`, `chargeback_lookup.billing_credits`, `chargeback_lookup.cluster_deployment_contribution`, `chargeback_lookup.cluster_tier_contribution`, `chargeback_lookup.cluster_datastream_contribution`, and `chargeback_lookup.cluster_tier_and_datastream_contribution` (`chargeback_conf_lookup` and `cluster_capacity_utilization_lookup` retain their names). Transform destination ingest pipelines invoke `logs-chargeback.lookup@custom` and `logs-chargeback.lookup-<name>@custom` so lookup customisations stay isolated from raw `metrics-chargeback.*@custom` stream pipelines.
+
+#### Added (package)
+
+- **Self-contained Elastic Agent CEL data collection (`billing`, `usage`, `node_stats`).** Collects Elastic Cloud Hosted and Serverless daily billing line items (`metrics-chargeback.billing-*`, including optional organisation credit commitments via `collect_ess_credits`), 10-minute reset-aware per-index and shard-placement tier usage (`metrics-chargeback.usage-*` across ECH/self-managed `/_stats` + `/_nodes` + `/_settings` and Serverless `/_cat/indices`), and 15-minute data-node JVM heap and disk telemetry (`metrics-chargeback.node_stats-*`) without requiring separate ESS Billing or Elasticsearch `index_pivot` policies.
+- **Legacy collector coexistence without double-counting or cutover gaps.** Supports existing **ESS Billing**, **On-Premises Billing** (`metrics-ess_billing.billing-onprem*`), and **Elasticsearch** (`monitoring-indices*`, `metrics-elasticsearch.stack_monitoring.node_stats*`, `.monitoring-es-*`, `metricbeat-*`) side by side, retaining legacy daily/node/index observations until native samples cover the full UTC day.
+- **Fleet UI rate & weight sync and simultaneous Cloud ECU + On-Premises `mERU` rates.** Moves currency unit, Cloud ECU rate (`unit_rate`), On-Premises `mERU` rate (`onprem_unit_rate` -> `_id: config_onprem`), effective UTC start date (`config_effective_from`), multi-policy `config_owner_id`, blended cost weights, and utilization weights/floor into Fleet policy controls synced by `chargeback_conf_lookup`.
+- **Active-dimension blended cost conservation & redesigned Configuration dashboard.** Normalises blended cost across active non-zero workload dimensions so tier and data stream allocations sum to 100% of the chargeable pool, and updates `[Chargeback] Configuration` with 72-hour freshness status, historical stream coverage, and per-deployment harvest telemetry.
+- **Opt-in stock ESS Billing and Elasticsearch Consumption dashboard compatibility fields** on `chargeback_lookup.dest_billing_cluster_cost-1`, `chargeback_lookup.dest_billing_credits-1`, and `metrics-chargeback.usage-*` (`doc_type: index_usage`).
+
+#### Changed (this repo — companion agent, scripts & docs)
+
+- Updated **Chargeback companion agent** ES|QL tools and `chargeback-cost-review` workflow (`agents/companion-agent/`) to query `chargeback_lookup.*` aliases, support native `metrics-chargeback.billing-*` alongside `metrics-ess_billing.billing-*`, resolve dual Cloud ECU / On-Premises `mERU` rate windows (`chargeback_config` / `chargeback_config_onprem` with safe `COALESCE` defaults), and match `0.6.0` active-dimension blended cost math.
+- Updated [`scripts/run_e2e_tests.sh`](scripts/run_e2e_tests.sh) and [`scripts/cleanup_testing_env.sh`](scripts/cleanup_testing_env.sh) for `0.6.0` lookup aliases, `config_snapshot` / `credit_line_item` / `node_stats` verification, and live Agent Builder ES|QL tool query checks.
+- Package **0.6.0** keeps Kibana `^9.2.0`. Asset: [`integrations/chargeback/assets/dist/0.6.0/chargeback-0.6.0.zip`](integrations/chargeback/assets/dist/0.6.0/chargeback-0.6.0.zip). Source: [elastic/integrations#22427](https://github.com/elastic/integrations/pull/22427). Zip SHA-256 `3030b5c39513c3db408a6d2d9e0de09f3310978bfa67a77e2fa6d9d7319bb2c9`.
+
 ### [0.5.0] - 2026-10-19
 
 #### Added (package)
