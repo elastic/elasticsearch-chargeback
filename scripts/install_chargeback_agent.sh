@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Install the optional Chargeback companion Agent Builder add-on.
-# Requires Chargeback integration 0.5.0+ and Agent Builder enabled on Kibana (9.2.0+).
+# Requires Chargeback integration 0.6.0+ and Agent Builder enabled on Kibana (9.2.0+).
 #
 # Export before running:
 #   KIBANA_URL      Kibana URL of the monitoring cluster

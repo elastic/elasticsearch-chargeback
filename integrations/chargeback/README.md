@@ -2,25 +2,19 @@
 
 ## Version
 
-Chargeback integration: 0.5.0
+Chargeback integration: 0.6.0
 
 ## Dependencies
 
-This process must be set up on the **Monitoring cluster**, where all monitoring data is collected.
+This integration runs on the **Monitoring cluster** (Hub), where billing and monitoring telemetry is collected.
 
 ### Requirements
 
 To use this integration, the following prerequisites must be met:
 
-- The monitoring cluster, where this integration is installed, must be on version 9.2.0+ due to its use of (smart) [ES|QL LOOKUP JOIN](https://www.elastic.co/docs/reference/query-languages/esql/esql-lookup-join).
-- The [**Elasticsearch Service Billing**](https://www.elastic.co/docs/reference/integrations/ess_billing/) integration (v1.7.0+) must be installed and running so that at least one concrete backing index matches `metrics-ess_billing.billing-*` before Chargeback starts (the `chargeback_conf_lookup` bootstrap transform uses that pattern as its source trigger).
-- The [**Elasticsearch**](https://www.elastic.co/docs/reference/integrations/elasticsearch/) integration (v1.16.0+) must be **installed and actively running** on all monitored deployments, with the following datasets enabled:
-  - **Index stats** — required for tier and data stream cost allocation. The `logs-elasticsearch.index_pivot-default-{VERSION}` transform must be running to aggregate these into `monitoring-indices`.
-  - **Node stats** from data nodes — required for the realized cost utilization score. Node stats are read from `metrics-elasticsearch.stack_monitoring.node_stats-*`, `.monitoring-es-*`, or `metricbeat-*` depending on your deployment type. Without node stats, utilization defaults to 100% and no discount is applied.
-
-This integration must be installed on the **Monitoring cluster** where the above mentioned relevant usage and billing data is collected.
-
-**Install order:** ESS Billing (or On-Premises Billing) with backing indices → Elasticsearch integration (index pivot + node stats) → Chargeback.
+- The monitoring cluster, where this integration is installed, must be on version **9.2.0+** due to its use of conditional [ES|QL LOOKUP JOIN](https://www.elastic.co/docs/reference/query-languages/esql/esql-lookup-join).
+- **Option A — Self-contained Elastic Agent CEL collection (recommended in `0.6.0+`):** Run a Fleet-managed **Elastic Agent** with the **Chargeback** integration enabled (`chargeback.billing`, `chargeback.usage`, and `chargeback.node_stats`). No separate **ESS Billing** or **Elasticsearch** `index_pivot` policies are required for Elastic Cloud Hosted or Serverless environments. For **self-managed / On-Premises** clusters, also install **On-Premises Billing** (`metrics-ess_billing.billing-onprem*`) so `mERU` billing rows are available to allocate.
+- **Option B — Coexistence / assets-only mode with existing producers:** Existing [**Elasticsearch Service Billing**](https://www.elastic.co/docs/reference/integrations/ess_billing/) (`v1.7.0+`, `metrics-ess_billing.billing-*`), **On-Premises Billing**, and [**Elasticsearch**](https://www.elastic.co/docs/reference/integrations/elasticsearch/) (`v1.16.0+` with `logs-elasticsearch.index_pivot-default-{VERSION}` started into `monitoring-indices*` and `node_stats` enabled) continue to work side by side without double-counting during mid-day cutover.
 
 ### Version compatibility
 
@@ -40,10 +34,11 @@ This integration must be installed on the **Monitoring cluster** where the above
 | 0.4.6 | 9.2.0+ | 1.7.0+ | Usage tier-cost panels: JOIN left side from `cluster_tier_contribution_lookup` for pre-0.4.5 text mappings |
 | 0.4.7 | 9.2.0+ | 1.7.0+ | Fleet pipeline layout (`data_stream/lookup`); capacity utilization runtime keyword for TEXT cluster names |
 | 0.5.0 | 9.2.0+ | 1.7.0+ | Serverless billing pool SKUs; canonical `monitoring-indices*` usage source; tier preference order; fielddata runtime fields |
+| 0.6.0 | 9.2.0+ | Optional (built-in CEL or 1.7.0+) | Self-contained CEL streams (`billing`, `usage`, `node_stats`), versioned `chargeback_lookup.*` aliases, Fleet UI config sync + On-Prem `mERU` rate, opt-in stock dashboard compatibility |
 
 ## Setup instructions
 
-Please see [Integration `Instructions.md`](Instructions.md) to install the integration.
+Please see [Integration `Instructions.md`](Instructions.md) to install the integration and [Credentials & API Keys by Scenario](Instructions.md#credentials--api-keys-by-scenario-elastic-cloud--cluster-access) for ECH, Serverless, On-Premises (`hub_es_url` / `hub_es_api_key`), and coexistence setup.
 
 ## Troubleshooting
 
@@ -51,25 +46,22 @@ See [Instructions.md — Troubleshooting](Instructions.md#troubleshooting) and [
 
 ## Data flow
 
-The Chargeback Module is building on two distinct data sets: 
-- The output of the Elasticsearch Service Billing integration, i.e. `metrics-ess_billing.billing-default` index.
-- The output of the Elasticsearch integration usage data, specifically that of the `logs-elasticsearch.index_pivot-default-{VERSION}` transform, ie. `monitoring-indices` index.
-
-The first layer of processing that we do, is eight transforms:
+Chargeback processes billing, index/tier usage, and node utilization telemetry from built-in Elastic Agent CEL streams (`metrics-chargeback.billing-*`, `metrics-chargeback.usage-*`, `metrics-chargeback.node_stats-*`) and/or existing **ESS Billing**, **On-Premises Billing**, and **Elasticsearch** (`monitoring-indices*`, `node_stats`) streams through **nine** continuous transforms:
 
 **Billing transforms:**
-- `billing_cluster_cost` — total chargeable units (ECU/ERU) per deployment, per SKU, per day. Includes `cost_type`, `cost_category`, and `is_allocatable` classification.
-- `billing_realized_pool` — allocatable data-tier capacity pool per deployment per day (the provisioned ECU ceiling for data nodes only).
-- `chargeback_conf_lookup` — configuration bootstrap (rate, weights, date windows).
+- `billing_cluster_cost` — total chargeable units (ECU / `mERU`) per deployment, per SKU, per day in `chargeback_lookup.dest_billing_cluster_cost-1` (aliased as `chargeback_lookup.billing_cluster_cost`). Includes `cost_type`, `cost_category`, `is_allocatable`, `is_onprem`, and ESS Billing compatibility fields.
+- `billing_realized_pool` — allocatable data-tier capacity pool per deployment per day in `chargeback_lookup.dest_billing_realized_pool-1` (aliased as `chargeback_lookup.billing_realized_pool`).
+- `billing_credits` — daily organisation credit commitment snapshots in `chargeback_lookup.dest_billing_credits-1` (aliased as `chargeback_lookup.billing_credits`) for the opt-in stock **[Metrics ESS Billing] Credits** dashboard alias.
+- `chargeback_conf_lookup` — syncs Fleet policy `config_snapshot` events (`5m` frequency) into `chargeback_lookup.dest_chargeback_conf-1` (aliased as `chargeback_lookup.chargeback_conf`, `_id: config` for Cloud ECU and `_id: config_onprem` for On-Premises `mERU`) while automatically carrying over pre-0.6.0 `chargeback_conf_lookup` settings or preserving manual rows when Fleet sync is disabled.
 
 **Utilization transforms:**
-- `cluster_capacity_utilization` — p95 heap and disk utilization across data-role nodes per deployment per day.
+- `cluster_capacity_utilization` — p95 heap and disk utilization across data-role nodes per deployment per day in `cluster_capacity_utilization_lookup`.
 
-**Usage transforms** (from monitoring indices):
-- `cluster_deployment_contribution` — indexing, querying, and storage metrics per deployment per day.
-- `cluster_tier_contribution` — same metrics split by data tier.
-- `cluster_datastream_contribution` — same metrics split by data stream; usage pipeline sets `ds_type` and `ds_namespace`.
-- `cluster_tier_and_ds_contribution` — same metrics split by both tier and data stream (includes `ds_type` and `ds_namespace`).
+**Usage transforms** (from `metrics-chargeback.usage-*` and `monitoring-indices*`):
+- `cluster_deployment_contribution` — indexing, querying, and storage metrics per deployment per day in `chargeback_lookup.dest_cluster_deployment_contribution-1` (aliased as `chargeback_lookup.cluster_deployment_contribution`).
+- `cluster_tier_contribution` — same metrics split by data tier in `chargeback_lookup.dest_cluster_tier_contribution-1` (aliased as `chargeback_lookup.cluster_tier_contribution`).
+- `cluster_datastream_contribution` — same metrics split by data stream in `chargeback_lookup.dest_cluster_datastream_contribution-1` (aliased as `chargeback_lookup.cluster_datastream_contribution`); usage pipeline sets `ds_type` and `ds_namespace`.
+- `cluster_tier_and_ds_contribution` — same metrics split by both tier and data stream in `chargeback_lookup.dest_cluster_tier_and_datastream_contribution-1` (aliased as `chargeback_lookup.cluster_tier_and_datastream_contribution`).
 
 All lookup destination documents include ECS `event.ingested` (when the row was written).
 
@@ -132,7 +124,28 @@ Version 0.2.8 includes three pre-configured Kibana alerting rule templates to he
 
 These alerting templates are automatically installed with the integration and can be configured through **Stack Management → Rules** in Kibana.
 
-**Important:** For alert rules 2 and 3, ensure that the Chargeback transforms are running before setting them up. These alerting rules query the lookup indices created by the transforms (`billing_cluster_cost_lookup`, `cluster_deployment_contribution_lookup`, etc.). If the transforms are not started, the alerts will not function correctly.
+**Important:** For alert rules 2 and 3, ensure that the Chargeback transforms are running before setting them up. These alerting rules query the lookup aliases created by the transforms (`chargeback_lookup.billing_cluster_cost`, `chargeback_lookup.cluster_deployment_contribution`, etc.). If the transforms are not started, the alerts will not function correctly.
+
+## Version 0.6.0 Release Notes
+
+### Breaking changes
+
+- Versioned `chargeback_lookup.*` lookup aliases (`chargeback_lookup.dest_*-1` aliased as `chargeback_lookup.billing_cluster_cost`, `chargeback_lookup.billing_realized_pool`, `chargeback_lookup.billing_credits`, `chargeback_lookup.cluster_deployment_contribution`, `chargeback_lookup.cluster_tier_contribution`, `chargeback_lookup.cluster_datastream_contribution`, and `chargeback_lookup.cluster_tier_and_datastream_contribution`) replace concrete `0.5.0` `*_lookup` names so in-place upgrades never collide with legacy mappings or stale `group_by` document IDs.
+- Lookup destination custom pipeline hooks moved to `logs-chargeback.lookup@custom` and `logs-chargeback.lookup-<name>@custom` (separating them from raw `metrics-chargeback.*@custom` stream hooks).
+
+### What's new
+
+- Self-contained Elastic Agent CEL collection streams (`chargeback.billing`, `chargeback.usage`, and `chargeback.node_stats`) covering Elastic Cloud Hosted, Serverless (including `/_cat/indices` usage), and self-managed shard-placement tier and node utilization harvesting.
+- Side-by-side coexistence with **ESS Billing**, **On-Premises Billing**, and **Elasticsearch** (`monitoring-indices*`, `node_stats`) without double-counting or mid-day cutover gaps.
+- Fleet policy controls for currency, Cloud ECU rate (`unit_rate`), On-Premises `mERU` rate (`onprem_unit_rate` -> `_id: config_onprem`), effective UTC start date (`config_effective_from`), multi-policy `config_owner_id`, blended weights, and utilization weights/floor.
+- Active-dimension blended cost normalisation (100% chargeable-pool conservation) and redesigned `[Chargeback] Configuration` dashboard with 72-hour freshness status and deployment harvest registry.
+- Opt-in compatibility fields and aliases for stock **ESS Billing** (`metrics-ess_billing.billing-chargeback`, `metrics-ess_billing.credits-chargeback`) and **Elasticsearch Consumption** (`monitoring-indices`) dashboards.
+- Companion Agent Builder ES|QL tools and `chargeback-cost-review` workflow (`../../agents/companion-agent/`) updated for `0.6.0` `chargeback_lookup.*` aliases and simultaneous Cloud ECU / On-Premises `mERU` rate joins.
+
+### Upgrade notes
+
+- Upload [`chargeback-0.6.0.zip`](assets/dist/0.6.0/chargeback-0.6.0.zip). Package version **0.6.0**; Kibana remains `^9.2.0`. See [Instructions.md — Upgrading to 0.6.0](Instructions.md#upgrade-integration).
+- Integration source: [elastic/integrations#22427](https://github.com/elastic/integrations/pull/22427).
 
 ## Version 0.5.0 Release Notes
 

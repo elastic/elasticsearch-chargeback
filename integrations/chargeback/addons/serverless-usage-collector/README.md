@@ -2,7 +2,9 @@
 
 Adds Elastic Cloud Serverless **usage** collection so a monitoring cluster can allocate cost to data streams for Hosted and Serverless side by side in the existing dashboards.
 
-This is an **add-on**, not part of the Fleet zip. Pure Chargeback (0.5.0+) already recognizes Serverless billing SKUs in the realized pool. Install this add-on when you need per-index / datastream showback for Serverless.
+This is an **add-on**, not part of the Fleet zip. Pure Chargeback (0.5.0+) already recognizes Serverless billing SKUs in the realized pool. Install this add-on when you need per-index / datastream showback for Serverless on **0.5.0** or on **0.6.0+** assets-only deployments without a Chargeback Elastic Agent policy.
+
+> **Note for Chargeback 0.6.0+:** Starting in **0.6.0**, the Chargeback Fleet integration includes built-in `chargeback.billing` and `chargeback.usage` Elastic Agent CEL streams that harvest Serverless billing and per-project `/_cat/indices` usage directly without requiring this Kibana Workflow add-on. Use this add-on only when running **0.5.0** or an assets-only installation without a Chargeback Agent policy.
 
 ## Version
 
