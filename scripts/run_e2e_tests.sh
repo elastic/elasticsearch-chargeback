@@ -511,7 +511,7 @@ if [[ "$IS_060_PLUS" -eq 1 ]]; then
     \"data_stream\": {\"type\": \"metrics\", \"dataset\": \"chargeback.billing\", \"namespace\": \"default\"},
     \"conf_sync_enabled\": true,
     \"conf_chargeable_unit_rate\": 0.85,
-    \"conf_onprem_unit_rate\": 0.00085,
+    \"conf_onprem_chargeable_unit_rate\": 0.00085,
     \"conf_chargeable_unit_rate_unit\": \"EUR\",
     \"conf_indexing_weight\": 20,
     \"conf_query_weight\": 20,
@@ -987,16 +987,16 @@ if [[ "$IS_060_PLUS" -eq 1 ]]; then
       PROOF_06_OK=0
     fi
   done
-  if curl_es "$ES_HOST/chargeback_conf_lookup/_doc/config_onprem" 2>/dev/null | jq -e '.found == true and ._source.config_join_key == "chargeback_config_onprem"' >/dev/null 2>&1; then
-    echo "  chargeback_conf_lookup _id=config_onprem: PASS"
+  if curl_es "$ES_HOST/chargeback_conf_lookup/_doc/config_onprem" 2>/dev/null | jq -e '.found == true and ._source.config_join_key == "chargeback_config_onprem" and (._source.conf_chargeable_unit_rate - 0.00085 | fabs) < 1e-6' >/dev/null 2>&1; then
+    echo "  chargeback_conf_lookup _id=config_onprem (rate=0.00085): PASS"
   else
     echo "  chargeback_conf_lookup _id=config_onprem: FAIL"
     PROOF_06_OK=0
   fi
-  ONPREM_ESQL='FROM chargeback_lookup.billing_cluster_cost | EVAL ts = @timestamp, is_onprem_row = COALESCE(is_onprem, false), onprem_cfg_key = CASE(is_onprem_row, "chargeback_config_onprem", null) | LOOKUP JOIN chargeback_conf_lookup ON onprem_cfg_key == config_join_key AND ts >= conf_start_date AND ts <= conf_end_date | STATS cost = SUM(total_chargeable_units * COALESCE(conf_chargeable_unit_rate, 0.00085)), onprem_rows = COUNT(*) BY is_onprem_row | WHERE is_onprem_row == true'
+  ONPREM_ESQL='FROM chargeback_lookup.billing_cluster_cost | EVAL ts = @timestamp, is_onprem_row = COALESCE(is_onprem, false), onprem_cfg_key = CASE(is_onprem_row, "chargeback_config_onprem", null) | LOOKUP JOIN chargeback_conf_lookup ON onprem_cfg_key == config_join_key AND ts >= conf_start_date AND ts <= conf_end_date | STATS cost = SUM(total_chargeable_units * COALESCE(conf_chargeable_unit_rate, 0.00085)), rate_used = MAX(conf_chargeable_unit_rate), onprem_rows = COUNT(*) BY is_onprem_row | WHERE is_onprem_row == true'
   ONPREM_RESP=$(curl_es -X POST "$ES_HOST/_query" -d "$(printf '%s' "$ONPREM_ESQL" | jq -Rs '{query: .}')" 2>/dev/null)
-  if echo "$ONPREM_RESP" | jq -e '(.values | length) >= 1 and .values[0][0] > 0' >/dev/null 2>&1; then
-    echo "  onprem mERU dual-rate join: PASS"
+  if echo "$ONPREM_RESP" | jq -e '(.values | length) >= 1 and .values[0][0] > 0 and ((.values[0][1] - 0.00085) | fabs) < 1e-6' >/dev/null 2>&1; then
+    echo "  onprem mERU dual-rate join (rate=0.00085): PASS"
   else
     echo "  onprem mERU dual-rate join: FAIL ($ONPREM_RESP)"
     PROOF_06_OK=0
