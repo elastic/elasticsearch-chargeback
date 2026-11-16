@@ -167,7 +167,7 @@ GET chargeback_lookup.billing_credits/_count
 GET cluster_capacity_utilization_lookup/_count
 GET chargeback_lookup.cluster_deployment_contribution/_count
 GET chargeback_lookup.cluster_datastream_contribution/_count
-GET chargeback_conf_lookup/_search
+GET chargeback_lookup.chargeback_conf/_search
 ```
 
 | Lookup alias / index | If count is 0 |
@@ -176,29 +176,29 @@ GET chargeback_conf_lookup/_search
 | `chargeback_lookup.billing_credits` | Expected `0` when the organisation has no Cloud credit drawdowns (`credit_line_item`) |
 | `cluster_capacity_utilization_lookup` | No `node_stats` data (or Serverless-only environment; utilization defaults to 100%) |
 | `chargeback_lookup.cluster_*_contribution` | No `metrics-chargeback.usage-*` or `monitoring-indices*` data, `index_pivot` not started, or transform error |
-| `chargeback_conf_lookup` | Assets-only install without Fleet `config_snapshot` or manual config upsert; dashboards fall back to `COALESCE` defaults (`0.85` / `0.00085` `EUR`) |
+| `chargeback_lookup.chargeback_conf` | Assets-only install without Fleet `config_snapshot` or manual config upsert; dashboards fall back to `COALESCE` defaults (`0.85` / `0.00085` `EUR`) |
 
 Sample billing document fields (0.3.1+): `@timestamp`, `deployment_id`, `deployment_name`, `total_chargeable_units`, `composite_key`.
 
-## Step 4 — Configuration date range and dual rates (`chargeback_conf_lookup`)
+## Step 4 — Configuration date range and dual rates (`chargeback_lookup.chargeback_conf`)
 
-In **0.6.0+**, `chargeback_conf_lookup` holds separate Cloud (`_id: config`, `config_join_key: "chargeback_config"`) and On-Premises (`_id: config_onprem`, `config_join_key: "chargeback_config_onprem"`) rate rows synced from Fleet `config_snapshot` events. Dashboard panels join config by date window and `config_join_key`, applying `COALESCE` defaults (`0.85` `EUR` per ECU and `0.00085` `EUR` per `mERU`) when `chargeback_conf_lookup` is empty:
+In **0.6.0+**, `chargeback_lookup.chargeback_conf` (`chargeback_lookup.dest_chargeback_conf-1`) holds separate Cloud (`_id: config`, `config_join_key: "chargeback_config"`) and On-Premises (`_id: config_onprem`, `config_join_key: "chargeback_config_onprem"`) rate rows synced from Fleet `config_snapshot` events (and automatically carries over any pre-0.6.0 `chargeback_conf_lookup` custom row when no Fleet `config_snapshot` exists). Dashboard panels join config by date window and `config_join_key`, applying `COALESCE` defaults (`0.85` `EUR` per ECU and `0.00085` `EUR` per `mERU`) when `chargeback_lookup.chargeback_conf` is empty:
 
 ```esql
 EVAL cloud_cfg_key = "chargeback_config"
-| LOOKUP JOIN chargeback_conf_lookup ON @timestamp >= conf_start_date AND @timestamp <= conf_end_date AND cloud_cfg_key == config_join_key
+| LOOKUP JOIN chargeback_lookup.chargeback_conf ON @timestamp >= conf_start_date AND @timestamp <= conf_end_date AND cloud_cfg_key == config_join_key
 ```
 
 Inspect config:
 
 ```json
-GET chargeback_conf_lookup/_search
+GET chargeback_lookup.chargeback_conf/_search
 ```
 
 When using a Chargeback Fleet policy (`0.6.0+`), update the rate, currency, or contract dates directly in the Fleet integration policy settings. On assets-only installs (or to override manually), upsert `_id: config` (and optionally `_id: config_onprem`) with `doc_as_upsert: true` — see [Instructions.md — Configuration](../Instructions.md#configuration):
 
 ```json
-POST chargeback_conf_lookup/_update/config
+POST chargeback_lookup.chargeback_conf/_update/config
 {
   "doc": {
     "config_join_key": "chargeback_config",
@@ -224,7 +224,7 @@ Run in **Discover → ES|QL** (or Dev Tools where ES|QL is enabled).
 ```esql
 FROM chargeback_lookup.billing_cluster_cost
 | EVAL cloud_cfg_key = "chargeback_config"
-| LOOKUP JOIN chargeback_conf_lookup ON @timestamp >= conf_start_date AND @timestamp <= conf_end_date AND cloud_cfg_key == config_join_key
+| LOOKUP JOIN chargeback_lookup.chargeback_conf ON @timestamp >= conf_start_date AND @timestamp <= conf_end_date AND cloud_cfg_key == config_join_key
 | EVAL unit_rate = COALESCE(conf_chargeable_unit_rate, 0.85)
 | STATS rows = COUNT(*), total_units = SUM(total_chargeable_units) BY deployment_name, unit_rate
 | SORT rows DESC
@@ -292,7 +292,7 @@ There is no supported workaround on **0.3.1** other than upgrading the package.
 | All panels empty; Chargeback transforms “started” | Upstream billing/usage source indices empty, or `logs-elasticsearch.index_pivot-default-*` not started on assets-only installs |
 | ESS Billing dashboard has data; Chargeback empty | `billing_cluster_cost` not finished first run (60m + 1h delay), transform failed, or `total_ecu` / `total_chargeable_units` not > 0 |
 | ESS Billing total slightly differs from Chargeback for "today" | Expected: Chargeback uses **calendar-day** pivots with sync delay; compare **completed UTC days** (see above) |
-| `chargeback_lookup.billing_cluster_cost` has docs; custom rate not applied | `chargeback_conf_lookup` date range does not cover billing `@timestamp`, or `config_join_key` missing on manual upsert |
+| `chargeback_lookup.billing_cluster_cost` has docs; custom rate not applied | `chargeback_lookup.chargeback_conf` date range does not cover billing `@timestamp`, or `config_join_key` missing on manual upsert |
 | Cost panels OK; tier / data stream / blended panels empty | `chargeback_lookup.cluster_*_contribution` empty or `composite_key` mismatch between billing and usage |
 | Deployment group filter always empty | Deployment tags not configured on Elastic Cloud deployments, or ESS Billing **< 1.7.0** / **Add deployment tags** disabled |
 | `Unknown column [total_ecu]` / `[conf_ecu_rate]` on managed dashboard | **0.3.1** mapping/query mismatch → upgrade to **0.3.2+** and recreate lookups; on **0.4.2** Billing/Usage panels → upgrade to **0.4.3+** (dashboard ES\|QL only) |
@@ -320,7 +320,7 @@ When contacting Field, include:
 2. Elasticsearch and Kibana versions (`GET /`)
 3. Output of `_count` for `metrics-chargeback.*`, `metrics-ess_billing.billing-*`, `monitoring-indices*`, and the lookup aliases/indices in Step 3
 4. State of `logs-elasticsearch.index_pivot-default-*` (if used) and all `logs-chargeback.*` transforms
-5. One sample document from `chargeback_lookup.billing_cluster_cost` and `GET chargeback_conf_lookup/_search`
+5. One sample document from `chargeback_lookup.billing_cluster_cost` and `GET chargeback_lookup.chargeback_conf/_search`
 6. Result of the ES|QL query in Step 5 (row count or error message)
 
 ## Legacy Chargeback module

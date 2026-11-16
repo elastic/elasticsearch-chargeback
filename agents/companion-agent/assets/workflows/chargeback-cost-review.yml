@@ -16,13 +16,13 @@ consts:
   # Preserve billing @timestamp and resolve both Cloud ECU and On-Premises mERU rate windows.
   conf_join: >-
     | EVAL ts = COALESCE(billing_ts, @timestamp), cloud_cfg_key = "chargeback_config"
-    | LOOKUP JOIN chargeback_conf_lookup ON cloud_cfg_key == config_join_key AND ts >= conf_start_date AND ts <= conf_end_date
+    | LOOKUP JOIN chargeback_lookup.chargeback_conf ON cloud_cfg_key == config_join_key AND ts >= conf_start_date AND ts <= conf_end_date
     | EVAL cloud_rate = conf_chargeable_unit_rate, cloud_unit = conf_chargeable_unit_rate_unit,
     c_mem_w = TO_DOUBLE(conf_utilization_memory_weight), c_disk_w = TO_DOUBLE(conf_utilization_storage_weight),
     c_util_floor = TO_DOUBLE(conf_utilization_floor)
     | DROP cloud_cfg_key, config_join_key, conf_start_date, conf_end_date, conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit
     | EVAL onprem_cfg_key = CASE(is_onprem_row, "chargeback_config_onprem", null)
-    | LOOKUP JOIN chargeback_conf_lookup ON onprem_cfg_key == config_join_key AND ts >= conf_start_date AND ts <= conf_end_date
+    | LOOKUP JOIN chargeback_lookup.chargeback_conf ON onprem_cfg_key == config_join_key AND ts >= conf_start_date AND ts <= conf_end_date
     | EVAL rate = CASE(is_onprem_row, COALESCE(conf_chargeable_unit_rate, 0.00085), COALESCE(cloud_rate, 0.85)),
     currency_unit = CASE(is_onprem_row, COALESCE(conf_chargeable_unit_rate_unit, cloud_unit, "EUR"), COALESCE(cloud_unit, "EUR")),
     mem_w = CASE(is_onprem_row, COALESCE(TO_DOUBLE(conf_utilization_memory_weight), c_mem_w, 70.0), COALESCE(c_mem_w, 70.0)),
@@ -36,7 +36,7 @@ steps:
       path: /_query
       body:
         query: >-
-          FROM chargeback_conf_lookup | KEEP config_join_key, conf_chargeable_unit_rate,
+          FROM chargeback_lookup.chargeback_conf | KEEP config_join_key, conf_chargeable_unit_rate,
           conf_chargeable_unit_rate_unit, conf_indexing_weight, conf_query_weight,
           conf_storage_weight, conf_utilization_memory_weight,
           conf_utilization_storage_weight, conf_utilization_floor, conf_start_date,

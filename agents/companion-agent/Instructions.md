@@ -9,7 +9,7 @@ Prefer [`scripts/install_chargeback_agent.sh`](../../scripts/install_chargeback_
 - Chargeback integration **0.6.0+** with transforms in `health: green` and lookup indices populated. Verify with `GET _transform/_stats` and `GET chargeback_lookup.cluster_datastream_contribution/_count`.
 - Kibana **9.2.0+** with **Agent Builder** enabled (`GET /api/agent_builder/agents` returns `200`).
 - An LLM connector configured for Agent Builder.
-- A Kibana API key that can manage Agent Builder assets and read `chargeback_lookup.*`, `chargeback_conf_lookup`, and `cluster_capacity_utilization_lookup`.
+- A Kibana API key that can manage Agent Builder assets and read `chargeback_lookup.*`, `chargeback_lookup.chargeback_conf`, and `cluster_capacity_utilization_lookup`.
 
 ## Install
 

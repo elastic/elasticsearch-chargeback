@@ -52,7 +52,7 @@ Chargeback processes billing, index/tier usage, and node utilization telemetry f
 - `billing_cluster_cost` — total chargeable units (ECU / `mERU`) per deployment, per SKU, per day in `chargeback_lookup.dest_billing_cluster_cost-1` (aliased as `chargeback_lookup.billing_cluster_cost`). Includes `cost_type`, `cost_category`, `is_allocatable`, `is_onprem`, and ESS Billing compatibility fields.
 - `billing_realized_pool` — allocatable data-tier capacity pool per deployment per day in `chargeback_lookup.dest_billing_realized_pool-1` (aliased as `chargeback_lookup.billing_realized_pool`).
 - `billing_credits` — daily organisation credit commitment snapshots in `chargeback_lookup.dest_billing_credits-1` (aliased as `chargeback_lookup.billing_credits`) for the opt-in stock **[Metrics ESS Billing] Credits** dashboard alias.
-- `chargeback_conf_lookup` — syncs Fleet policy `config_snapshot` events (`5m` frequency) into `chargeback_conf_lookup` (`_id: config` for Cloud ECU and `_id: config_onprem` for On-Premises `mERU`) while preserving manual rows when Fleet sync is disabled.
+- `chargeback_conf_lookup` — syncs Fleet policy `config_snapshot` events (`5m` frequency) into `chargeback_lookup.dest_chargeback_conf-1` (aliased as `chargeback_lookup.chargeback_conf`, `_id: config` for Cloud ECU and `_id: config_onprem` for On-Premises `mERU`) while automatically carrying over pre-0.6.0 `chargeback_conf_lookup` settings or preserving manual rows when Fleet sync is disabled.
 
 **Utilization transforms:**
 - `cluster_capacity_utilization` — p95 heap and disk utilization across data-role nodes per deployment per day in `cluster_capacity_utilization_lookup`.

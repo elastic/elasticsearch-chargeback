@@ -19,10 +19,10 @@ Two independent feeds, joined per day per deployment:
 
 Everything joins on `composite_key`, which is `YYYY-MM-DD_<deployment_id>`.
 
-`chargeback_conf_lookup` holds the currency rate (`config_join_key: "chargeback_config"`
+`chargeback_lookup.chargeback_conf` holds the currency rate (`config_join_key: "chargeback_config"`
 for Elastic Cloud ECU, `config_join_key: "chargeback_config_onprem"` for On-Premises `mERU`)
 and the weights. Every cost figure is `chargeable_units x conf_chargeable_unit_rate` (falling
-back to `0.85` `EUR` per ECU and `0.00085` `EUR` per `mERU` when `chargeback_conf_lookup` is
+back to `0.85` `EUR` per ECU and `0.00085` `EUR` per `mERU` when `chargeback_lookup.chargeback_conf` is
 empty on an assets-only install), so **always read the configuration before quoting a currency
 amount** — the rate and the currency are customer-configurable.
 Never assume 0.85 EUR without checking `chargeback.configuration` first.

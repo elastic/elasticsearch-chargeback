@@ -7,7 +7,7 @@
     "configuration"
   ],
   "configuration": {
-    "query": "FROM chargeback_conf_lookup\n| KEEP config_join_key, conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_indexing_weight, conf_query_weight, conf_storage_weight, conf_utilization_memory_weight, conf_utilization_storage_weight, conf_utilization_floor, conf_start_date, conf_end_date\n| LIMIT 10",
+    "query": "FROM chargeback_lookup.chargeback_conf\n| KEEP config_join_key, conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_indexing_weight, conf_query_weight, conf_storage_weight, conf_utilization_memory_weight, conf_utilization_storage_weight, conf_utilization_floor, conf_start_date, conf_end_date\n| LIMIT 10",
     "params": {}
   }
 }

@@ -53,20 +53,22 @@ if [[ "$IS_060_PLUS" -eq 1 ]]; then
   BILLING_COST_LOOKUP="chargeback_lookup.billing_cluster_cost"
   REALIZED_POOL_LOOKUP="chargeback_lookup.billing_realized_pool"
   BILLING_CREDITS_LOOKUP="chargeback_lookup.billing_credits"
+  CONF_LOOKUP="chargeback_lookup.chargeback_conf"
   DEP_CONTRIB_LOOKUP="chargeback_lookup.cluster_deployment_contribution"
   DS_CONTRIB_LOOKUP="chargeback_lookup.cluster_datastream_contribution"
   TIER_CONTRIB_LOOKUP="chargeback_lookup.cluster_tier_contribution"
   TIER_DS_CONTRIB_LOOKUP="chargeback_lookup.cluster_tier_and_datastream_contribution"
-  ALL_CHARGEBACK_LOOKUPS="$BILLING_COST_LOOKUP $REALIZED_POOL_LOOKUP $BILLING_CREDITS_LOOKUP chargeback_conf_lookup cluster_capacity_utilization_lookup $DS_CONTRIB_LOOKUP $DEP_CONTRIB_LOOKUP $TIER_DS_CONTRIB_LOOKUP $TIER_CONTRIB_LOOKUP"
+  ALL_CHARGEBACK_LOOKUPS="$BILLING_COST_LOOKUP $REALIZED_POOL_LOOKUP $BILLING_CREDITS_LOOKUP $CONF_LOOKUP cluster_capacity_utilization_lookup $DS_CONTRIB_LOOKUP $DEP_CONTRIB_LOOKUP $TIER_DS_CONTRIB_LOOKUP $TIER_CONTRIB_LOOKUP"
 else
   BILLING_COST_LOOKUP="billing_cluster_cost_lookup"
   REALIZED_POOL_LOOKUP="billing_realized_pool_lookup"
   BILLING_CREDITS_LOOKUP=""
+  CONF_LOOKUP="chargeback_conf_lookup"
   DEP_CONTRIB_LOOKUP="cluster_deployment_contribution_lookup"
   DS_CONTRIB_LOOKUP="cluster_datastream_contribution_lookup"
   TIER_CONTRIB_LOOKUP="cluster_tier_contribution_lookup"
   TIER_DS_CONTRIB_LOOKUP="cluster_tier_and_datastream_contribution_lookup"
-  ALL_CHARGEBACK_LOOKUPS="$BILLING_COST_LOOKUP $REALIZED_POOL_LOOKUP chargeback_conf_lookup cluster_capacity_utilization_lookup $DS_CONTRIB_LOOKUP $DEP_CONTRIB_LOOKUP $TIER_DS_CONTRIB_LOOKUP $TIER_CONTRIB_LOOKUP"
+  ALL_CHARGEBACK_LOOKUPS="$BILLING_COST_LOOKUP $REALIZED_POOL_LOOKUP $CONF_LOOKUP cluster_capacity_utilization_lookup $DS_CONTRIB_LOOKUP $DEP_CONTRIB_LOOKUP $TIER_DS_CONTRIB_LOOKUP $TIER_CONTRIB_LOOKUP"
 fi
 
 # Sleep durations (seconds) for transform/config backfill
@@ -563,8 +565,8 @@ if [[ -n "$CONF_TID" ]]; then
   curl_es -X POST "$ES_HOST/_transform/$CONF_TID/_start" >/dev/null 2>&1 || true
   curl_es -X POST "$ES_HOST/_transform/$CONF_TID/_schedule_now" >/dev/null 2>&1 || true
   sleep 10
-  CONF_LOOKUP_COUNT=$(curl_es "$ES_HOST/chargeback_conf_lookup/_count" 2>/dev/null | grep -oE '"count":[0-9]+' | sed 's/"count"://')
-  echo "  chargeback_conf_lookup has ${CONF_LOOKUP_COUNT:-0} doc(s) after re-run."
+  CONF_LOOKUP_COUNT=$(curl_es "$ES_HOST/$CONF_LOOKUP/_count" 2>/dev/null | grep -oE '"count":[0-9]+' | sed 's/"count"://')
+  echo "  $CONF_LOOKUP has ${CONF_LOOKUP_COUNT:-0} doc(s) after re-run."
 fi
 
 # 8h. Ensure billing_cluster_cost lookup has deployment_group set (0.6.0+ extracts it natively; patch only if empty)
@@ -599,9 +601,9 @@ for idx in $ALL_CHARGEBACK_LOOKUPS; do
 done
 # Usage dashboard smoke: blended cost by ds_namespace must return rows
 if [[ "$IS_060_PLUS" -eq 1 ]]; then
-  USAGE_SMOKE_QUERY="FROM $REALIZED_POOL_LOOKUP | EVAL ts = @timestamp, ck = composite_key::keyword, bill_is_onprem = COALESCE(is_onprem, false), cloud_cfg_key = \"chargeback_config\" | DROP composite_key | LOOKUP JOIN $DEP_CONTRIB_LOOKUP ON ck == composite_key | DROP composite_key, usage_source | LOOKUP JOIN $TIER_DS_CONTRIB_LOOKUP ON ck == composite_key | DROP composite_key | LOOKUP JOIN chargeback_conf_lookup ON cloud_cfg_key == config_join_key AND ts >= conf_start_date AND ts <= conf_end_date | EVAL chargeable_pool = data_tier_capacity_ecu | EVAL blended = TO_DOUBLE(tier_and_datastream_sum_store_size) / deployment_sum_store_size * chargeable_pool * COALESCE(conf_chargeable_unit_rate, 0.85) | STATS agg = SUM(blended) BY ds_namespace | WHERE agg > 0 | LIMIT 3"
+  USAGE_SMOKE_QUERY="FROM $REALIZED_POOL_LOOKUP | EVAL ts = @timestamp, ck = composite_key::keyword, bill_is_onprem = COALESCE(is_onprem, false), cloud_cfg_key = \"chargeback_config\" | DROP composite_key | LOOKUP JOIN $DEP_CONTRIB_LOOKUP ON ck == composite_key | DROP composite_key, usage_source | LOOKUP JOIN $TIER_DS_CONTRIB_LOOKUP ON ck == composite_key | DROP composite_key | LOOKUP JOIN $CONF_LOOKUP ON cloud_cfg_key == config_join_key AND ts >= conf_start_date AND ts <= conf_end_date | EVAL chargeable_pool = data_tier_capacity_ecu | EVAL blended = TO_DOUBLE(tier_and_datastream_sum_store_size) / deployment_sum_store_size * chargeable_pool * COALESCE(conf_chargeable_unit_rate, 0.85) | STATS agg = SUM(blended) BY ds_namespace | WHERE agg > 0 | LIMIT 3"
 else
-  USAGE_SMOKE_QUERY="FROM $REALIZED_POOL_LOOKUP | EVAL ts = @timestamp | EVAL ck = composite_key::keyword | DROP composite_key | LOOKUP JOIN $DEP_CONTRIB_LOOKUP ON ck == composite_key | DROP composite_key | LOOKUP JOIN $TIER_DS_CONTRIB_LOOKUP ON ck == composite_key | DROP composite_key | LOOKUP JOIN chargeback_conf_lookup ON ts >= conf_start_date AND ts <= conf_end_date | EVAL chargeable_pool = data_tier_capacity_ecu | EVAL blended = TO_DOUBLE(tier_and_datastream_sum_store_size) / deployment_sum_store_size * chargeable_pool * COALESCE(conf_chargeable_unit_rate, 1.0) | STATS agg = SUM(blended) BY ds_namespace | WHERE agg > 0 | LIMIT 3"
+  USAGE_SMOKE_QUERY="FROM $REALIZED_POOL_LOOKUP | EVAL ts = @timestamp | EVAL ck = composite_key::keyword | DROP composite_key | LOOKUP JOIN $DEP_CONTRIB_LOOKUP ON ck == composite_key | DROP composite_key | LOOKUP JOIN $TIER_DS_CONTRIB_LOOKUP ON ck == composite_key | DROP composite_key | LOOKUP JOIN $CONF_LOOKUP ON ts >= conf_start_date AND ts <= conf_end_date | EVAL chargeable_pool = data_tier_capacity_ecu | EVAL blended = TO_DOUBLE(tier_and_datastream_sum_store_size) / deployment_sum_store_size * chargeable_pool * COALESCE(conf_chargeable_unit_rate, 1.0) | STATS agg = SUM(blended) BY ds_namespace | WHERE agg > 0 | LIMIT 3"
 fi
 USAGE_SMOKE=$(curl_es "$ES_HOST/_query" -d "$(printf '%s' "$USAGE_SMOKE_QUERY" | jq -Rs '{query: .}')" 2>/dev/null || true)
 if echo "$USAGE_SMOKE" | grep -q '"values"'; then
@@ -717,21 +719,21 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 1
 fi
 ESQL_PROOF_OK=1
-CONF_COUNT=$(curl_es "$ES_HOST/chargeback_conf_lookup/_count" 2>/dev/null | jq -r '.count // 0' 2>/dev/null || echo 0)
+CONF_COUNT=$(curl_es "$ES_HOST/$CONF_LOOKUP/_count" 2>/dev/null | jq -r '.count // 0' 2>/dev/null || echo 0)
 if [[ "${CONF_COUNT:-0}" -eq 0 ]]; then
-  echo "  chargeback_conf_lookup: FAIL (index empty; bootstrap transform must run after billing source has docs)"
+  echo "  $CONF_LOOKUP: FAIL (index empty; bootstrap transform must run after billing source has docs)"
   ESQL_PROOF_OK=0
 else
-  echo "  chargeback_conf_lookup: PASS (${CONF_COUNT} docs)"
+  echo "  $CONF_LOOKUP: PASS (${CONF_COUNT} docs)"
 fi
 # Issue #110: bootstrap must write fixed _id "config" for POST .../_update/config
-if curl_es "$ES_HOST/chargeback_conf_lookup/_doc/config" 2>/dev/null | jq -e '.found == true and ._id == "config"' >/dev/null 2>&1; then
-  echo "  chargeback_conf_lookup _id=config: PASS"
+if curl_es "$ES_HOST/$CONF_LOOKUP/_doc/config" 2>/dev/null | jq -e '.found == true and ._id == "config"' >/dev/null 2>&1; then
+  echo "  $CONF_LOOKUP _id=config: PASS"
 else
-  echo "  chargeback_conf_lookup _id=config: FAIL (expected GET _doc/config with found=true)"
+  echo "  $CONF_LOOKUP _id=config: FAIL (expected GET _doc/config with found=true)"
   ESQL_PROOF_OK=0
 fi
-for pair in "$BILLING_COST_LOOKUP:total_chargeable_units" "$BILLING_COST_LOOKUP:total_ecu" "chargeback_conf_lookup:conf_chargeable_unit_rate" "chargeback_conf_lookup:conf_ecu_rate"; do
+for pair in "$BILLING_COST_LOOKUP:total_chargeable_units" "$BILLING_COST_LOOKUP:total_ecu" "$CONF_LOOKUP:conf_chargeable_unit_rate" "$CONF_LOOKUP:conf_ecu_rate"; do
   idx="${pair%%:*}"
   field="${pair##*:}"
   if curl_es "$ES_HOST/$idx/_mapping" 2>/dev/null | grep -q "\"$field\""; then
@@ -748,17 +750,17 @@ else
   echo "  $BILLING_COST_LOOKUP total_ecu alias: FAIL (expected alias -> total_chargeable_units)"
   ESQL_PROOF_OK=0
 fi
-CONF_MAP=$(curl_es "$ES_HOST/chargeback_conf_lookup/_mapping" 2>/dev/null)
+CONF_MAP=$(curl_es "$ES_HOST/$CONF_LOOKUP/_mapping" 2>/dev/null)
 if echo "$CONF_MAP" | jq -e 'to_entries[0].value.mappings.properties.conf_ecu_rate.type == "alias" and to_entries[0].value.mappings.properties.conf_ecu_rate.path == "conf_chargeable_unit_rate"' >/dev/null 2>&1; then
-  echo "  chargeback_conf_lookup conf_ecu_rate alias: PASS (-> conf_chargeable_unit_rate)"
+  echo "  $CONF_LOOKUP conf_ecu_rate alias: PASS (-> conf_chargeable_unit_rate)"
 else
-  echo "  chargeback_conf_lookup conf_ecu_rate alias: FAIL (expected alias -> conf_chargeable_unit_rate)"
+  echo "  $CONF_LOOKUP conf_ecu_rate alias: FAIL (expected alias -> conf_chargeable_unit_rate)"
   ESQL_PROOF_OK=0
 fi
 if echo "$CONF_MAP" | jq -e 'to_entries[0].value.mappings.properties.conf_ecu_rate_unit.type == "alias" and to_entries[0].value.mappings.properties.conf_ecu_rate_unit.path == "conf_chargeable_unit_rate_unit"' >/dev/null 2>&1; then
-  echo "  chargeback_conf_lookup conf_ecu_rate_unit alias: PASS (-> conf_chargeable_unit_rate_unit)"
+  echo "  $CONF_LOOKUP conf_ecu_rate_unit alias: PASS (-> conf_chargeable_unit_rate_unit)"
 else
-  echo "  chargeback_conf_lookup conf_ecu_rate_unit alias: FAIL (expected alias -> conf_chargeable_unit_rate_unit)"
+  echo "  $CONF_LOOKUP conf_ecu_rate_unit alias: FAIL (expected alias -> conf_chargeable_unit_rate_unit)"
   ESQL_PROOF_OK=0
 fi
 # Bundled dashboards (0.4.3+) use chargeable-unit field names only; ES|QL does not resolve mapping aliases.
@@ -773,7 +775,7 @@ if [[ "$IS_060_PLUS" -eq 1 ]]; then
 | DROP composite_key, usage_source
 | LOOKUP JOIN $DS_CONTRIB_LOOKUP ON ck == composite_key
 | DROP composite_key
-| LOOKUP JOIN chargeback_conf_lookup ON cloud_cfg_key == config_join_key AND ts >= conf_start_date AND ts <= conf_end_date
+| LOOKUP JOIN $CONF_LOOKUP ON cloud_cfg_key == config_join_key AND ts >= conf_start_date AND ts <= conf_end_date
 | EVAL chargeable_pool = data_tier_capacity_ecu, indexing = CASE (deployment_sum_indexing_time > 0, TO_DOUBLE(datastream_sum_indexing_time) / deployment_sum_indexing_time * chargeable_pool) * COALESCE(conf_chargeable_unit_rate, 0.85)
 | STATS agg_indexing = SUM(indexing) BY datastream
 | WHERE agg_indexing > 0
@@ -973,6 +975,7 @@ if [[ "$IS_060_PLUS" -eq 1 ]]; then
     billing_cluster_cost \
     billing_realized_pool \
     billing_credits \
+    chargeback_conf \
     cluster_deployment_contribution \
     cluster_datastream_contribution \
     cluster_tier_contribution \
@@ -987,13 +990,13 @@ if [[ "$IS_060_PLUS" -eq 1 ]]; then
       PROOF_06_OK=0
     fi
   done
-  if curl_es "$ES_HOST/chargeback_conf_lookup/_doc/config_onprem" 2>/dev/null | jq -e '.found == true and ._source.config_join_key == "chargeback_config_onprem" and (._source.conf_chargeable_unit_rate - 0.00085 | fabs) < 1e-6' >/dev/null 2>&1; then
-    echo "  chargeback_conf_lookup _id=config_onprem (rate=0.00085): PASS"
+  if curl_es "$ES_HOST/$CONF_LOOKUP/_doc/config_onprem" 2>/dev/null | jq -e '.found == true and ._source.config_join_key == "chargeback_config_onprem" and (._source.conf_chargeable_unit_rate - 0.00085 | fabs) < 1e-6' >/dev/null 2>&1; then
+    echo "  $CONF_LOOKUP _id=config_onprem (rate=0.00085): PASS"
   else
-    echo "  chargeback_conf_lookup _id=config_onprem: FAIL"
+    echo "  $CONF_LOOKUP _id=config_onprem: FAIL"
     PROOF_06_OK=0
   fi
-  ONPREM_ESQL='FROM chargeback_lookup.billing_cluster_cost | EVAL ts = @timestamp, is_onprem_row = COALESCE(is_onprem, false), onprem_cfg_key = CASE(is_onprem_row, "chargeback_config_onprem", null) | LOOKUP JOIN chargeback_conf_lookup ON onprem_cfg_key == config_join_key AND ts >= conf_start_date AND ts <= conf_end_date | STATS cost = SUM(total_chargeable_units * COALESCE(conf_chargeable_unit_rate, 0.00085)), rate_used = MAX(conf_chargeable_unit_rate), onprem_rows = COUNT(*) BY is_onprem_row | WHERE is_onprem_row == true'
+  ONPREM_ESQL='FROM chargeback_lookup.billing_cluster_cost | EVAL ts = @timestamp, is_onprem_row = COALESCE(is_onprem, false), onprem_cfg_key = CASE(is_onprem_row, "chargeback_config_onprem", null) | LOOKUP JOIN chargeback_lookup.chargeback_conf ON onprem_cfg_key == config_join_key AND ts >= conf_start_date AND ts <= conf_end_date | STATS cost = SUM(total_chargeable_units * COALESCE(conf_chargeable_unit_rate, 0.00085)), rate_used = MAX(conf_chargeable_unit_rate), onprem_rows = COUNT(*) BY is_onprem_row | WHERE is_onprem_row == true'
   ONPREM_RESP=$(curl_es -X POST "$ES_HOST/_query" -d "$(printf '%s' "$ONPREM_ESQL" | jq -Rs '{query: .}')" 2>/dev/null)
   if echo "$ONPREM_RESP" | jq -e '(.values | length) >= 1 and .values[0][0] > 0 and ((.values[0][1] - 0.00085) | fabs) < 1e-6' >/dev/null 2>&1; then
     echo "  onprem mERU dual-rate join (rate=0.00085): PASS"
@@ -1165,6 +1168,92 @@ if [[ "${ADDON_OK:-1}" -ne 1 ]]; then
   echo ""
   echo "Add-on E2E steps FAILED (Serverless collector and/or Agent Builder)."
   exit 1
+fi
+
+# 16. Legacy 0.4.x/0.5.0 chargeback_conf_lookup carry-over + migrate_to_060.sh proof
+if [[ "$IS_060_PLUS" -eq 1 && -n "${CONF_TID:-}" ]]; then
+  echo ""
+  echo "--- 16. Legacy 0.4.x/0.5.0 config carry-over & migrate_to_060.sh proof ---"
+  MIGRATE_OK=1
+  SAVED_SNAP=$(curl_es "$ES_HOST/metrics-chargeback.billing-*/_search?size=1" -d '{"query":{"term":{"doc_type":"config_snapshot"}}}' 2>/dev/null | jq -c '.hits.hits[0] // empty' 2>/dev/null || true)
+  curl_es -X POST "$ES_HOST/metrics-chargeback.billing-*/_delete_by_query?refresh=true" -d '{"query":{"term":{"doc_type":"config_snapshot"}}}' >/dev/null 2>&1 || true
+  curl_es -X DELETE "$ES_HOST/chargeback_conf_lookup" >/dev/null 2>&1 || true
+  curl_es -X PUT "$ES_HOST/chargeback_conf_lookup" -d '{
+    "mappings": {
+      "properties": {
+        "conf_ecu_rate": { "type": "double" },
+        "conf_ecu_rate_unit": { "type": "keyword" },
+        "conf_start_date": { "type": "date" },
+        "conf_end_date": { "type": "date" }
+      }
+    }
+  }' >/dev/null
+  curl_es -X POST "$ES_HOST/chargeback_conf_lookup/_doc/config?refresh=true" -d '{
+    "conf_ecu_rate": 1.42,
+    "conf_ecu_rate_unit": "ZAR",
+    "conf_start_date": 1704067200000,
+    "conf_end_date": 2430518399999
+  }' >/dev/null
+  curl_es -X POST "$ES_HOST/_transform/$CONF_TID/_stop?wait_for_completion=true&timeout=30s" >/dev/null 2>&1 || true
+  curl_es -X DELETE "$ES_HOST/chargeback_lookup.dest_chargeback_conf-1" >/dev/null 2>&1 || true
+  curl_es -X POST "$ES_HOST/_transform/$CONF_TID/_reset" >/dev/null 2>&1 || true
+  curl_es -X POST "$ES_HOST/_transform/$CONF_TID/_start" >/dev/null 2>&1 || true
+  curl_es -X POST "$ES_HOST/_transform/$CONF_TID/_schedule_now" >/dev/null 2>&1 || true
+  for _try in 1 2 3 4 5 6; do
+    if curl_es "$ES_HOST/$CONF_LOOKUP/_doc/config" 2>/dev/null | jq -e '.found == true and ((._source.conf_chargeable_unit_rate - 1.42) | fabs) < 1e-6 and ._source.conf_chargeable_unit_rate_unit == "ZAR"' >/dev/null 2>&1; then
+      break
+    fi
+    sleep 3
+  done
+  if curl_es "$ES_HOST/$CONF_LOOKUP/_doc/config" 2>/dev/null | jq -e '.found == true and ((._source.conf_chargeable_unit_rate - 1.42) | fabs) < 1e-6 and ._source.conf_chargeable_unit_rate_unit == "ZAR" and ._source.config_join_key == "chargeback_config"' >/dev/null 2>&1; then
+    echo "  legacy chargeback_conf_lookup -> $CONF_LOOKUP (_id=config rate=1.42 ZAR): PASS"
+  else
+    echo "  legacy chargeback_conf_lookup carry-over: FAIL"
+    MIGRATE_OK=0
+  fi
+  if curl_es "$ES_HOST/$CONF_LOOKUP/_doc/config_onprem" 2>/dev/null | jq -e '.found == true and ((._source.conf_chargeable_unit_rate - 0.00085) | fabs) < 1e-6' >/dev/null 2>&1; then
+    echo "  legacy carry-over preserves _id=config_onprem default (0.00085): PASS"
+  else
+    echo "  legacy carry-over _id=config_onprem: FAIL"
+    MIGRATE_OK=0
+  fi
+  if [[ -x "$CHARGEBACK_REPO/scripts/migrate_to_060.sh" ]]; then
+    if ! ES_URL="$ES_HOST" ELASTIC_USER="$USER" ELASTIC_PASSWORD="$PASS" "$CHARGEBACK_REPO/scripts/migrate_to_060.sh" --dry-run >/dev/null; then
+      echo "  migrate_to_060.sh --dry-run: FAIL"
+      MIGRATE_OK=0
+    else
+      echo "  migrate_to_060.sh --dry-run: PASS"
+    fi
+    if ! ES_URL="$ES_HOST" ELASTIC_USER="$USER" ELASTIC_PASSWORD="$PASS" "$CHARGEBACK_REPO/scripts/migrate_to_060.sh" --force >/dev/null; then
+      echo "  migrate_to_060.sh --force: FAIL"
+      MIGRATE_OK=0
+    else
+      echo "  migrate_to_060.sh --force: PASS"
+    fi
+    if curl_es "$ES_HOST/chargeback_conf_lookup" 2>/dev/null | jq -e '.status == 404 or (.error.type == "index_not_found_exception")' >/dev/null 2>&1; then
+      echo "  retired chargeback_conf_lookup deleted: PASS"
+    else
+      echo "  retired chargeback_conf_lookup still present: FAIL"
+      MIGRATE_OK=0
+    fi
+  fi
+  # Restore saved config_snapshot (if any) and default 0.85 EUR config in chargeback_lookup.chargeback_conf
+  if [[ -n "${SAVED_SNAP:-}" ]]; then
+    snap_idx=$(echo "$SAVED_SNAP" | jq -r '._index')
+    snap_id=$(echo "$SAVED_SNAP" | jq -r '._id')
+    snap_src=$(echo "$SAVED_SNAP" | jq -c '._source')
+    curl_es -X POST "$ES_HOST/$snap_idx/_doc/$snap_id?refresh=true" -d "$snap_src" >/dev/null 2>&1 || true
+  fi
+  curl_es -X POST "$ES_HOST/_transform/$CONF_TID/_stop?wait_for_completion=true&timeout=30s" >/dev/null 2>&1 || true
+  curl_es -X DELETE "$ES_HOST/chargeback_lookup.dest_chargeback_conf-1" >/dev/null 2>&1 || true
+  curl_es -X POST "$ES_HOST/_transform/$CONF_TID/_reset" >/dev/null 2>&1 || true
+  curl_es -X POST "$ES_HOST/_transform/$CONF_TID/_start" >/dev/null 2>&1 || true
+  curl_es -X POST "$ES_HOST/_transform/$CONF_TID/_schedule_now" >/dev/null 2>&1 || true
+  sleep 5
+  if [[ "$MIGRATE_OK" -ne 1 ]]; then
+    echo "Legacy carry-over / migrate_to_060.sh proof FAILED."
+    exit 1
+  fi
 fi
 
 echo ""
