@@ -38,7 +38,7 @@ To use this integration, the following prerequisites must be met:
 
 ## Setup instructions
 
-Please see [Integration `Instructions.md`](Instructions.md) to install the integration.
+Please see [Integration `Instructions.md`](Instructions.md) to install the integration and [Credentials & API Keys by Scenario](Instructions.md#credentials--api-keys-by-scenario-elastic-cloud--cluster-access) for ECH, Serverless, On-Premises (`hub_es_url` / `hub_es_api_key`), and coexistence setup.
 
 ## Troubleshooting
 

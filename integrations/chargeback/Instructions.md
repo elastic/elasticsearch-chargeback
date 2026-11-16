@@ -40,6 +40,38 @@ In **v0.6.0**, rates and weights are configured directly in Kibana under **Manag
 
 On assets-only installations without a Chargeback Agent policy, dashboards fall back to these defaults automatically, or you can upsert custom configuration rows manually (see Configuration section below).
 
+#### Credentials & API Keys by Scenario (`Elastic Cloud & Cluster Access`)
+
+| Scenario | Billing Source | Usage & Node Stats Source | Required Credentials in Chargeback Policy |
+|---|---|---|---|
+| **Elastic Cloud Hosted (ECH) — Self-Contained (`0.6.0+`)** | `chargeback.billing` | `chargeback.usage` + `chargeback.node_stats` | `organization_id` + `cloud_api_key` (Billing Admin & deployment read) + `deployment_api_keys` (`<deployment_id_or_name>:<encoded_api_key>`); optionally `hub_es_url` + `hub_es_api_key` for the Hub cluster itself |
+| **Elastic Cloud Serverless — Self-Contained (`0.6.0+`)** | `chargeback.billing` | `chargeback.usage` (`/_cat/indices`) | `organization_id` + `cloud_api_key` + `deployment_api_keys` (`<project_id_or_name>:<encoded_api_key>`) |
+| **On-Premises / Self-Managed — Self-Contained CEL (`0.6.0+`)** | **On-Premises Billing** (`metrics-ess_billing.billing-onprem*`) | `chargeback.usage` + `chargeback.node_stats` | Leave `organization_id` & `cloud_api_key` blank; set `hub_es_url` + `hub_es_api_key` for the Hub cluster. For additional remote self-managed clusters, add one Chargeback policy per cluster with its `hub_es_url` + `hub_es_api_key` and `sync_fleet_config: false` on secondary policies |
+| **Coexistence / Existing `Elasticsearch` Integration (ECH or On-Premises)** | **ESS Billing** or **On-Premises Billing** | **Elasticsearch** (`index_pivot` + `node_stats`), `metricbeat-*`, or `.monitoring-es-*` | **None** required on Chargeback (assets-only or billing-only mode reads existing `monitoring-indices*` and `node_stats` streams) |
+
+To create a least-privilege Elasticsearch API key for `hub_es_api_key` or `deployment_api_keys` (no document `read` access required):
+
+```json
+POST /_security/api_key
+{
+  "name": "chargeback-usage-collector",
+  "role_descriptors": {
+    "chargeback_collector": {
+      "cluster": ["monitor"],
+      "indices": [
+        {
+          "names": ["*", ".*"],
+          "privileges": ["monitor", "view_index_metadata"],
+          "allow_restricted_indices": true
+        }
+      ]
+    }
+  }
+}
+```
+
+Use the returned `encoded` field in `hub_es_api_key` (or as `<deployment_id_or_name>:<encoded>` in `deployment_api_keys`).
+
 **Performance Note:** On clusters with months of historical monitoring data for multiple deployments, the initial transform execution may process a large volume of data. This can cause temporary performance impact during the first run. The transforms will then run incrementally on their configured schedules (15-60 minute intervals), processing only new data with minimal overhead.
 
 ### 4. Configure Alerting Rules (Optional)
