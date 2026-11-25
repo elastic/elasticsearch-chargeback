@@ -1,11 +1,13 @@
 # Install and configure Chargeback Serverless
 
-Deploy the **Chargeback Serverless (`chargeback_serverless` `0.4.0`)** integration on an Elastic Cloud Serverless project to collect organization-wide Serverless billing history (including deleted projects) and per-project data stream, index, AI model, and Synthetics usage telemetry.
-
 > [!IMPORTANT]
-> **Customer Installation vs. Developer / Maintainer Workflows**
-> - **Customers & FinOps Operators (Part 1)**: You do **not** need the `elastic/integrations` repository, `elastic-package`, or macOS-specific scripts. Install the prebuilt package [`assets/dist/chargeback_serverless-0.4.0.zip`](assets/dist/chargeback_serverless-0.4.0.zip) directly through the Kibana Fleet UI, pre-create the lookup index templates in Kibana Dev Tools, and optionally run the cross-platform Python backfill collector (`python3 scripts/run_chargeback_serverless_collector.py`).
-> - **Developers & Maintainers (Part 2)**: Use the automated deployment script (`./scripts/deploy_chargeback_serverless.sh`) to provision templates, transforms, policies, backfills, and E2E verification from the command line (or pass `--build` when modifying package source templates in `elastic/integrations`).
+> **Install and upgrade from Kibana Integrations**: **Chargeback Serverless** (`chargeback_serverless`) is published in the Elastic Package Registry. Install it directly from **Management -> Integrations -> Chargeback Serverless** in Kibana ([Add an integration to an Elastic Agent policy](https://www.elastic.co/docs/reference/fleet/add-integration-to-policy#add-integration-to-policy-steps)) and upgrade via **Management -> Integrations -> Installed integrations** ([Upgrade an Elastic Agent integration](https://www.elastic.co/docs/reference/fleet/upgrade-integration#upgrade-integration-to-latest-version)). Active package source and current setup notes live in [`elastic/integrations/packages/chargeback_serverless`](https://github.com/elastic/integrations/tree/main/packages/chargeback_serverless).
+>
+> The published Kibana integration creates `lookup`-mode destination indices automatically, with manual Dev Tools template creation and `.zip` upload replaced by standard Fleet installation. The `0.4.0` `.zip` walkthrough below is retained as historical pre-release reference, alongside the optional historical usage backfill script ([`scripts/run_chargeback_serverless_collector.py`](../../scripts/run_chargeback_serverless_collector.py)).
+
+## Historical Pre-Release Reference (`chargeback_serverless` `0.4.0`)
+
+The sections below document the historical pre-release `0.4.0` `.zip` workflow using [`assets/dist/chargeback_serverless-0.4.0.zip`](assets/dist/chargeback_serverless-0.4.0.zip), manual Dev Tools templates, and [`./scripts/deploy_chargeback_serverless.sh`](../../scripts/deploy_chargeback_serverless.sh).
 
 ## Before you begin
 

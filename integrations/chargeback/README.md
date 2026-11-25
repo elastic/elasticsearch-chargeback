@@ -1,5 +1,8 @@
 # Elasticsearch Chargeback integration
 
+> [!IMPORTANT]
+> **Install from Kibana Integrations**: **Chargeback** (`chargeback`) is published in the Elastic Package Registry and installed directly from **Management -> Integrations -> Chargeback** in Kibana (see [Add an integration to an Elastic Agent policy](https://www.elastic.co/docs/reference/fleet/add-integration-to-policy#add-integration-to-policy-steps)). Active package source and current documentation live in [`elastic/integrations/packages/chargeback`](https://github.com/elastic/integrations/tree/main/packages/chargeback). The `0.5.0` documentation and `.zip` archives in this directory are retained only as historical pre-release reference.
+
 ## Version
 
 Chargeback integration: 0.5.0

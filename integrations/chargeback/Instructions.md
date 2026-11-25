@@ -1,5 +1,8 @@
 # Chargeback (ES|QL Version) Integration
 
+> [!IMPORTANT]
+> **Install and upgrade from Kibana Integrations**: **Chargeback** (`chargeback`) is published in the Elastic Package Registry. Install it directly from **Management -> Integrations -> Chargeback** in Kibana ([Add an integration to an Elastic Agent policy](https://www.elastic.co/docs/reference/fleet/add-integration-to-policy#add-integration-to-policy-steps) or [Install and uninstall Elastic Agent integration assets](https://www.elastic.co/docs/reference/fleet/install-uninstall-integration-assets#install-integration-assets)) and upgrade from **Management -> Integrations -> Installed integrations -> Chargeback -> Settings** ([Upgrade an Elastic Agent integration](https://www.elastic.co/docs/reference/fleet/upgrade-integration#upgrade-integration-to-latest-version)). Active package source and current setup notes live in [`elastic/integrations/packages/chargeback`](https://github.com/elastic/integrations/tree/main/packages/chargeback). The `.zip` steps below are retained as historical pre-release reference for `0.5.0` and earlier.
+
 This document outlines the steps to install the Chargeback integration, which makes use of the smart `ES|QL LOOKUP JOIN` feature (conditional joins) requiring Stack version 9.2.0+.
 
 ## Migrate from "module" to integration
@@ -8,7 +11,10 @@ If you have already installed the Chargeback "module" and want to rather use the
 
 ## Setup Instructions
 
-To install the Chargeback integration, please follow these steps:
+> [!NOTE]
+> For new installations, open **Management -> Integrations** in Kibana, search for **Chargeback**, and add it to an Elastic Agent policy ([Add an integration to an Elastic Agent policy](https://www.elastic.co/docs/reference/fleet/add-integration-to-policy#add-integration-to-policy-steps)). The manual `.zip` upload steps below apply only to historical pre-release builds (`0.5.0` and earlier).
+
+To install the historical pre-release `0.5.0` package, follow these steps:
 
 ### 1. Meet Prerequisites
 
@@ -53,7 +59,10 @@ These rules can be configured in **Stack Management → Rules** after installati
 
 ## Upgrade integration
 
-To upgrade the integration, do the following:
+> [!NOTE]
+> For current releases, upgrade directly in Kibana under **Management -> Integrations -> Installed integrations -> Chargeback -> Settings** ([Upgrade an Elastic Agent integration](https://www.elastic.co/docs/reference/fleet/upgrade-integration#upgrade-integration-to-latest-version)). The `.zip` upgrade notes below are historical pre-release reference (`0.5.0` and earlier).
+
+To upgrade historical pre-release `.zip` builds, do the following:
 - Upload the new asset (ZIP) file to Kibana.
 - Transforms will auto-start (from version 0.2.8 onwards).
 

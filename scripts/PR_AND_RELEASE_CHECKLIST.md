@@ -1,6 +1,9 @@
 # PR and release checklist (Chargeback)
 
-Use this when cutting a release across **elastic/integrations** and **elastic/elasticsearch-chargeback**.
+> [!IMPORTANT]
+> **Canonical Package Source Moved to `elastic/integrations`**: **Chargeback** (`packages/chargeback`) and **Chargeback Serverless** (`packages/chargeback_serverless`) are now published directly from [`elastic/integrations`](https://github.com/elastic/integrations) (`main`) to the Elastic Package Registry (**Kibana Integrations**). This repository is no longer the package release source, and the `.zip` release workflow below is retained only as historical reference.
+
+Use the steps below only as historical reference for pre-registry `.zip` releases across **elastic/integrations** and **elastic/elasticsearch-chargeback**.
 
 ## Branch line (integrations)
 
