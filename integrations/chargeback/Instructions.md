@@ -7,7 +7,7 @@ This document outlines the steps to install the Chargeback integration, which ma
 
 ## Migrate from "module" to integration
 
-If you have already installed the Chargeback "module" and want to rather use the integration, please follow the [Decommissioning](../module/Decommissioning.md) instructions of the module, and then return to these instructions.
+If you have already installed the Chargeback "module" and want to rather use the integration, please follow the [Decommissioning](../../legacy/module/Decommissioning.md) instructions of the module, and then return to these instructions.
 
 ## Setup Instructions
 
@@ -60,7 +60,7 @@ These rules can be configured in **Stack Management → Rules** after installati
 ## Upgrade integration
 
 > [!NOTE]
-> For current releases, upgrade directly in Kibana under **Management -> Integrations -> Installed integrations -> Chargeback -> Settings** ([Upgrade an Elastic Agent integration](https://www.elastic.co/docs/reference/fleet/upgrade-integration#upgrade-integration-to-latest-version)). The `.zip` upgrade notes below are historical pre-release reference (`0.5.0` and earlier).
+> For current releases, upgrade directly in Kibana under **Management -> Integrations -> Installed integrations -> Chargeback -> Settings** ([Upgrade an Elastic Agent integration](https://www.elastic.co/docs/reference/fleet/upgrade-integration#upgrade-integration-to-latest-version)). When upgrading from pre-release `0.4.x` or `0.5.0` to `0.6.0+`, run [`../../scripts/migrate_to_060.sh`](../../scripts/migrate_to_060.sh) (`--dry-run` first) to verify `chargeback_lookup.*` aliases, carry over legacy configuration if needed, and delete retired concrete `*_lookup` indices. The `.zip` upgrade notes below are historical pre-release reference (`0.5.0` and earlier).
 
 To upgrade historical pre-release `.zip` builds, do the following:
 - Upload the new asset (ZIP) file to Kibana.
@@ -104,14 +104,14 @@ To upgrade historical pre-release `.zip` builds, do the following:
 - Fixes dashboard panels that failed with `Unknown column [total_ecu]` / `[conf_ecu_rate]` on 0.3.1 by shipping legacy ECU field aliases in lookup mappings. Existing 0.3.1 lookup indices must be recreated (delete + transform reset) to pick up the new mappings; restart alone does not update mappings. Delete and re-import the Chargeback dashboard saved objects if Kibana did not replace them—see [troubleshooting](docs/troubleshooting.md).
 
 **Upgrading from 0.2.x to 0.3.0/0.3.1 (breaking change):**
-- Field names have changed from ECU to chargeable units: `total_ecu` → `total_chargeable_units`, `conf_ecu_rate` → `conf_chargeable_unit_rate`, `conf_ecu_rate_unit` → `conf_chargeable_unit_rate_unit`. Existing lookup indices and config documents use the old schema; new data from the updated transforms will use the new schema. See [CHANGELOG](../CHANGELOG.md) and upgrade documentation for migration steps.
+- Field names have changed from ECU to chargeable units: `total_ecu` → `total_chargeable_units`, `conf_ecu_rate` → `conf_chargeable_unit_rate`, `conf_ecu_rate_unit` → `conf_chargeable_unit_rate_unit`. Existing lookup indices and config documents use the old schema; new data from the updated transforms will use the new schema. See [CHANGELOG](../../CHANGELOG.md) and upgrade documentation for migration steps.
 
 ## Optional add-ons
 
 Pure Chargeback is this Fleet package. Optional add-ons live under [`addons/`](addons/) and [`../../agents/`](../../agents/):
 
-- **Serverless usage collector** — per–data-stream showback for Elastic Cloud Serverless after **0.5.0+**. See [`addons/serverless-usage-collector/Instructions.md`](addons/serverless-usage-collector/Instructions.md) and [`scripts/install_serverless_usage.sh`](../../scripts/install_serverless_usage.sh).
-- **Chargeback companion agent** — optional report and Q&A over lookup indices. See [`../../agents/companion-agent/Instructions.md`](../../agents/companion-agent/Instructions.md) and [`scripts/install_chargeback_agent.sh`](../../scripts/install_chargeback_agent.sh).
+- **Serverless usage collector (pre-`0.6.0` / `0.5.0` only)** - per-data-stream showback for Elastic Cloud Serverless on `0.5.0` (superseded in `0.6.0+` by native `chargeback.usage` CEL collection). See [`addons/serverless-usage-collector/Instructions.md`](addons/serverless-usage-collector/Instructions.md) and [`scripts/install_serverless_usage.sh`](../../scripts/install_serverless_usage.sh).
+- **Chargeback companion agent** - optional report and Q&A over `chargeback_lookup.*` indices (`0.6.0+`). See [`../../agents/companion-agent/Instructions.md`](../../agents/companion-agent/Instructions.md) and [`scripts/install_chargeback_agent.sh`](../../scripts/install_chargeback_agent.sh).
 
 ## Troubleshooting
 

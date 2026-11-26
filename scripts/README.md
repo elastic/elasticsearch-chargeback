@@ -2,15 +2,18 @@
 
 Scripts for deploying Chargeback integrations, backfilling historical Serverless billing and usage data, and running local E2E developer tests.
 
-## Customer Installation vs. Developer / Maintainer Workflows
+## Published Integration & Optional Backfill vs. Maintainer Workflows
 
-### 1. Customer Installation & Optional Backfill (No `elastic/integrations` or Docker Required)
-Customers installing Chargeback Serverless via the Kibana Fleet UI (see **Part 1** of [`../integrations/chargeback-serverless/Instructions.md`](../integrations/chargeback-serverless/Instructions.md)) do **not** need the `elastic/integrations` repository, `elastic-package`, or Docker:
-- **Prebuilt package `.zip`**: Included in the repository at [`../integrations/chargeback-serverless/assets/dist/chargeback_serverless-0.4.0.zip`](../integrations/chargeback-serverless/assets/dist/chargeback_serverless-0.4.0.zip).
-- **Optional historical usage backfill (`run_chargeback_serverless_collector.py`)**: Uses only the Python `3.9+` standard library (`urllib`, `json`, `datetime`) and works across Linux, Windows/WSL, and macOS via standard environment variables or a `.env` file.
+### 1. Published Kibana Integration & Optional Usage Backfill
+Install **Chargeback Serverless** (`0.1.0+`) directly from the **Kibana Integrations** page (**Project settings -> Management -> Integrations -> Chargeback Serverless**, or search **Integrations**; see [Add an integration to an Elastic Agent policy](https://www.elastic.co/docs/reference/fleet/add-integration-to-policy#add-integration-to-policy-steps)). Initial publication to the Elastic Package Registry reset package versioning from internal `0.3.x`/`0.4.0` pre-releases to `0.1.0`, so `0.1.0+` in Kibana Integrations supersedes `chargeback_serverless-0.4.0.zip`.
 
-### 2. Automated CLI Deployment (`deploy_chargeback_serverless.sh`)
-Developers, maintainers, and operators automating end-to-end deployment from the CLI (see **Part 2** of [`../integrations/chargeback-serverless/Instructions.md`](../integrations/chargeback-serverless/Instructions.md)) require:
+If you want to backfill historical per-project usage snapshots without overwriting live Elastic Agent billing data, run [`run_chargeback_serverless_collector.py`](run_chargeback_serverless_collector.py) with `--usage-only`. It uses only the Python `3.9+` standard library (`urllib`, `json`, `datetime`) and works across Linux, Windows/WSL, and macOS via environment variables or a `.env` file.
+
+### 2. Upgrade Helper (`migrate_to_060.sh`)
+When upgrading **Chargeback** from pre-release `0.4.x` or `0.5.0` to `0.6.0+` (from Kibana Integrations), run [`./migrate_to_060.sh`](migrate_to_060.sh) (`--dry-run` first) to verify all `chargeback_lookup.*` aliases, carry over legacy `chargeback_conf_lookup` settings if needed, and delete retired concrete `*_lookup` indices.
+
+### 3. Historical Local CLI Deployment (`deploy_chargeback_serverless.sh`)
+Developers and maintainers deploying a local pre-release `.zip` end-to-end from the CLI (see [`../integrations/chargeback-serverless/Instructions.md`](../integrations/chargeback-serverless/Instructions.md)) require:
 - **`curl`**, **`jq`**, and **`python3` (`3.9+`) with `PyYAML`**:
   - On macOS with Homebrew Python (PEP 668 `externally-managed-environment`), create a virtual environment before running `deploy_chargeback_serverless.sh`:
     ```bash
@@ -19,15 +22,15 @@ Developers, maintainers, and operators automating end-to-end deployment from the
     pip install pyyaml
     ```
 
-### 3. Package Maintainers (Rebuilding `.zip` Packages & Running Local Stack E2E Tests)
-Required **only** when editing integration package templates and building new `.zip` archives (`--build`) or running `run_e2e_tests.sh`:
+### 4. Package Maintainers (Rebuilding `.zip` Packages & Running Local Stack E2E Tests)
+Required **only** when editing integration package templates in `elastic/integrations` and running `run_e2e_tests.sh` or historical `.zip` builds:
 - **`elastic/integrations` repo** (sibling of `elasticsearch-chargeback`, or set `INTEGRATIONS_REPO`)
 - **`elastic-package`** (`go install github.com/elastic/elastic-package@latest`)
 - **Docker** (4GB+ memory) for local stack E2E tests (`run_e2e_tests.sh`)
 
 ---
 
-## Chargeback Serverless (`0.4.0` — Backfill & Automated Deployment)
+## Chargeback Serverless (Backfill & Historical Local Deployment)
 
 ### Cross-Platform Environment Variables (Linux, Windows/WSL, CI/CD, macOS)
 
@@ -43,18 +46,18 @@ export ES_API_KEY="$HUB_ES_API_KEY"
 export KIBANA_API_KEY="$HUB_ES_API_KEY"
 ```
 
-### Running the Standalone Backfill or Full Automated Deployment
+### Running the Standalone Backfill or Historical Local Deployment
 
 ```bash
-# Option A (Customer optional backfill after Fleet UI install — stdlib Python only):
-python3 scripts/run_chargeback_serverless_collector.py
+# Option A (If you want to backfill historical usage after Kibana Integrations install):
+python3 scripts/run_chargeback_serverless_collector.py --usage-only
 
-# Option B (Developer / Maintainer full E2E automated deployment — requires PyYAML):
+# Option B (Developer / Maintainer historical local .zip deployment - requires PyYAML):
 python3 -m venv .venv
 source .venv/bin/activate
 pip install pyyaml
 
-# Deploy prebuilt dist/chargeback_serverless-0.4.0.zip, create dedicated Fleet policy,
+# Deploy archived dist/chargeback_serverless-0.4.0.zip, create dedicated Fleet policy,
 # provision lookup-mode index templates & 7 transforms, and run the Python backfill collector:
 ./scripts/deploy_chargeback_serverless.sh
 
@@ -69,11 +72,11 @@ pip install pyyaml
 ```
 
 Modular components:
-- [`run_chargeback_serverless_collector.py`](run_chargeback_serverless_collector.py): Cross-platform standalone Python collector (stdlib only) that backfills up to 60 days of Serverless billing and per-project data stream, index, AI model, and Synthetics telemetry and refreshes the 7 `serverless_*_lookup` indices.
-- [`deploy_chargeback_serverless.sh`](deploy_chargeback_serverless.sh): Installs the prebuilt `chargeback_serverless-0.4.0.zip` (unless `--build` is passed), installs persistent `mode: lookup` index templates and starts all 7 Fleet transforms, creates/updates a dedicated `'Chargeback Serverless Policy'` in Fleet, runs `run_chargeback_serverless_collector.py`, and verifies all lookup indices and dashboards.
+- [`run_chargeback_serverless_collector.py`](run_chargeback_serverless_collector.py): Cross-platform standalone Python collector (stdlib only) with `--usage-only`, `--billing-only`, and chunked `_bulk` writes; supports `0.1.0+` versioned `serverless_*_lookup-1` write aliases and backfills up to 60 days (up to 365 via `--lookbehind`).
+- [`deploy_chargeback_serverless.sh`](deploy_chargeback_serverless.sh): Historical local CLI deployer for archived `.zip` packages, lookup templates, transforms, and E2E verification.
 - [`configure_chargeback_serverless.sh`](configure_chargeback_serverless.sh): Updates the Fleet package policy settings (Cloud Org ID, unified Cloud API key, optional overrides, currency rates) on a dedicated `'Chargeback Serverless Policy'` via Kibana Fleet API with zero plaintext secret indices.
 - [`keychain.sh`](keychain.sh): Optional macOS Keychain credential manager for local macOS developers. Securely stores, loads, lists, and manages environment variables in Keychain (`elasticsearch-chargeback` service) instead of a plaintext `.env`.
-- [`install_chargeback_serverless.sh`](install_chargeback_serverless.sh): Legacy installer (deprecated in favor of native Fleet EPM and `deploy_chargeback_serverless.sh`).
+- [`install_chargeback_serverless.sh`](install_chargeback_serverless.sh): Legacy installer (deprecated in favor of Kibana Integrations).
 
 ### Optional: Managing Credentials with macOS Keychain (macOS Local Developers)
 
@@ -128,14 +131,14 @@ From the **elasticsearch-chargeback** repo root, with the stack already running:
 
 ```bash
 ./scripts/run_e2e_tests.sh
-# Install the committed zip under integrations/chargeback/assets/dist/<version>/ instead of building packages/chargeback:
+# Install an archived zip under integrations/chargeback/assets/dist/<version>/ instead of building packages/chargeback:
 ./scripts/run_e2e_tests.sh --from-zip
 # Or: CHARGEBACK_INSTALL_FROM=zip CHARGEBACK_VERSION=0.5.0 ./scripts/run_e2e_tests.sh
 ```
 
-**What it does:** Installs **Elasticsearch** integration → **On-Prem Billing** → **Chargeback**, in that order. **On-Prem Billing** is installed from the integrations repo when `packages/onprem_billing` exists (e.g. branch `wip/onprem-billing-integration`), otherwise from a zip on a chargeback repo branch. Post-install uses a **12 ERU test scenario**: three deployments (dev, prod, monitoring), two deployment groups (product, monitoring); organization config (12 ERU licence), deployment configs (dev 2 ERU, prod 8 ERU, monitoring 2 ERU), both enrich policies, `calculate_cost` pipeline, and billing transform. Then seeds **monitoring-indices** and **billing**, resets and starts Chargeback transforms, prints **evidence tables**, runs **step 12** (#99/#104 aliases), and for **0.5.0+** runs **step 13** (canonical usage source, tier-preference order, Serverless billing classification), **step 14** (Serverless usage collector add-on: pipeline, staging index, project registry, pipeline simulate), and **step 15** (Chargeback companion Agent Builder add-on; uses `--skip-workflows` when the Kibana Workflows API is absent on local stacks).
+**What it does:** Installs **Elasticsearch** integration -> **On-Prem Billing** -> **Chargeback**, in that order. **On-Prem Billing** is installed from `elastic/integrations` when `packages/onprem_billing` exists, otherwise from the archived zip. Post-install uses a **12 ERU test scenario**: three deployments (dev, prod, monitoring), two deployment groups (product, monitoring); organisation config (12 ERU licence), deployment configs (dev 2 ERU, prod 8 ERU, monitoring 2 ERU), both enrich policies, `calculate_cost` pipeline, and billing transform. Then it seeds **monitoring-indices** and **billing** (plus **0.6.0+** `config_snapshot`, `credit_line_item`, and `node_stats`), resets and starts Chargeback transforms, prints **evidence tables**, runs **step 12** (#99/#104 aliases), and runs **step 13** (`0.5.0+` canonical usage source, tier-preference order, Serverless billing classification; `0.6.0+` versioned `chargeback_lookup.*` aliases, `_id: config_onprem`, and On-Prem `mERU` dual-rate ES|QL), **step 14** (legacy `0.5.0` Serverless usage collector add-on: pipeline, staging index, project registry, pipeline simulate), and **step 15** (Chargeback companion Agent Builder add-on + live ES|QL tool query execution; uses `--skip-workflows` when the Kibana Workflows API is absent on local stacks).
 
-**Env:** `CHARGEBACK_VERSION` (default: integrations `manifest.yml`, else `0.5.0`), `CHARGEBACK_INSTALL_FROM=package|zip` (or `--from-zip` / `--from-package`).
+**Env:** `CHARGEBACK_VERSION` (default: integrations `manifest.yml`, else `0.6.0`), `CHARGEBACK_INSTALL_FROM=package|zip` (or `--from-zip` / `--from-package`).
 
 **Before running:** Start the stack from the integrations repo (first time can take 5–10 min):
 
