@@ -1,6 +1,9 @@
 # Changelog
 
-All notable changes to the Chargeback Integration and Module will be documented in this file.
+All notable historical pre-registry changes to the Chargeback Integration, Chargeback Serverless pre-releases, and Legacy Module are documented in this file.
+
+> [!IMPORTANT]
+> **Package Changelogs Moved to `elastic/integrations`**: From **Chargeback `0.6.0+`** and **Chargeback Serverless `0.1.0+`** onward, package release changelogs live in [`elastic/integrations`](https://github.com/elastic/integrations) under [`packages/chargeback/changelog.yml`](https://github.com/elastic/integrations/blob/main/packages/chargeback/changelog.yml) and [`packages/chargeback_serverless/changelog.yml`](https://github.com/elastic/integrations/blob/main/packages/chargeback_serverless/changelog.yml). Entries below document historical pre-registry releases and companion add-ons in this repository.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 

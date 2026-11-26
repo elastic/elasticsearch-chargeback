@@ -1,6 +1,9 @@
 # Chargeback troubleshooting
 
-This guide helps when Chargeback dashboards are empty or incomplete, even though transforms appear to be running. It applies to the **Chargeback integration** installed from this repository (current release asset: **`chargeback-0.5.0.zip`** in [`integrations/chargeback/assets/dist/0.5.0/`](../assets/dist/0.5.0/)).
+> [!IMPORTANT]
+> **Current Releases (`0.6.0+`) Live in Kibana Integrations**: Install and upgrade **Chargeback** directly from **Management -> Integrations -> Chargeback** in Kibana ([Add an integration to an Elastic Agent policy](https://www.elastic.co/docs/reference/fleet/add-integration-to-policy#add-integration-to-policy-steps)). Current `chargeback_lookup.*` documentation lives in [`elastic/integrations/packages/chargeback`](https://github.com/elastic/integrations/tree/main/packages/chargeback). The concrete `*_lookup` index checks below apply to historical pre-release builds (`0.5.0` and earlier).
+
+This guide helps when pre-release Chargeback (`0.5.0` and earlier) dashboards are empty or incomplete even though transforms appear to be running (archived release asset: **`chargeback-0.5.0.zip`** in [`integrations/chargeback/assets/dist/0.5.0/`](../assets/dist/0.5.0/)).
 
 For prerequisites, installation, and configuration, see [integration README](../README.md) and [Instructions.md](../Instructions.md).
 
@@ -289,7 +292,7 @@ Install alert templates from the Chargeback integration page (requires Kibana **
 
 ## Information to collect for support
 
-Chargeback is supported by **Field** (Customer Engineering), not standard Elastic Support while in technical preview. See [repository README — Support](../../README.md#support).
+Chargeback is supported by **Field** (Customer Engineering), not standard Elastic Support while in technical preview. See [repository README - Support](../../../README.md#support).
 
 When contacting Field, include:
 
@@ -302,4 +305,4 @@ When contacting Field, include:
 
 ## Legacy Chargeback module
 
-The older **Chargeback module** in this repository ([`module/`](../module/README.md), v0.2.0, Stack **8.17.1+**) is **not** maintained. Use the **integration** on **9.2.0+** for current fixes and documentation. Module installs include a **[Tech Preview] Chargeback - Meta Data** dashboard useful for date-range debugging on module deployments only.
+The older **Chargeback module** in this repository ([`legacy/module/`](../../../legacy/module/README.md), v0.2.0, Stack **8.17.1+**) is **not** maintained. Use the **integration** on **9.2.0+** for current fixes and documentation. Module installs include a **[Tech Preview] Chargeback - Meta Data** dashboard useful for date-range debugging on module deployments only.

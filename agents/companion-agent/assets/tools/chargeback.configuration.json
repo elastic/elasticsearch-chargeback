@@ -1,13 +1,13 @@
 {
   "id": "chargeback.configuration",
   "type": "esql",
-  "description": "The active Chargeback configuration: currency rate and unit, blended cost weights (indexing, query, storage), utilization weights and floor, and the validity window. Read this before explaining or justifying any number, because every cost figure depends on these values and they are customer-configurable.",
+  "description": "The active Chargeback configuration rows (chargeback_config for Elastic Cloud ECU, chargeback_config_onprem for On-Premises mERU): currency rate and unit, blended cost weights (indexing, query, storage), utilization weights and floor, and the validity window. If empty on an assets-only install without Fleet config sync, Chargeback applies defaults (0.85 EUR per ECU, 0.00085 EUR per mERU, blended weights 20/20/40, utilization weights 70/30, floor 0.10). Read this before explaining or justifying any number.",
   "tags": [
     "chargeback",
     "configuration"
   ],
   "configuration": {
-    "query": "FROM chargeback_conf_lookup\n| KEEP conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_indexing_weight, conf_query_weight, conf_storage_weight, conf_utilization_memory_weight, conf_utilization_storage_weight, conf_utilization_floor, conf_start_date, conf_end_date\n| LIMIT 10",
+    "query": "FROM chargeback_lookup.chargeback_conf\n| KEEP config_join_key, conf_chargeable_unit_rate, conf_chargeable_unit_rate_unit, conf_indexing_weight, conf_query_weight, conf_storage_weight, conf_utilization_memory_weight, conf_utilization_storage_weight, conf_utilization_floor, conf_start_date, conf_end_date\n| LIMIT 10",
     "params": {}
   }
 }

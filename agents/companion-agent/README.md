@@ -6,7 +6,7 @@ This is an **add-on**, not part of the Fleet zip. Pure Chargeback does not depen
 
 ## Version
 
-Requires Chargeback integration **0.5.0+** and Kibana **9.2.0+** with Agent Builder enabled.
+Requires Chargeback integration **0.6.0+** (`chargeback_lookup.*` aliases) and Kibana **9.2.0+** with Agent Builder enabled.
 
 ## Install
 
@@ -30,7 +30,7 @@ Or run `python3 agents/companion-agent/install.py` with the same environment var
               ┌─────────────────────┴─────────────────────┐
               │                                           │
    chargeback.cost_review                        drill-down ES|QL tools
-   (workflow tool — always first)                component / datastream / tier /
+   (workflow tool - always first)                component / datastream / tier /
               │                                  inventory / unallocatable
    Kibana Workflow: fixed chain
      1. configuration (rate + unit)
@@ -41,4 +41,4 @@ Or run `python3 agents/companion-agent/install.py` with the same environment var
 
 ## Why this is separate from the integration ZIP
 
-Agents, skills, and tools are not Fleet package asset types. Like [`../serverless/`](../serverless/README.md), they install against the monitoring cluster Kibana.
+Agents, skills, and tools are not Fleet package asset types, so they install directly against the monitoring cluster Kibana API.

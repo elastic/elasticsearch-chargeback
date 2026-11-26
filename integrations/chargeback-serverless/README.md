@@ -1,16 +1,21 @@
 # Chargeback Serverless integration overview
 
-The Chargeback Serverless integration (`chargeback_serverless` `0.4.0`) provides native FinOps cost attribution and workload showback for **Elastic Cloud Serverless** organizations—without requiring a dedicated Elastic Cloud Hosted monitoring cluster. Running directly on a Serverless FinOps hub project through a Fleet-managed Elastic Agent (or the standalone Python backfill collector), the integration uses a single unified Elastic Cloud API key to collect organization-wide Serverless billing history (including deleted projects) and per-project data stream, index, AI model, and Synthetics telemetry.
+> [!IMPORTANT]
+> **Install and upgrade from Kibana Integrations**: **Chargeback Serverless** (`chargeback_serverless`) is published in the Elastic Package Registry. Install and upgrade it directly from **Project settings -> Management -> Integrations -> Chargeback Serverless** (or search **Integrations** in Kibana) by following [Add an integration to an Elastic Agent policy](https://www.elastic.co/docs/reference/fleet/add-integration-to-policy#add-integration-to-policy-steps). Active package source and current documentation live in [`elastic/integrations/packages/chargeback_serverless`](https://github.com/elastic/integrations/tree/main/packages/chargeback_serverless). The published Kibana integration provisions `lookup`-mode destination indices automatically.
+>
+> Initial publication to the Elastic Package Registry reset package versioning from internal `0.3.x`/`0.4.0` pre-releases to `0.1.0`, so `0.1.0+` in Kibana Integrations supersedes `chargeback_serverless-0.4.0.zip` in this repository. The pre-release `.zip` assets and manual setup notes in this directory are retained for historical reference.
 
-## Quick start: Customer Installation vs. Developer Workflows
+The historical pre-release **Chargeback Serverless** package (`chargeback_serverless` `0.4.0`) documented below provides native FinOps cost attribution and workload showback for **Elastic Cloud Serverless** organisations. Running on a Serverless FinOps hub project through a Fleet-managed Elastic Agent (or the standalone Python backfill collector), the integration uses an Elastic Cloud API key to collect organisation-wide Serverless billing history (including deleted projects) and per-project data stream, index, AI model, and Synthetics telemetry.
 
-- **For Customers & FinOps Operators (Kibana Fleet UI — no `elastic/integrations` checkout required)**:
-  1. Pre-create the lookup index templates in Kibana Dev Tools (`"index.mode": "lookup"`), upload the prebuilt package [`assets/dist/chargeback_serverless-0.4.0.zip`](assets/dist/chargeback_serverless-0.4.0.zip) in Kibana (**Management → Integrations → Upload integration**), and attach it to a dedicated **`Chargeback Serverless Policy`**.
-  2. *(Optional)* Run [`python3 scripts/run_chargeback_serverless_collector.py`](../../scripts/run_chargeback_serverless_collector.py) to immediately backfill historical per-project usage telemetry alongside the 60-day billing lookbehind.
-  3. See **Part 1** of [Install and configure Chargeback Serverless](Instructions.md) for step-by-step instructions.
-- **For Developers & Maintainers (Automated CLI Deployment)**:
-  - Run [`./scripts/deploy_chargeback_serverless.sh`](../../scripts/deploy_chargeback_serverless.sh) from a Python `venv` (`pip install pyyaml`) to automate lookup template creation, package upload, transform provisioning, policy creation, historical backfill, and E2E verification.
-  - The `elastic/integrations` repository is required **only** when editing package source templates under `packages/chargeback_serverless` and running `./scripts/deploy_chargeback_serverless.sh --build`.
+## Quick start: Published Integration, Historical Backfill & Pre-Release Reference
+
+- **Published Kibana Integration**: Open **Integrations** in Kibana on your Serverless FinOps hub project (**Project settings -> Management -> Integrations** or global search), search for **Chargeback Serverless**, and add it to an Elastic Agent policy ([Add an integration to an Elastic Agent policy](https://www.elastic.co/docs/reference/fleet/add-integration-to-policy#add-integration-to-policy-steps)).
+- **If you want to backfill historical usage**: Run [`python3 scripts/run_chargeback_serverless_collector.py --usage-only`](../../scripts/run_chargeback_serverless_collector.py) to project historical per-project usage snapshots without overwriting live Elastic Agent billing data.
+- **Historical Pre-Release `.zip` Workflow (`0.4.0`)**:
+  1. Pre-create the lookup index templates in Kibana Dev Tools (`"index.mode": "lookup"`), upload the archived package [`assets/dist/chargeback_serverless-0.4.0.zip`](assets/dist/chargeback_serverless-0.4.0.zip) in Kibana (**Project settings -> Management -> Integrations -> Upload integration**), and attach it to a dedicated **`Chargeback Serverless Policy`**.
+  2. See **Part 1** of [Install and configure Chargeback Serverless](Instructions.md) for the historical step-by-step `.zip` walkthrough.
+- **Maintainer / Local E2E CLI Deployment**:
+  - [`./scripts/deploy_chargeback_serverless.sh`](../../scripts/deploy_chargeback_serverless.sh) automates template creation, local `.zip` upload, transform provisioning, policy creation, historical backfill, and E2E verification from a Python `venv` (`pip install pyyaml`).
 
 ## How Chargeback Serverless works
 

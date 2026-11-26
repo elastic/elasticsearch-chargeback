@@ -1,18 +1,18 @@
 # Elasticsearch Chargeback module
 
-The [Chargeback integration](../../integrations/chargeback/Instructions.md) is the supported installation path and receives all ongoing updates. Prefer that path unless you have a hard constraint in the following section.
+The published **Chargeback integration** in Kibana (**Management -> Integrations -> Chargeback**; see [Add an integration to an Elastic Agent policy](https://www.elastic.co/docs/reference/fleet/add-integration-to-policy#add-integration-to-policy-steps) and [`elastic/integrations/packages/chargeback`](https://github.com/elastic/integrations/tree/main/packages/chargeback)) is the supported installation path and receives all ongoing updates. Prefer that path unless you have a hard constraint in the following section.
 
 This module is a legacy, manually assembled alternative. It will not be maintained.
 
 ## When to choose the module
 
-Choose the module only when you cannot install the Chargeback integration. The usual case is that the monitoring cluster cannot upgrade to the stack version the integration requires (currently 9.2.0+). See the [integration version compatibility table](../../integrations/chargeback/README.md#version-compatibility).
+Choose the module only when you cannot install the Chargeback integration. The usual case is that the monitoring cluster cannot upgrade to the stack version the integration requires (currently 9.2.0+). See the [archived integration version compatibility table](../../integrations/chargeback/README.md#version-compatibility).
 
 The module can run on Elastic Stack **8.17.1** or later. That is the main reason to use it.
 
-Do not choose the module for convenience or customization. Compared with the integration it has more moving parts, a harder setup, and more failure modes. Field focus and fixes go to the integration only.
+Do not choose the module for convenience or customisation. Compared with the integration it has more moving parts, a harder setup, and more failure modes. Field focus and fixes go to the integration only.
 
-If you can upgrade the monitoring cluster to meet the integration requirements, use the [Chargeback integration](../../integrations/chargeback/Instructions.md) instead.
+If you can upgrade the monitoring cluster to meet the integration requirements, install the **Chargeback integration** from Kibana (**Management -> Integrations -> Chargeback**) instead.
 
 ## Version
 

@@ -1,21 +1,26 @@
 # Elasticsearch Chargeback & FinOps Solutions
 
-FinOps is an operational framework and cultural practice designed to maximize the business value of cloud usage. It enables timely, data-driven decision-making and fosters financial accountability through collaboration between engineering, finance, and business teams.
+FinOps is an operational framework and cultural practice designed to maximise the business value of cloud usage. It enables timely, data-driven decision-making and fosters financial accountability through collaboration between engineering, finance, and business teams.
 
-This repository provides field-supported integrations, add-ons, and AI tooling to answer a central question: **How is my organization consuming the Elastic solution, and to which tenants can I allocate these costs?**
+This repository hosts companion add-ons, On-Premises Billing, helper scripts, and historical pre-release archives for Elastic FinOps and cost allocation. **Chargeback** and **Chargeback Serverless** are now published integrations in the **Kibana Integrations** catalogue and answer a central question: **How is my organisation consuming the Elastic solution, and to which tenants can I allocate these costs?**
+
+> [!IMPORTANT]
+> **Install Chargeback and Chargeback Serverless from Kibana Integrations**: Both **Chargeback** (`chargeback`) and **Chargeback Serverless** (`chargeback_serverless`) have been released to the Elastic Package Registry. Install and upgrade them directly from the **Kibana Integrations** page (**Management -> Integrations**, or **Project settings -> Management -> Integrations** on Serverless) by following [Add an integration to an Elastic Agent policy](https://www.elastic.co/docs/reference/fleet/add-integration-to-policy#add-integration-to-policy-steps).
+>
+> This repository is no longer the canonical source for those two integration packages. Active package source and current documentation live in [`elastic/integrations`](https://github.com/elastic/integrations) under [`packages/chargeback`](https://github.com/elastic/integrations/tree/main/packages/chargeback) and [`packages/chargeback_serverless`](https://github.com/elastic/integrations/tree/main/packages/chargeback_serverless). **On-Premises Billing** (`onprem_billing`), the optional **FinOps Companion Agent** (`agents/companion-agent/`), helper scripts (`scripts/`), and historical pre-release `.zip` archives remain in this repository.
 
 ---
 
 ## Solutions Overview
 
-This repository contains three specialized integrations alongside AI tooling:
+The table below summarises where each FinOps integration and add-on is installed and maintained:
 
-| Solution | Target Environment | Key Capabilities | Documentation & Assets |
+| Solution | Target Environment | Key Capabilities | Installation & Source |
 | :--- | :--- | :--- | :--- |
-| **Chargeback** | Elastic Cloud Hosted | Allocation of invoice cost from billing and usage across deployments, data tiers, and data streams. | [`integrations/chargeback/`](integrations/chargeback/README.md) |
-| **Chargeback Serverless** | Elastic Cloud Serverless | Native FinOps hub for Serverless organizations. CEL streams, 7 lookup transforms, 5 ES\|QL dashboards, and 10 alerting rules. | [`integrations/chargeback-serverless/`](integrations/chargeback-serverless/README.md) |
-| **On-Premises Billing** | Self-Managed / On-Prem | Bridges ERU licenses and on-prem hardware into normalized billing metrics for unified chargeback. | [`integrations/onprem-billing/`](integrations/onprem-billing/README.md) |
-| **FinOps Companion Agent** | Hosted & Serverless (Hub) | Conversational FinOps analysis using Agent Builder, workflow tools, and lookup indices. | [`agents/companion-agent/`](agents/companion-agent/README.md) |
+| **Chargeback** | Elastic Cloud Hosted, Self-Managed & Mixed Estates | Allocation of invoice and licence costs across deployments, data tiers, and data streams (Stack 9.2.0+). | Install in Kibana (**Management -> Integrations -> Chargeback**). Source: [`elastic/integrations/packages/chargeback`](https://github.com/elastic/integrations/tree/main/packages/chargeback) ([archived repo docs](integrations/chargeback/README.md)) |
+| **Chargeback Serverless** | Elastic Cloud Serverless | Native FinOps hub for Serverless organisations: CEL streams, lookup transforms, ES\|QL dashboards, and alerting rules. | Install in Kibana (**Project settings -> Management -> Integrations -> Chargeback Serverless**). Source: [`elastic/integrations/packages/chargeback_serverless`](https://github.com/elastic/integrations/tree/main/packages/chargeback_serverless) ([archived repo docs](integrations/chargeback-serverless/README.md)) |
+| **On-Premises Billing** | Self-Managed / On-Prem | Bridges ERU licences and on-prem hardware into normalised billing metrics for unified chargeback. | [`integrations/onprem-billing/`](integrations/onprem-billing/README.md) (upload `.zip` in Kibana Integrations) |
+| **FinOps Companion Agent** | Hosted & Serverless (Hub) | Optional conversational FinOps analysis using Kibana Agent Builder, workflow tools, and lookup indices. | [`agents/companion-agent/`](agents/companion-agent/README.md) |
 
 ---
 
@@ -24,21 +29,21 @@ This repository contains three specialized integrations alongside AI tooling:
 ```
 elasticsearch-chargeback/
 ├── integrations/
-│   ├── chargeback/                   # Elastic Cloud Hosted Chargeback package
+│   ├── chargeback/                   # Archived pre-release Chargeback package (installed via Kibana Integrations; source in elastic/integrations)
 │   │   ├── README.md
 │   │   ├── Instructions.md
 │   │   ├── docs/troubleshooting.md
-│   │   ├── addons/                   # Add-ons (Serverless usage workflow collector)
-│   │   └── assets/                   # Package zips (dist/) and images (img/)
+│   │   ├── addons/                   # Legacy 0.5.0 add-on (Serverless usage workflow collector; built into 0.6.0+)
+│   │   └── assets/                   # Historical package zips (dist/) and images (img/)
 │   │
-│   ├── chargeback-serverless/        # Native Serverless FinOps integration
+│   ├── chargeback-serverless/        # Archived pre-release Serverless package (installed via Kibana Integrations; source in elastic/integrations)
 │   │   ├── README.md
 │   │   ├── Instructions.md
 │   │   ├── CONFIG.md
 │   │   ├── dashboards/
-│   │   └── assets/                   # Built package (dist/), Kibana saved objects, images
+│   │   └── assets/                   # Historical package zips (dist/), Kibana saved objects, images
 │   │
-│   └── onprem-billing/               # On-Premises Billing integration
+│   └── onprem-billing/               # On-Premises Billing integration (still uploaded from assets/dist/)
 │       ├── README.md
 │       ├── Instructions.md
 │       └── assets/                   # Built package (dist/) and calculation pipelines
@@ -49,30 +54,23 @@ elasticsearch-chargeback/
 ├── legacy/
 │   └── module/                       # Legacy pre-Fleet manual chargeback module
 │
-└── scripts/                          # Automated deployment, release, and E2E testing tools
+└── scripts/                          # Helper, backfill, agent install, and historical release tools
 ```
 
 ---
 
 ## Quick Installation Guides
 
-> [!IMPORTANT]
-> **Customers vs. Developers / Maintainers**: To install any integration in this repository, **you do NOT need the `elastic/integrations` repository or `elastic-package` CLI**. Each solution ships with a prebuilt `.zip` package under `assets/dist/` that you can upload directly in Kibana (**Management → Integrations → Upload integration**).
-> - **Customer Installation (Kibana Fleet UI)**: For **Chargeback Serverless**, follow **Part 1** of [`integrations/chargeback-serverless/Instructions.md`](integrations/chargeback-serverless/Instructions.md) to pre-create lookup index templates in Kibana Dev Tools, upload [`integrations/chargeback-serverless/assets/dist/chargeback_serverless-0.4.0.zip`](integrations/chargeback-serverless/assets/dist/chargeback_serverless-0.4.0.zip) in Kibana, and optionally run [`python3 scripts/run_chargeback_serverless_collector.py`](scripts/run_chargeback_serverless_collector.py) for historical usage backfill.
-> - **Developer & Maintainer Automated Deployment**: Follow **Part 2** of [`integrations/chargeback-serverless/Instructions.md`](integrations/chargeback-serverless/Instructions.md) to run [`./scripts/deploy_chargeback_serverless.sh`](scripts/deploy_chargeback_serverless.sh) (which deploys the prebuilt `.zip` by default without building, or rebuilds from `elastic/integrations` when `--build` is passed).
-
-1. **Elastic Cloud Hosted**: Follow the [Chargeback Installation Instructions](integrations/chargeback/Instructions.md). Current release: `0.5.0` in [`integrations/chargeback/assets/dist/0.5.0/`](integrations/chargeback/assets/dist/0.5.0/).
-2. **Elastic Cloud Serverless**: Follow the [Chargeback Serverless Instructions](integrations/chargeback-serverless/Instructions.md) (**Part 1** for customer Kibana Fleet UI installation + optional [`scripts/run_chargeback_serverless_collector.py`](scripts/run_chargeback_serverless_collector.py) backfill; **Part 2** for automated CLI deployment via [`scripts/deploy_chargeback_serverless.sh`](scripts/deploy_chargeback_serverless.sh)).
-3. **On-Premises Clusters**: Follow the [On-Premises Billing Instructions](integrations/onprem-billing/Instructions.md) to install `onprem_billing` and configure ERU rate pipelines.
-4. **FinOps Companion Agent**: Run [`scripts/install_chargeback_agent.sh`](scripts/install_chargeback_agent.sh) and see [`agents/companion-agent/Instructions.md`](agents/companion-agent/Instructions.md).
+1. **Chargeback (Elastic Cloud Hosted, Self-Managed & Mixed Estates)**: In Kibana on your 9.2.0+ monitoring cluster, open **Management -> Integrations**, search for **Chargeback**, and add it to an Elastic Agent policy (see [Add an integration to an Elastic Agent policy](https://www.elastic.co/docs/reference/fleet/add-integration-to-policy#add-integration-to-policy-steps), or install assets only via **Settings -> Install Chargeback** per [Install and uninstall Elastic Agent integration assets](https://www.elastic.co/docs/reference/fleet/install-uninstall-integration-assets#install-integration-assets)). Upgrade existing installs under **Management -> Integrations -> Installed integrations -> Chargeback -> Settings** ([Upgrade an Elastic Agent integration](https://www.elastic.co/docs/reference/fleet/upgrade-integration#upgrade-integration-to-latest-version)). If upgrading from pre-release `0.4.x` or `0.5.0` to `0.6.0+`, run [`./scripts/migrate_to_060.sh`](scripts/migrate_to_060.sh) (`--dry-run` first) to verify `chargeback_lookup.*` aliases and reclaim retired pre-`0.6.0` concrete `*_lookup` shards.
+2. **Chargeback Serverless (Elastic Cloud Serverless)**: In Kibana on your Serverless FinOps hub project (Elasticsearch or Observability Complete), open **Project settings -> Management -> Integrations** (or search **Integrations**), select **Chargeback Serverless**, and add it to an Elastic Agent policy with a customer-managed Fleet Elastic Agent 9.2.0+ ([Add an integration to an Elastic Agent policy](https://www.elastic.co/docs/reference/fleet/add-integration-to-policy#add-integration-to-policy-steps)). Initial publication to the Elastic Package Registry reset package versioning from internal `0.3.x`/`0.4.0` pre-releases to `0.1.0`, so `0.1.0+` in Kibana Integrations supersedes `chargeback_serverless-0.4.0.zip`. If you want to backfill historical per-project usage snapshots without overwriting live Elastic Agent billing records, run [`python3 scripts/run_chargeback_serverless_collector.py --usage-only`](scripts/run_chargeback_serverless_collector.py).
+3. **On-Premises Clusters (`onprem_billing`)**: Follow [On-Premises Billing Instructions](integrations/onprem-billing/Instructions.md) to upload [`onprem_billing-0.3.4.zip`](integrations/onprem-billing/assets/dist/onprem_billing-0.3.4.zip) in Kibana (**Management -> Integrations -> Upload integration**) and configure ERU rate pipelines.
+4. **FinOps Companion Agent (Optional Add-On, Chargeback `0.6.0+`)**: Run [`scripts/install_chargeback_agent.sh`](scripts/install_chargeback_agent.sh) (targets `chargeback_lookup.*` aliases in Chargeback `0.6.0+`) and see [`agents/companion-agent/Instructions.md`](agents/companion-agent/Instructions.md).
 
 ---
 
 ## Support
 
-Chargeback is created and supported by Elastic **Field** (Customer Engineering), not Elastic Product. It is **not** generally available (GA). While it remains in technical preview, get help through Field—for example your Elastic account team or the Elastician who shared this work with you. Standard Elastic Support does not cover it until that is explicitly arranged.
-
-When Chargeback reaches GA, **Field** will coordinate with **Elastic Support** to put an official support model in place for entitled customers.
+**Chargeback** and **Chargeback Serverless** are published in Beta in Kibana Integrations and maintained by Elastic **Field** (Customer Engineering) in [`elastic/integrations`](https://github.com/elastic/integrations). **On-Premises Billing** and the **FinOps Companion Agent** remain maintained in this repository. While these integrations are in technical preview / Beta, get help through Field - for example your Elastic account team or the Elastician who shared this work with you. Standard Elastic Support does not cover them until an official support model is put in place at general availability (GA).
 
 ---
 

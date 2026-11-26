@@ -1,6 +1,9 @@
 # Chargeback Serverless configuration reference
 
-Use this reference to configure the **Chargeback Serverless (`chargeback_serverless` `0.4.0`)** Fleet integration policy, create the required Elastic Cloud API key, customize currency conversion settings, and tune FinOps alerting thresholds.
+> [!IMPORTANT]
+> **Configure in Kibana Integrations**: **Chargeback Serverless** (`chargeback_serverless`) is published in the Elastic Package Registry and configured directly in Kibana (**Project settings -> Management -> Integrations -> Chargeback Serverless**, or search **Integrations**; see [Add an integration to an Elastic Agent policy](https://www.elastic.co/docs/reference/fleet/add-integration-to-policy#add-integration-to-policy-steps)). Active package configuration docs live in [`elastic/integrations/packages/chargeback_serverless`](https://github.com/elastic/integrations/tree/main/packages/chargeback_serverless). Initial publication reset package versioning from internal `0.3.x`/`0.4.0` pre-releases to `0.1.0`, so the `0.4.0` notes below are retained as historical pre-release reference.
+
+Use this historical reference for the pre-release **Chargeback Serverless (`chargeback_serverless` `0.4.0`)** Fleet integration policy, Elastic Cloud API key setup, currency conversion settings, and FinOps alerting thresholds.
 
 ## Single unified Elastic Cloud API key
 
