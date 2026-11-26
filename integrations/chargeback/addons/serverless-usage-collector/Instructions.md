@@ -1,10 +1,13 @@
-# Chargeback for Elastic Cloud Serverless — setup
+# Chargeback for Elastic Cloud Serverless - setup
 
-This **add-on** extends pure Chargeback with per-index usage collection for Elastic Cloud Serverless projects. Install it only when you need datastream or tier showback for Serverless. The Fleet zip (0.5.0+) already makes Serverless **billing** allocatable; this add-on fills usage.
+> [!IMPORTANT]
+> **Legacy (`0.5.0` only) - Superseded in Chargeback `0.6.0+`**: Published **Chargeback `0.6.0+`** in Kibana Integrations (**Management -> Integrations -> Chargeback**; source in [`elastic/integrations/packages/chargeback`](https://github.com/elastic/integrations/tree/main/packages/chargeback)) harvests Serverless `/_cat/indices` natively via `chargeback.usage`. Follow these steps only for historical `0.5.0` deployments.
+
+This **legacy `0.5.0` add-on** extends `0.5.0` Chargeback with per-index usage collection for Elastic Cloud Serverless projects. The `0.5.0` Fleet zip already makes Serverless **billing** allocatable; this add-on fills usage for `0.5.0` only.
 
 Assets install **on the monitoring cluster** (where Chargeback and ESS Billing already run), not on the Serverless project.
 
-Prefer [`scripts/install_serverless_usage.sh`](../../../scripts/install_serverless_usage.sh) from the repository root. The steps below match what that script does.
+Prefer [`scripts/install_serverless_usage.sh`](../../../../scripts/install_serverless_usage.sh) from the repository root. The steps below match what that script does.
 
 ## Prerequisites
 

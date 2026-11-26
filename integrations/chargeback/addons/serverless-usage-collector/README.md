@@ -1,20 +1,23 @@
 # Chargeback for Elastic Cloud Serverless (add-on)
 
-Adds Elastic Cloud Serverless **usage** collection so a monitoring cluster can allocate cost to data streams for Hosted and Serverless side by side in the existing dashboards.
+> [!IMPORTANT]
+> **Legacy (`0.5.0` only) - Superseded in Chargeback `0.6.0+`**: Published **Chargeback `0.6.0+`** (installed from **Management -> Integrations -> Chargeback** in Kibana; source in [`elastic/integrations/packages/chargeback`](https://github.com/elastic/integrations/tree/main/packages/chargeback)) harvests Serverless `/_cat/indices` natively through its `chargeback.usage` CEL stream. Use this workflow add-on only on historical `0.5.0` installations.
 
-This is an **add-on**, not part of the Fleet zip. Pure Chargeback (0.5.0+) already recognizes Serverless billing SKUs in the realized pool. Install this add-on when you need per-index / datastream showback for Serverless.
+Adds Elastic Cloud Serverless **usage** collection so a `0.5.0` monitoring cluster can allocate cost to data streams for Hosted and Serverless side by side in the existing dashboards.
+
+This is a **legacy `0.5.0` add-on**, not part of the Fleet zip. Pure Chargeback (`0.5.0`) already recognises Serverless billing SKUs in the realised pool; `0.6.0+` includes native Serverless usage harvesting directly in the integration.
 
 ## Version
 
-Requires Chargeback integration **0.5.0+**.
+Requires Chargeback integration **`0.5.0`** (superseded by native CEL collection in **`0.6.0+`**).
 
 ## Install
 
-From the repository root, run [`scripts/install_serverless_usage.sh`](../../../scripts/install_serverless_usage.sh). See [Instructions.md](Instructions.md).
+From the repository root, run [`scripts/install_serverless_usage.sh`](../../../../scripts/install_serverless_usage.sh). See [Instructions.md](Instructions.md).
 
 ## Why this is separate from the integration ZIP
 
-The collector needs each Serverless project's URL and API key. Those are per-environment values that cannot ship inside a Fleet package. See [Instructions.md](Instructions.md) and [`scripts/install_serverless_usage.sh`](../../../scripts/install_serverless_usage.sh).
+The collector needs each Serverless project's URL and API key. Those are per-environment values that cannot ship inside a `0.5.0` Fleet package. See [Instructions.md](Instructions.md) and [`scripts/install_serverless_usage.sh`](../../../../scripts/install_serverless_usage.sh).
 
 ## How it works
 

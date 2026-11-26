@@ -33,7 +33,7 @@ elasticsearch-chargeback/
 │   │   ├── README.md
 │   │   ├── Instructions.md
 │   │   ├── docs/troubleshooting.md
-│   │   ├── addons/                   # Add-ons (Serverless usage workflow collector)
+│   │   ├── addons/                   # Legacy 0.5.0 add-on (Serverless usage workflow collector; built into 0.6.0+)
 │   │   └── assets/                   # Historical package zips (dist/) and images (img/)
 │   │
 │   ├── chargeback-serverless/        # Archived pre-release Serverless package (installed via Kibana Integrations; source in elastic/integrations)
